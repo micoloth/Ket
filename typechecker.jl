@@ -1,3 +1,4 @@
+# old ramblings about a typechecker, from "unification.jl"
 
 TOPFREE=100
 newvar() = (global TOPFREE = TOPFREE + 1; string(TOPFREE))
@@ -83,7 +84,7 @@ struct CheckedTerm_
 end
 CheckedTerm = Union{CheckedTerm_, Error}
 
-function typeCheckBind(func, c::CheckedTerm)
+function typeCheckBind(func, c::CheckedTerm)::CheckedTerm
     # func is currently TypedTerm -> CheckedTerm_
     if typeof(c) === Error return c end
     ct = func(c.typedTerm)
@@ -91,7 +92,7 @@ function typeCheckBind(func, c::CheckedTerm)
     return CheckedTerm_(ct.typedTerm, vcat(c.constrs, ct.constrs))
 end
 
-function typeCheckBind(func, c1::CheckedTerm, c2::CheckedTerm)
+function typeCheckBind(func, c1::CheckedTerm, c2::CheckedTerm)::CheckedTerm
     # func is currently (TypedTerm x TypedTerm) -> CheckedTerm_
     if typeof(c1) === Error return c1 end
     if typeof(c2) === Error return c2 end

@@ -1,4 +1,6 @@
 
+# higher order typechecker using unification, copied from :
+
 # from https://github.com/jozefg/higher-order-unification/
 
 
@@ -162,6 +164,8 @@ mkLam(LocalVar(0), 5) |> pr
 
 
 ########################################## SIMPLIFY
+
+# (Each of these means: Simplify the constraint "t1 must be == t2")
 
 # question is: RECURSIVE(call simplify_) OR MANAGED (return constrains)?
     # you HAVE TO CHOSE BECAUSE YOU DON'T HAVE A MONAD.......            (i think)
@@ -359,15 +363,14 @@ function unify(snew::Subst, cs::Array{Constraint}):: UnifRes # OH boi you're ALM
     # 4. Pick a flex-rigid equation at random, if there are none, we're done.
     if length(flexrigids) == 0
         return UnifRes_Result(snew, flexflexs) # UHH type?
-    else
-        f=flexrigids[1]
-        # 5. Use tryFlexRigid to get a list of possible solutions (PossibleSUBSTitutionS)
-        psubsts = tryFlexRigid(f)
-        # 6. RETURN each solution SO THAT YOU CAN attempt to unify the remaining constraints, backtracking if you get stuck
-        psubsts::Array{Subst} = psubsts .|> s->mergeSubst(s, snew) |> (s->filter((x->typeof(x) === Subst), s))  # this is kinda the trySubsts part
-        #             psubsts = psubsts .|> s->mergeSubst(s, snew) |> (s->filter(x->typeof(x) === Subst, s))  # this is kinda the trySubsts part
-        return UnifRes_Attempts(psubsts, vcat(flexrigids, flexflexs))
     end
+    f=flexrigids[1]
+    # 5. Use tryFlexRigid to get a list of possible solutions (PossibleSUBSTitutionS)
+    psubsts = tryFlexRigid(f)
+    # 6. RETURN each solution SO THAT YOU CAN attempt to unify the remaining constraints, backtracking if you get stuck
+    psubsts::Array{Subst} = psubsts .|> s->mergeSubst(s, snew) |> (s->filter((x->typeof(x) === Subst), s))  # this is kinda the trySubsts part
+    #             psubsts = psubsts .|> s->mergeSubst(s, snew) |> (s->filter(x->typeof(x) === Subst, s))  # this is kinda the trySubsts part
+    return UnifRes_Attempts(psubsts, vcat(flexrigids, flexflexs))
 end
 
 # smoke test, since the semantics are so complicated:

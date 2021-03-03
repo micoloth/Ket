@@ -1,4 +1,6 @@
 
+# A working "lambda calculus" w/ sum and products, inspired by the code in "unification.jl"
+
 TOPFREE=100
 newvar() = global TOPFREE = TOPFREE + 1
 
@@ -171,6 +173,10 @@ hh_simple_partApp |> pr
 
 [1, 2,3, 4] .|> (x->reduc(Ap(hh_simple_partApp, Prod([BaseVal(x)]))) ) .|> pr
 
+
+# Also the S combinator (fix the names:)
+# S = EAbs(EApp(EApp(ELoc(1), ELoc(3)), EApp(ELoc(2), ELoc(3))))
+# reduc(EAbs(EApp(S, EProd([EGlob("f"), ELoc(1), EGlob("x")]))))
 
 # You want partial application? Here's partial application:
 # this function takes a function of 3 arguments and a term, and applies the term as SECOND argument, returning a normalized down function:
