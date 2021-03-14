@@ -31,6 +31,7 @@ struct EAnno <: Expr # ANNOTATION syntax
     expr::Expr
     type::Type_ # Type_ ???
 end
+Base.:(==)(a::EProd, b::EProd) = Base.:(==)(a.data, b.data)
 
 
 ########## Types
@@ -55,7 +56,9 @@ end
 struct TProd <: Type_
     data::Array{Type_}
 end
-
+Base.:(==)(a::TProd, b::TProd) = Base.:(==)(a.data, b.data)
+Base.:(==)(a::TFun, b::TFun) = Base.:(==)(a.inputs, b.inputs) & Base.:(==)(a.t2, b.t2)
+Base.:(==)(a::TForall, b::TForall) = Base.:(==)(a.body, b.body)
 
 pr(x::EGlob)::String = "$(x.n)"
 pr(x::ELoc)::String = "$(x.n)"
@@ -85,7 +88,7 @@ reduc(t::EAnno)::Expr = EAnno(t.expr |> reduc, t.type)
 function reduc(func::EAbs, arg::EProd)
     #println("> doing the ", typeof(func),  " ", typeof(arg), " thing")
     temp = subst(arg.data, func.body)
-    #print( "creating  > ", temp|>pr, "\n")
+    #println( "creating  > ", temp|>pr, "\n")
     reduc(temp)
 end
 function reduc(func, arg)
@@ -138,8 +141,7 @@ subst(news::Array{Type_}, t::TUnit)::Type_ = t
 subst(news::Array{Type_}, t::TFun)::Type_ = TFun(subst(news, t.inputs), subst(news, t.t2)) 
 subst(news::Array{Type_}, t::TForall)::Type_ = t # TForall(subst(news, t.body)) 
 subst(news::Array{Type_}, t::TProd)::Type_ = TProd(t.data .|> (x->subst(news, x))) 
-subst(news::Array{Type_}, t::TExists)::Type_ = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end 
-# ^ ????????????????????????????????????
+subst(news::Array{Type_}, t::TExists)::Type_ = t
 
 reduc(t::TGlob)::Type_ = t
 reduc(t::TLoc)::Type_ = t
@@ -151,7 +153,7 @@ reduc(t::TExists)::Type_ = t
 function reduc(func::TForall, arg::TProd)
     #println("> doing the ", typeof(func),  " ", typeof(arg), " thing")
     temp = subst(arg.data, func.body)
-    #print( "creating  > ", temp|>pr, "\n")
+    #println( "creating  > ", temp|>pr, "\n")
     reduc(temp)
 end
 function reduc(func, arg)
@@ -165,7 +167,7 @@ arity(base::Index, t::TLoc)::Index = max(base, t.var)
 arity(base::Index, t::TUnit)::Index = base 
 arity(base::Index, t::TFun)::Index = max(arity(base, t.inputs), arity(base, t.t2)) 
 arity(base::Index, t::TForall)::Index = base # Lam(arity(base, t.body)) 
-arity(base::Index, t::TExists)::Index = max(base, t.var) # ???????????????????
+arity(base::Index, t::TExists)::Index = base
 arity(base::Index, t::TProd)::Index = reduce(max, t.data .|> (x->arity(base, x))) 
 arity(t::Type_)::Index = arity(0, t)
 
@@ -205,6 +207,8 @@ end
 struct CMarker <: ContextElem end # K now i'm lost. "scoping reasons", he says
 
 # i REALLY wish i didn't need these :(
+# what these do is: they DEREFERENCE ALL TExists IN THE GAMMA, returning the RESULTING Type_ IF solved, or TExist again if unsolved
+# (they are LITERALLY just subst, but for Context/Exists, in other words)
 apply(gamma:: Context, typ::TUnit)::Type_ = typ
 apply(gamma:: Context, typ::TGlob)::Type_ = typ
 apply(gamma:: Context, typ::TLoc)::Type_ = typ
@@ -223,6 +227,8 @@ function apply(gamma:: Context, typ::TExists)::Type_
         typ
     end
 end
+# QUESTION: i COULD rework this^ into a thing that REMOVES the solved ones from the context too, PROPERLY taking care of all he following TExists, BUT:
+# Is this what i want? And if yes, always?   # -> What if the solved type is long and complex? We like references, don't we?
 
 apply(Context([CExistsSolved(TGlob("G"))]), TExists(1))
 
@@ -273,8 +279,10 @@ end
 # function instantiateR_(gamma::Context, t::TFun, alpha::Index)::Context  #IMPORTANT: Polytype
 #     lgamma = length(gamma)
 #     theta = vcat(gamma, [CExists(), CExists()])
+#     # ---------------------------------------------------------------------------------------------- BAD- PROBLEMATIC
 #     theta[alpha] = CExistsSolved(TFun(TExists_(lgamma + 1), TExists_(lgamma + 2)))
 #     # ^ i am NOT renaming all the TLoc's here, but i AM breaking the left-to-right logical dependency, by adding the CExists's at the end. IS THIS BAD OR NOT??
+#     # ---------------------------------------------------------------------------------------------- BAD- PROBLEMATIC
 #     theta = instantiateL(theta, lgamma + 1, t.inputs)
 #     instantiateR(theta, apply(theta, t.t2), lgamma + 2)
 # end
@@ -294,52 +302,106 @@ end
 
 err(alpha, alpha2) = Error("subtype, isn't subtypable: $(repr(alpha)), $(repr(alpha2))")
 
-subtype(gamma::Context, alpha::TLoc, alpha2::TLoc) = ((alpha == alpha2) ? gamma : err(alpha, alpha2))
-subtype(gamma::Context, alpha::TGlob, alpha2::TGlob) = ((alpha == alpha2) ? gamma : err(alpha, alpha2))
-subtype(gamma::Context, alpha::TUnit, alpha2::TUnit) = gamma
-subtype(gamma::Context, fa::TFun, fb::TFun) = (c=subtype(gamma, fb.inputs, fa.inputs); (c isa Error) ? c : subtype(c, apply(c, fa.t2), apply(c, fb.t2)))
-function subtype(gamma::Context, t1::TProd, t2::TProd)
+subtype(gamma::Context, alpha::TLoc, alpha2::TLoc)::Union{Context, Error} = ((alpha == alpha2) ? gamma : err(alpha, alpha2))
+subtype(gamma::Context, alpha::TGlob, alpha2::TGlob)::Union{Context, Error} = ((alpha == alpha2) ? gamma : err(alpha, alpha2))
+subtype(gamma::Context, alpha::TUnit, alpha2::TUnit)::Union{Context, Error} = gamma
+subtype(gamma::Context, fa::TFun, fb::TFun)::Union{Context, Error} = (c=subtype(gamma, fb.inputs, fa.inputs); (c isa Error) ? c : subtype(c, apply(c, fa.t2), apply(c, fb.t2)))
+function subtype(gamma::Context, t1::TProd, t2::TProd)::Union{Context, Error}
     for (d1, d2) in zip(t1.data, t2.data)
         gamma = subtype(gamma, d1, d2)
         if gamma === nothing return nothing end
     end
     gamma
 end
-subtype(gamma::Context, alpha::TExists, alpha2::TExists) = ((alpha == alpha2) && typeof(gamma[alphat.var]) in [CExists, CExistsSolved]) ? gamma : err(alpha, alpha2)
-subtype(gamma::Context, t::TExists, a) = (typeof(gamma[t.var]) in [CExists, CExistsSolved] ) ? instantiateL(gamma, t.var, a) : err(t,a)
-subtype(gamma::Context, a, t::TExists) = (typeof(gamma[t.var]) in [CExists, CExistsSolved]) ? instantiateR(gamma, a, t.var) : err(a,t)
-# function subtype(gamma::Context, a, t::TForall_)
-#     v = newvar()
-#     vc = CForall_{Incomplete()}(v)
-#     gamma2 = Context(push!(gamma.elements, vc))
-#     gamma_res = subtype(gamma2, a, typeSubst(TVar(v), t.arg, t.body))
-#     dropMarker(vc, gamma_res)
-# end
-# function subtype(gamma::Context, a::TForall_, t::TForall_) # the same PREVIOUS case
-#     v = newvar()
-#     vc = CForall_{Incomplete()}(v)
-#     gamma2 = Context(push!(gamma.elements, vc))
-#     gamma_res = subtype(gamma2, a, typeSubst(TVar(v), t.arg, t.body))
-#     dropMarker(vc, gamma_res)
-# end
-# function subtype(gamma::Context, t::TForall_, b)
-#     v = newvar()
-#     vc = CMarker_{Incomplete()}(v)
-#     gamma2 = Context(push!(gamma.elements, vc, CExist))
-#     gamma_res = subtype(gamma2, typeSubst(TExists_(v), t.arg, t.body), b)
-#     dropMarker(vc, gamma_res)
-# end
 
-subtype(gamma::Context, a, b) = Error("subtype, don't yet know what to do with: $(repr(a)), $(repr(b))")
-
+# the ORIGINAL FUNCTIONS:
+# subtype(gamma::Context, t::TExists, a)::Union{Context, Error} = (typeof(gamma[t.var]) in [CExists, CExistsSolved] ) ? instantiateL(gamma, t.var, a) : err(t,a)
+# subtype(gamma::Context, a, t::TExists)::Union{Context, Error} = (typeof(gamma[t.var]) in [CExists, CExistsSolved]) ? instantiateR(gamma, a, t.var) : err(a,t)
+# subtype(gamma::Context, alpha::TExists, alpha2::TExists) = ((alpha == alpha2) && typeof(gamma[alpha.var]) in [CExists, CExistsSolved]) ? gamma : err(alpha, alpha2)
+# MY ATTEMPT at being more flexible (it will be tragic i know):
+function subtype(gamma::Context, t::TExists, a)::Union{Context, Error}
+    if gamma[t.var] isa CExists
+        instantiateL(gamma, t.var, a) 
+    elseif gamma[t.var] isa CExistsSolved
+        subtype(gamma, gamma[t.var].type, a) # REAALY sounds innocuous doesn't it?
+    else
+        err(t,a)
+    end
+end
+function subtype(gamma::Context, a, t::TExists)::Union{Context, Error}
+    if gamma[t.var] isa CExists
+        instantiateR(gamma, a, t.var) 
+    elseif gamma[t.var] isa CExistsSolved
+        subtype(gamma, a, gamma[t.var].type) # REAALY sounds innocuous doesn't it?
+    else
+        err(a, t)
+    end
+end
+function subtype(gamma::Context, alpha::TExists, alpha2::TExists)::Union{Context, Error}
+    if (alpha == alpha2) gamma  # typeof(gamma[alpha.var]) in [CExists, CExistsSolved]) 
+    elseif (gamma[alpha.var] isa CExists) instantiateR(gamma, alpha, alpha2.var) # could SO EASILY be L
+    elseif (gamma[alpha2.var] isa CExists) instantiateL(gamma, alpha.var, alpha2) # could SO EASILY be R
+    else err(alpha, alpha2)
+    end
+end
 
 @assert subtype(Context([]), TGlob("G"), TGlob("G")) == Context([])
 @assert subtype(Context([]), TLoc(3), TLoc(3)) == Context([])
-# subtype(Context([CExistsSolved(TGlob("G"))]), TGlob("F"), TExists(1))
-# ^ MAYBE trying to solve an ALREADY SOLVED Exists is NEVER a thing...
+@assert subtype(Context([CExistsSolved(TGlob("G"))]), TGlob("G"), TExists(1)) == Context([CExistsSolved(TGlob("G"))])
+# ^ MAYBE trying to solve an ALREADY SOLVED Exists is NEVER a thing... ^ ok no but WHY WOULDNT it.....
 # to be fair, it DOESN'T happen in typecheck, as apply() happens FIRST
-# subtype(Context([CExistsSolved(TGlob("G"))]), TGlob("G"), TExists(1))# Yess!
-# subtype(Context([CExistsSolved(TGlob("G"))]), TExists(1), TGlob("G"))# needs InstL
+@assert subtype(Context([CExistsSolved(TGlob("G"))]), TGlob("F"), TExists(1)) == "subtype, isn't subtypable: TGlob(\"F\"), TGlob(\"G\")"
+@assert subtype(Context([CExistsSolved(TGlob("G"))]), TExists(1), TGlob("G")) == Context([CExistsSolved(TGlob("G"))])
+
+
+function subtype(gamma::Context, a, t::TForall) # R: more subtle, contxt is EXTENDED with the loc?
+    lgamma, ltyp = length(gamma), t.body |> arity # we DON'T want this to exist :(
+    gamma2 = vcat(gamma, [CForall() for i in 1:ltyp])
+    sbody = subst(Array{Type_}([TLoc(lgamma + i) for i in 1:ltyp]), t.body)
+    gamma_res = subtype(gamma2, a, sbody)
+    # dropMarker(vc, gamma_res)  # i don't know how to drop U_U
+    gamma_res
+end
+function subtype(gamma::Context, a::TForall, t::TForall) # the same PREVIOUS case
+    lgamma, ltyp = length(gamma), t.body |> arity # we DON'T want this to exist :(
+    gamma2 = vcat(gamma, [CForall() for i in 1:ltyp])
+    sbody = subst(Array{Type_}([TLoc(lgamma + i) for i in 1:ltyp]), t.body)
+    gamma_res = subtype(gamma2, a, sbody)
+    # dropMarker(vc, gamma_res)  # i don't know how to drop U_U
+    gamma_res
+end
+function subtype(gamma::Context, t::TForall, b) # L: Turn Forall loc's into Exists, then solve
+    lgamma, ltyp = length(gamma), t.body |> arity # we DON'T want this to exist :(
+    gamma2 = vcat(gamma, [CExists() for i in 1:ltyp])
+    sbody = subst(Array{Type_}([TExists(lgamma + i) for i in 1:ltyp]), t.body)
+    gamma_res = subtype(gamma2, sbody, b)
+    # dropMarker(vc, gamma_res)  # i don't know how to drop U_U
+    println("Getting to context: ", gamma_res)
+    (gamma_res isa Error) ? gamma_res : gamma_res[1:lgamma]
+end
+
+subtype(gamma::Context, a, b) = Error("subtype, don't yet know what to do with: $(repr(a)), $(repr(b)) in $(gamma)")
+
+
+# L case
+@assert subtype(Context([]), TForall(TLoc(1)), TGlob("G")) == Context([])
+@assert subtype(Context([]), TForall(TLoc(1)), TFunAuto(TGlob("A"), TGlob("B"))) == Context([])
+@assert subtype(Context([]), TForall(TGlob("G")), TGlob("G")) == Context([])
+@assert subtype(Context([]), TForall(TGlob("F")), TGlob("G")) == "subtype, isn't subtypable: TGlob(\"F\"), TGlob(\"G\")"
+@assert subtype(Context([]), TForall(TFunAuto(TLoc(1), TLoc(2))), TFunAuto(TGlob("A"), TGlob("B"))) == Context([])
+@assert subtype(Context([CExists()]), TForall(TExists(1)), TGlob("A")) == Context([CExistsSolved(TGlob("A"))])
+@assert subtype(Context([CExists()]), TForall(TFunAuto(TLoc(1), TExists(1))), TFunAuto(TGlob("A"), TGlob("B"))) == Context([CExistsSolved(TGlob("B"))])
+
+
+# R case
+subtype(Context([]), TGlob("G"), TForall(TLoc(1)))
+subtype(Context([]), TGlob("G"), TForall(TGlob("G")))
+subtype(Context([]), TGlob("G"), TForall(TGlob("F")))
+subtype(Context([CExists()]), TExists(1), TForall(TExists(1)))
+
+subtype(Context([]), TForall(TGlob("F")), TForall(TLoc(1)))
+subtype(Context([]), TForall(TLoc(1)), TForall(TGlob("F")))
+
 
 # -- | Type checking:
 # --   typecheck Γ e A = Δ <=> Γ |- e <= A -| Δ
@@ -402,6 +464,17 @@ function typesynth(gamma::Context, expr::EAnno)::TypesynthRes
     (typeof(tc) !== Error) ? (expr.type, tc) : tc 
 end
 
+function typesynth(gamma::Context, expr::EProd)::TypesynthRes 
+    types = Array{Type_}([])
+    for e in expr.data
+        res = typesynth(gamma, e)
+        if res isa Error return res end
+        (t, gamma) = res
+        push!(types, t)
+    end
+    (TProd(types), gamma)
+end
+
 
 function typecheck(gamma::Context, expr, typ)::TypecheckRes
     # this is good
@@ -430,8 +503,8 @@ expr = EAbs(EGlobAuto("g"))
 tc = typecheck(gamma, expr.body, TExists(2))
 
 gamma = Context([CVar(TGlob("K")), CExists(), CExists(), CVar(TExists(2))])
-expr = EAbs(ELoc(1))
-tc = typecheck(gamma, subst(Array{Expr}([ELoc(4)]), expr.body), TExists(3))
+@assert subst(Array{Expr}([ELoc(4)]), EAbs(ELoc(1)).body) == ELoc(4)
+tc = typecheck(gamma, ELoc(4), TExists(3))
 # ^ buuh :(
 
 @assert typecheck(Context([CVar(TGlob("F"))]), ELoc(1), TGlob("F")) == Context([CVar(TGlob("F"))])
@@ -441,8 +514,14 @@ tc = typecheck(gamma, subst(Array{Expr}([ELoc(4)]), expr.body), TExists(3))
 @assert typecheck(Context([CExists(), CVar(TLoc(1))]), ELoc(2), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TLoc(1))])
 @assert typecheck(Context([CExistsSolved(TGlob("F")), CVar(TGlob("F"))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CVar(TGlob("F"))])
 @assert typecheck(Context([CExistsSolved(TGlob("F")), CVar(TExists(1))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CVar(TExists(1))])
-
+@assert typecheck(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CVar(TExists(1))])
+@assert typecheck(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TExists(1)), TGlob("F")) == Context([CExistsSolved(TGlob("F")), CVar(TExists(1))])
 @assert typecheck(Context([CExists(), CVar(TLoc(1))]), EAnno(ELoc(2), TLoc(1)), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TLoc(1))])
+
+
+@assert typecheck(Context([CExists(), CVar(TExists(1))]), EProd([EAnno(ELoc(2), TGlob("G")), EAnno(ELoc(2), TExists(1))]), TProd([TExists(1), TGlob("G")])) == Context([CExistsSolved(TGlob("G")), CVar(TExists(1))])
+# typecheck(Context([CExists()]), EAbs(EProd())
+
 # @assert typecheck(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TLoc(1)), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TLoc(1))])
 
 
@@ -474,6 +553,17 @@ function typesynth(gamma::Context, expr::EUnit)::TypesynthRes
     (TUnit(), gamma)
 end
 
+
+substEx(new::Type, var::Index, expr::TUnit)::Type = expr
+substEx(new::Type, var::Index, expr::TLoc)::Type = expr
+substEx(new::Type, var::Index, expr::TGlob)::Type = expr
+substEx(new::Type, var::Index, expr::TProd)::Type = TProd(expr.data .|> (x->substEx(new, var, x)))
+substEx(new::Type, var::Index, expr::TFun)::Type = TFun(substEx(new, var, expr.inputs), substEx(new, var, expr.t2))
+substEx(new::Type, var::Index, expr::TExists)::Type = (expr.var == var ? new : expr)
+# substEx(new::Type, var::Index, expr::TForall)::Type = TForall(substEx(new, var, expr.body)) 
+# ^it's MORE COMPLICATED than this, due to the fact that, INTO THE SCOPE, Loc's HAVE A MEANING already...
+
+
 function typesynth(gamma::Context, expr::EAbs)::TypesynthRes 
     lgamma, lexpr = length(gamma), expr.body |> arity
     alphas = [CExists() for i in 1:lexpr] 
@@ -484,29 +574,61 @@ function typesynth(gamma::Context, expr::EAbs)::TypesynthRes
     beta = TExists(lgamma + lexpr + 1)
 
     delta = vcat(gamma, alphas, [CExists()]) # alphaS, beta
-    tc = typecheck(
-        vcat(delta, x2s), 
-        subst(Array{Expr}(newlocs), expr.body), # var of type alpha   
-        # but isn't just alpha enough????????? -> I'm going with NO, now!! (because you would lose EQUALITY, i dunno if it's a thing)
-        beta) # beta
-    (typeof(tc) === Error) ? tc : (TFun(TProd(texists), beta), tc)
+    a1 = vcat(delta, x2s)
+    a2 = subst(Array{Expr}(newlocs), expr.body) # var of type alpha   
+    # but isn't just alpha enough????????? -> I'm going with NO, now!! (because you would lose EQUALITY, i dunno if it's a thing)
+    a3 = beta
+    tc = typecheck(a1, a2, a3)
+
+    # SIMPLER/ ORIGINAL
+    return (typeof(tc) === Error) ? tc : (TFun(TProd(texists), beta), tc)
+    
+    # FULL Damas-Milner
+    # -- ->I=> Full Damas-Milner type inference
+    # are we just assuming it's never an error?
+    @assert (! (tc isa Error)) tc
+
+    # IDEA: first 1. you APPPLY all (TExists pointing to) CExistsSolved's directly into return type, second 2. you Turn all REMAINING (TExists pointing to) CExist's into TLoc's !!!
+
+    #1.
+    # idea: rn left-to-right dependencies are BROKEN, but EVEN IN THE WORST CASE, i'm NEVER doing the thing of 
+    # CHANGING WHAT COMES BEFORE...
+    # SO, lgamma is a GOOD INFORMATION about where to split!!!
+    (delta, delta2) = tc[1:lgamma], tc[lgamma+1:end]
+    texists = [TExists(i) for i in 1:lexpr] # pointing to alphas IN delta2 
+    beta = TExists(lexpr + 1)
+    #^ yes right, the equivalent ones above are superfluous // OK no problem at all w/ texists, but beta ????
+    tau = apply(delta2, TFun(TProd(texists), beta))
+    
+    #2.
+    evars = [i for (i, c) in enumerate(delta2) if c isa CExists]
+    for (i_newloc, i_exists) in enumerate(evars)
+        tau = substEx(TLoc(i_newloc), i_exists, tau)
+    end
+    return (TForall(tau), tc)# or delta? Don't think gamma...
 end
+
 
 typesynth(Context([CVar(TGlob("K"))]), EAbs(EGlobAuto("g")))
-typesynth(Context([CVar(TGlob("K"))]), EAbs(ELoc(1))) # buuh :(
-c, e = Context([CVar(TGlob("K"))]), EAbs(EAnno(ELoc(1), TGlob("A")))
+gamma = Context([CVar(TGlob("K"))])
+expr = EAbs(ELoc(1))
+typesynth(gamma, expr) #i mean it KINDA works....
+
 res = (TFun(TProd([TExists(2)]), TExists(3)), Context([CVar(TGlob("K")), CExistsSolved(TGlob("A")), CExistsSolved(TGlob("A")), CVar(TExists(2))]))
-typesynth(c, e) == res # yes they are
+@assert typesynth(Context([CVar(TGlob("K"))]), EAbs(EAnno(ELoc(1), TGlob("A")))) == res # yes they are
 
+@assert typesynth(Context([]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TGlob("G")]))))) == (TForall(TFun(TProd([TLoc(1)]), TProd([TLoc(1), TGlob("G")]))), ContextElem[])
+typesynth(Context([CExists()]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TExists(1)])))))
 
-function typesynth(gamma::Context, expr::EApp)::TypesynthRes 
-    res = typesynth(gamma, expr.arg)  # OR func ?????????????? <------------------------------
+function typesynth(gamma::Context, expr::EApp)::TypesynthRes
+    res = typesynth(gamma, expr.func)
     if (typeof(res) === Error) return res end
     (a, theta) = res
-    typeapplysynth(theta, apply(theta, a), expr.func) # OR arg ????????????? <------------------------------
+    typeapplysynth(theta, apply(theta, a), expr.arg)
 end
 
-
+@assert typesynth(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f"))) |> (x->apply(x[2], x[1])) == TProd([TGlob("F"), TGlob("G")])
+typesynth(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f")))
 
 # -- | Type application synthesising
 # --   typeapplysynth Γ A e = (C, Δ) <=> Γ |- A . e =>> C -| Δ
@@ -520,16 +642,13 @@ function typeapplysynth(gamma::Context, typ::TForall, expr::Expr)::TypesynthRes
     )
 end
 
-# --------------------------- MISSING
 function typeapplysynth(gamma::Context, typ::TExists, expr::Expr)::TypesynthRes
-    return Error("I cant do this :(, $(typ|>pr), $(expr|>pr)")
     lgamma = length(gamma)
     #                   alpha2, alpha1
     c = vcat(gamma, [CExists(), CExists(), CExistsSolved(TFun(TExists(lgamma + 2), TExists(lgamma + 1)))])
     delta = typecheck(c, expr, TExists(lgamma + 2))
     (typeof(delta) === Error) ? delta : (TExists(lgamma + 1), delta)
 end
-# ---------------------------
 
 function typeapplysynth(gamma::Context, typ::TFun, expr::Expr)::TypesynthRes
     res = typecheck(gamma, expr, typ.inputs)
