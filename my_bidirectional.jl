@@ -60,14 +60,14 @@ Base.:(==)(a::TProd, b::TProd) = Base.:(==)(a.data, b.data)
 Base.:(==)(a::TFun, b::TFun) = Base.:(==)(a.inputs, b.inputs) & Base.:(==)(a.t2, b.t2)
 Base.:(==)(a::TForall, b::TForall) = Base.:(==)(a.body, b.body)
 
-pr(x::EGlob)::String = "$(x.n)"
+pr(x::EGlob)::String = "$(x.n)"#: $(pr(x.type))"
 pr(x::ELoc)::String = "$(x.n)"
 pr(x::EUnit)::String = "T" 
 # pr(x::EApp)::String = "(" * pr(x.arg) * " ." * pr(x.func) *")" # join(x.func .|> pr, ".")
 pr(x::EApp)::String = (arg = length(x.arg.data)!=1 ? (x.arg |> pr) : (x.arg.data[1] |> pr); pr(x.func) * "(" * arg * ")")
 pr(x::EAbs)::String = "/{$(pr(x.body))}" 
 pr(x::EProd)::String = "[$(join(x.data .|> pr, ", ")),]" 
-pr(x::EAnno)::String = "$(pr(x.expr)): $(pr(x.type))" 
+pr(x::EAnno)::String = "($(pr(x.expr)):$(pr(x.type)))" 
 
 
 subst(news::Array{Expr}, t::EGlob)::Expr= t 
@@ -132,7 +132,7 @@ pr(x::TLoc)::String = "T$(x.var)"
 pr(x::TUnit)::String = "UU"
 pr(x::TExists)::String = "∃$(x.var)"
 pr(x::TForall)::String = "∀($(x.body |> pr))"
-pr(x::TFun)::String = ( arg = length(x.inputs.data)!=1 ? (x.inputs |> pr) : (x.inputs.data[1] |> pr); "($(arg)->$(x.t2|>pr))" )
+pr(x::TFun)::String = ( arg = ((!(x.inputs isa TProd)) | (length(x.inputs.data)!=1)) ? (x.inputs |> pr) : (x.inputs.data[1] |> pr); "($(arg)->$(x.t2|>pr))" )
 pr(x::TProd)::String = "[$(join(x.data .|> pr, " x "))]" 
 
 subst(news::Array{Type_}, t::TGlob)::Type_= t 
@@ -177,7 +177,7 @@ EAnno(ELoc(2), TExists(1))
 
 SType1 = TFunAuto(TGlob("X"), TGlob("A"))
 SType2 = TFunAuto(TGlob("X"), TFunAuto(TGlob("A"), TGlob("B")))
-SType = TFunAuto(TProd([SType2, SType1, TGlob("X")]), TGlob("B"))
+SType = TFun(TProd([SType2, SType1, TGlob("X")]), TGlob("B"))
 
 @assert SType |> pr == "([(X->(A->B)) x (X->A) x X]->B)"
 
@@ -204,7 +204,12 @@ struct CExists <: ContextElem end # difference w/ CForall ??? # the difference i
 struct CExistsSolved <: ContextElem
     type::Type_ # type (meaning) of the Tvar referring to this position.
 end
-struct CMarker <: ContextElem end # K now i'm lost. "scoping reasons", he says
+# struct CMarker <: ContextElem end # K now i'm lost. "scoping reasons", he says
+
+pr(c::CForall) = "CForall()"
+pr(c::CVar) = "CVar($(c.type|>pr))"
+pr(c::CExists) = "CExists()"
+pr(c::CExistsSolved) = "CExistsSolved($(c.type|>pr))"
 
 # i REALLY wish i didn't need these :(
 # what these do is: they DEREFERENCE ALL TExists IN THE GAMMA, returning the RESULTING Type_ IF solved, or TExist again if unsolved
@@ -218,11 +223,31 @@ apply(gamma:: Context, typ::TFun)::Type_ = TFun(apply(gamma, typ.inputs), apply(
 function apply(gamma:: Context, typ::TExists)::Type_
     # the IDEA would be that this includes findSolved, idk if this turning a O(x) into O(0) means i'm missing something....
     if  typ.var > length(gamma)
+        throw(DomainError("Undefined local var $(typ.var), n args given = $(length(gamma)) in $(gamma)"))
+    elseif !(gamma[typ.var] isa CExistsSolved || gamma[typ.var] isa CExists)
+        throw(DomainError("Wrong u lil shit, how can you not know, $(typ.var), should point to a CExists or CExistsSolved in this gamma with $(length(gamma)) elems: $(gamma)"))
+    elseif gamma[typ.var] isa CExistsSolved
+        apply(gamma, gamma[typ.var].type)
+    else
+        typ
+    end
+end
+apply(gamma:: Context, typ::TUnit, lev_to_start_from:: Index)::Type_ = typ
+apply(gamma:: Context, typ::TGlob, lev_to_start_from:: Index)::Type_ = typ
+apply(gamma:: Context, typ::TLoc, lev_to_start_from:: Index)::Type_ = typ
+apply(gamma:: Context, typ::TForall, lev_to_start_from:: Index)::Type_ = TForall(apply(gamma, typ.body, lev_to_start_from))
+apply(gamma:: Context, typ::TProd, lev_to_start_from:: Index)::Type_ = TProd(typ.data .|> (x->apply(gamma, x, lev_to_start_from)))
+apply(gamma:: Context, typ::TFun, lev_to_start_from:: Index)::Type_ = TFun(apply(gamma, typ.inputs, lev_to_start_from), apply(gamma, typ.t2, lev_to_start_from))
+function apply(gamma:: Context, typ::TExists, lev_to_start_from:: Index)::Type_
+    # the IDEA would be that this includes findSolved, idk if this turning a O(x) into O(0) means i'm missing something....
+    if typ.var < lev_to_start_from
+        typ
+    elseif  typ.var > length(gamma)
         throw(DomainError("Undefined local var $(typ.var), n args given = $(length(gamma))"))
     elseif !(gamma[typ.var] isa CExistsSolved || gamma[typ.var] isa CExists)
         throw(DomainError("Wrong u lil shit, $(typ.var), should point to a CExists or CExistsSolved in $(length(gamma)), how can you not know"))
     elseif gamma[typ.var] isa CExistsSolved
-        apply(gamma, gamma[typ.var].type)
+        apply(gamma, gamma[typ.var].type,lev_to_start_from)
     else
         typ
     end
@@ -397,7 +422,7 @@ subtype(gamma::Context, a, b) = Error("subtype, don't yet know what to do with: 
 subtype(Context([]), TGlob("G"), TForall(TLoc(1)))
 subtype(Context([]), TGlob("G"), TForall(TGlob("G")))
 subtype(Context([]), TGlob("G"), TForall(TGlob("F")))
-subtype(Context([CExists()]), TExists(1), TForall(TExists(1)))
+# subtype(Context([CExists()]), TExists(1), TForall(TExists(1)))
 
 subtype(Context([]), TForall(TGlob("F")), TForall(TLoc(1)))
 subtype(Context([]), TForall(TLoc(1)), TForall(TGlob("F")))
@@ -424,19 +449,19 @@ function typecheck(gamma::Context, expr, typ::TForall)::TypecheckRes
         vcat(gamma, [CForall() for i in 1:ltyp]), 
         expr,
         subst(Array{Type_}([TLoc(i + lgamma) for i in 1:ltyp]), typ.body))
-    (typeof(res) !== Error) ? gamma : res
+    (typeof(res) !== Error) ? res[1:lgamma] : res
 end
 
 @assert typecheck(Context([]), EUnit(), TForall(TForall(TUnit()))) == Context([])
 
 function typecheck(gamma::Context, expr::EAbs, typ::TFun)::TypecheckRes
     lgamma, lexpr = length(gamma), expr.body |> arity # we DON'T want this to exist
-    if lexpr > length(typ.inputs.data) return Error("$(expr |> pr) has too many vars to be of type $(typ |> pr)") end
+    if lexpr > length(typ.inputs.data) return Error("$(expr |> pr) has too many vars to be of type $(typ |> pr) (the first has $(lexpr) vars, the second $(length(typ.inputs.data)))") end
     res = typecheck(
         vcat(gamma, [CVar(t) for t in typ.inputs.data]), 
         subst(Array{Expr}([ELoc(i + lgamma) for i in 1:lexpr]), expr.body),
         typ.t2)
-    (typeof(res) !== Error) ? gamma : res
+    (typeof(res) !== Error) ? res[1:lgamma] : res
 end
 # function typecheck(gamma::Context, expr::EAbs, typ::TFunPoly)::TypecheckRes
     # How different????????
@@ -483,8 +508,8 @@ function typecheck(gamma::Context, expr, typ)::TypecheckRes
     (a, theta) = res
     # subtype(theta, apply(theta, a), apply(theta, typ)) # <------------ THING
     a2, typ2 = apply(theta, a), apply(theta, typ)
-    println("after applying $(theta) to $(a) you get: $(a2)")
-    println("after applying $(theta) to $(typ) you get: $(typ2)")
+    # println("after applying $(theta) to $(a) you get: $(a2)")
+    # println("after applying $(theta) to $(typ) you get: $(typ2)")
     theta2 = subtype(theta, a2, typ2)
     if theta2 === nothing
         Error("Doesn't typecheck: $(expr |> pr) is of type $(a2 |> pr) not $(typ2 |> pr) in $(gamma)")
@@ -554,13 +579,13 @@ function typesynth(gamma::Context, expr::EUnit)::TypesynthRes
 end
 
 
-substEx(new::Type, var::Index, expr::TUnit)::Type = expr
-substEx(new::Type, var::Index, expr::TLoc)::Type = expr
-substEx(new::Type, var::Index, expr::TGlob)::Type = expr
-substEx(new::Type, var::Index, expr::TProd)::Type = TProd(expr.data .|> (x->substEx(new, var, x)))
-substEx(new::Type, var::Index, expr::TFun)::Type = TFun(substEx(new, var, expr.inputs), substEx(new, var, expr.t2))
-substEx(new::Type, var::Index, expr::TExists)::Type = (expr.var == var ? new : expr)
-# substEx(new::Type, var::Index, expr::TForall)::Type = TForall(substEx(new, var, expr.body)) 
+substEx(new::Type_, var::Index, expr::TUnit)::Type_ = expr
+substEx(new::Type_, var::Index, expr::TLoc)::Type_ = expr
+substEx(new::Type_, var::Index, expr::TGlob)::Type_ = expr
+substEx(new::Type_, var::Index, expr::TProd)::Type_ = TProd(expr.data .|> (x->substEx(new, var, x)))
+substEx(new::Type_, var::Index, expr::TFun)::Type_ = TFun(substEx(new, var, expr.inputs), substEx(new, var, expr.t2))
+substEx(new::Type_, var::Index, expr::TExists)::Type_ = (expr.var == var ? new : expr)
+# substEx(new::Type_, var::Index, expr::TForall)::Type_ = TForall(substEx(new, var, expr.body)) 
 # ^it's MORE COMPLICATED than this, due to the fact that, INTO THE SCOPE, Loc's HAVE A MEANING already...
 
 
@@ -573,15 +598,13 @@ function typesynth(gamma::Context, expr::EAbs)::TypesynthRes
     newlocs = [ELoc(lgamma + lexpr + 1 + i) for i in 1:lexpr] 
     beta = TExists(lgamma + lexpr + 1)
 
-    delta = vcat(gamma, alphas, [CExists()]) # alphaS, beta
-    a1 = vcat(delta, x2s)
+    delta = vcat(gamma, alphas, [CExists()], x2s) # alphaS, beta, vars
     a2 = subst(Array{Expr}(newlocs), expr.body) # var of type alpha   
     # but isn't just alpha enough????????? -> I'm going with NO, now!! (because you would lose EQUALITY, i dunno if it's a thing)
-    a3 = beta
-    tc = typecheck(a1, a2, a3)
+    tc = typecheck(delta, a2, beta)
 
     # SIMPLER/ ORIGINAL
-    return (typeof(tc) === Error) ? tc : (TFun(TProd(texists), beta), tc)
+    #return (typeof(tc) === Error) ? tc : (TFun(TProd(texists), beta), tc)
     
     # FULL Damas-Milner
     # -- ->I=> Full Damas-Milner type inference
@@ -594,31 +617,33 @@ function typesynth(gamma::Context, expr::EAbs)::TypesynthRes
     # idea: rn left-to-right dependencies are BROKEN, but EVEN IN THE WORST CASE, i'm NEVER doing the thing of 
     # CHANGING WHAT COMES BEFORE...
     # SO, lgamma is a GOOD INFORMATION about where to split!!!
-    (delta, delta2) = tc[1:lgamma], tc[lgamma+1:end]
-    texists = [TExists(i) for i in 1:lexpr] # pointing to alphas IN delta2 
-    beta = TExists(lexpr + 1)
+    texists = [TExists(i + lgamma) for i in 1:lexpr] # pointing to alphas IN delta2 
+    beta = TExists(lexpr + lgamma + 1)
     #^ yes right, the equivalent ones above are superfluous // OK no problem at all w/ texists, but beta ????
-    tau = apply(delta2, TFun(TProd(texists), beta))
+    tau = apply(tc, TFun(TProd(texists), beta), lgamma+1)
     
+    (delta, delta2) = tc[1:lgamma], tc[lgamma+1:end]
     #2.
-    evars = [i for (i, c) in enumerate(delta2) if c isa CExists]
+    evars = [i + lgamma for (i, c) in enumerate(delta2) if c isa CExists]
     for (i_newloc, i_exists) in enumerate(evars)
         tau = substEx(TLoc(i_newloc), i_exists, tau)
     end
-    return (TForall(tau), tc)# or delta? Don't think gamma...
+    return (TForall(tau), delta)# or tc? Don't think gamma...
 end
 
 
 typesynth(Context([CVar(TGlob("K"))]), EAbs(EGlobAuto("g")))
 gamma = Context([CVar(TGlob("K"))])
 expr = EAbs(ELoc(1))
-typesynth(gamma, expr) #i mean it KINDA works....
+@assert typesynth(gamma, expr) == (TForall(TFun(TProd(Type_[TLoc(1)]), TLoc(1))), ContextElem[CVar(TGlob("K"))]) 
 
-res = (TFun(TProd([TExists(2)]), TExists(3)), Context([CVar(TGlob("K")), CExistsSolved(TGlob("A")), CExistsSolved(TGlob("A")), CVar(TExists(2))]))
-@assert typesynth(Context([CVar(TGlob("K"))]), EAbs(EAnno(ELoc(1), TGlob("A")))) == res # yes they are
+@assert typesynth(Context([CVar(TGlob("K"))]), EAbs(EAnno(ELoc(1), TGlob("A")))) == (TForall(TFun(TProd(Type_[TGlob("A")]), TGlob("A"))), ContextElem[CVar(TGlob("K"))])
 
 @assert typesynth(Context([]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TGlob("G")]))))) == (TForall(TFun(TProd([TLoc(1)]), TProd([TLoc(1), TGlob("G")]))), ContextElem[])
-typesynth(Context([CExists()]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TExists(1)])))))
+c = Context([CExists()])
+e = EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TExists(1)]))))
+@assert typesynth(c, e) == (TForall(TFun(TProd(Array{Type_}([TLoc(1)])), TProd(Array{Type_}([TLoc(1), TExists(1)])))), ContextElem[CExistsSolved(TGlob("G"))])
+EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TExists(1)])))) |>pr
 
 function typesynth(gamma::Context, expr::EApp)::TypesynthRes
     res = typesynth(gamma, expr.func)
@@ -627,23 +652,21 @@ function typesynth(gamma::Context, expr::EApp)::TypesynthRes
     typeapplysynth(theta, apply(theta, a), expr.arg)
 end
 
-@assert typesynth(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f"))) |> (x->apply(x[2], x[1])) == TProd([TGlob("F"), TGlob("G")])
-typesynth(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f")))
-
 # -- | Type application synthesising
 # --   typeapplysynth Γ A e = (C, Δ) <=> Γ |- A . e =>> C -| Δ
 
 function typeapplysynth(gamma::Context, typ::TForall, expr::Expr)::TypesynthRes
     lgamma, ltyp = length(gamma), typ.body |> arity # we DON'T want this to exist :(
-    typeapplysynth(
-        vcat(gamma, [CExists() for i in 1:ltyp]), 
-        subst(Array{Type_}([TExists(i + lgamma) for i in 1:ltyp]), typ.body),
-        expr,
-    )
+        typeapplysynth(
+            vcat(gamma, [CExists() for i in 1:ltyp]), 
+            subst(Array{Type_}([TExists(i + lgamma) for i in 1:ltyp]), typ.body),
+            expr,
+            )
 end
 
 function typeapplysynth(gamma::Context, typ::TExists, expr::Expr)::TypesynthRes
     lgamma = length(gamma)
+    println("yep.. Definitely happing")
     #                   alpha2, alpha1
     c = vcat(gamma, [CExists(), CExists(), CExistsSolved(TFun(TExists(lgamma + 2), TExists(lgamma + 1)))])
     delta = typecheck(c, expr, TExists(lgamma + 2))
@@ -654,10 +677,62 @@ function typeapplysynth(gamma::Context, typ::TFun, expr::Expr)::TypesynthRes
     res = typecheck(gamma, expr, typ.inputs)
     (typeof(res) === Error) ? res : (typ.t2, res)
 end
-    
+
 function typeapplysynth(gamma::Context, typ, expr::Expr)::TypesynthRes
     Error("typeapplysynth: don't know what to do with: $(gamma), $(typ), $(expr)")
 end
 
 
+# Combinator S:
+
+S = EAbs(EAppAuto(EAppAuto(ELoc(1), ELoc(3)), EAppAuto(ELoc(2), ELoc(3))))
+pr(S)
+
+reduc(EAbs(EApp(S, EProd([EGlobAuto("f"), EGlobAuto("g"), EGlobAuto("x")])))) |> pr
+
+f = EAbs(ELoc(1))
+g = EAbs(EGlobAuto("y"))
+reduc(EApp(S, EProd([f, g, EGlobAuto("x")]))) |> pr
+
+SType1 = TFunAuto(TGlob("X"), TGlob("A"))
+SType2 = TFunAuto(TGlob("X"), TFunAuto(TGlob("A"), TGlob("B")))
+SType = TFun(TProd([SType2, SType1, TGlob("X")]), TGlob("B"))
+
+@assert SType |> pr == "([(X->(A->B)) x (X->A) x X]->B)"
+
+EGlob("S", TFunAuto(TGlob("A"), TGlob("B"))) |> pr
+
+# Now polymorphicly:
+SType1P = TFunAuto(TLoc(3), TLoc(2))
+SType2P = TFunAuto(TLoc(3), TFunAuto(TLoc(2), TLoc(1)))
+STypeP = TForall(TFun(TProd([SType2P, SType1P, TLoc(3)]), TLoc(1)))
+
+@assert STypeP |> pr == "∀(([(T3->(T2->T1)) x (T3->T2) x T3]->T1))"
+
+
 typecheck(Context([]), S, STypeP)
+typecheck(Context([]), S, SType)
+
+S = EAbs(EAppAuto(EAppAuto(EAnno(ELoc(1), TExists(1)), EAnno(ELoc(3), TGlob("X"))), EAnno(EAppAuto(EAnno(ELoc(2),TExists(2)), ELoc(3)), TGlob("A"))))
+S |> pr
+SType |> pr
+cres = typecheck(Context([CExists(), CExists()]), S, SType) 
+println("Type of $(S |> pr) is confirmed $(SType |> pr) in context $(cres .|> pr) !!!")
+
+tres, cres = typesynth(Context([CExists(), CExists()]), S)
+println("Type of $(S |> pr) is generated $(tres |> pr) in context $(cres .|> pr) !!!")
+
+
+
+
+
+
+@assert typesynth(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f"))) |> (x->apply(x[2], x[1])) == TProd([TGlob("F"), TGlob("G")])
+typesynth(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f")))
+        
+@assert typesynth(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f"))) |> (x->apply(x[2], x[1])) == TProd([TGlob("F"), TGlob("G")])
+typesynth(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f")))
+
+typecheck(Context([]), EProd([EGlobAuto("f"), EGlobAuto("g")]), TForall(TProd([TLoc(1), TLoc(2)])))
+c, e, t = Context([CExists(), CVar(TExists(1))]), EProd([ELoc(2)]), TForall(TProd([TLoc(1)]))
+typecheck(c, e, t)
