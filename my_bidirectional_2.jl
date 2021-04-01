@@ -506,6 +506,7 @@ TypingRes = Union{TypecheckRes, TypesynthRes}
 # pr(TCont(B("3")))
 
 abstract type Typable end
+abstract type Typed end
 # struct TypeCheckableUnit <: Typable
 #     gamma::Context
 #     expr::EUnit
@@ -584,18 +585,35 @@ struct TypeCheckableToClip <: Typable  # First secret Feature
     tcable::TypeCheckable
     lgamma::Index
 end
+struct TypeCheckedToClip <: Typed  # First secret Feature
+    tcheckRes::Context
+    lgamma::Index
+end
 struct TypeCheckableToMakeSynth <: Typable  # Second secret Feature
     type::Type_
     tcable::TypeCheckable
+end
+struct TypeCheckedToMakeSynth <: Typed  # Second secret Feature
+    type::Type_
+    tcheckRes::Context
 end
 struct TypeSynthableToMakeCheck <: Typable  # Third secret Feature
     type::Type_
     tsable::TypeSynthable
 end
+struct TypeSynthedToMakeCheck <: Typed  # Third secret Feature
+    type::Type_
+    tsynthResC::Context
+    tsynthResT::Type_
+end
 
 struct ReturnTFunFlag
     lexpr::Index
     lgamma::Index
+end
+struct TypeCheckedToFunc <: Typed  # Fourth secret Feature
+    tcheckRes::Context
+    f::ReturnTFunFlag
 end
 struct TypeCheckableToFunc <: Typable  # Fourth secret Feature
     tcable::TypeCheckable
@@ -619,29 +637,22 @@ function typer(gamma::Context, expr::EUnit, typ::TUnit)::TypecheckRes
 end
 
 # First Secret Feature: if lgamma is present, Clip Away context if not Error!!
-# YES, it's recursive, but that's Not The Point. It's not a problem.
-function typer(sf1::TypeCheckableToClip)::TypecheckRes
-    res = typer(sf1.tcable)
-    (typeof(res) !== Error) ? res[1:sf1.lgamma] : res
+function typer(sf1::TypeCheckedToClip)::TypecheckRes
+    sf1.tcheckRes[1:sf1.lgamma]
 end
 
 # Second Secret Feature: if typ is present, Decorate context if not Error!!
-# YES, it's recursive, but that's Not The Point. It's not a problem.
 # Also note how decorator is passed FIRST to distinguish from something you typecheck
 # this Secret Feature turns a checked type into a "synthed" one.
 # Yes, in real use type always == tcable.typ. I don't care now.
-function typer(sf2::TypeCheckableToMakeSynth)::TypesynthRes
-    res = typer(sf2.tcable)
-    (typeof(res) !== Error) ? (sf2.type, res) : res 
+function typer(sf2::TypeCheckedToMakeSynth)::TypesynthRes
+    (sf2.type, sf2.tcheckRes) 
 end
 
 #Third Secret Feature: Apply a Subtyping check to the result of a typeSynth.
-# YES, it's recursive, but that's Not The Point. It's not a problem.
 # this Secret Feature turns a synthed type into a checked one, if subtypes.
-function typer(sf3::TypeSynthableToMakeCheck)::TypecheckRes
-    res = typer(sf3.tsable)
-    if (typeof(res) === Error) return res end
-    (a, theta) = res
+function typer(sf3::TypeSynthedToMakeCheck)::TypecheckRes
+    (a, theta) = sf3.tsynthResT, sf3.tsynthResC
     # subtype(theta, apply(theta, a), apply(theta, typ)) # <------------ THING
     a2, typ2 = apply(theta, a), apply(theta, sf3.type)
     # println("after applying $(theta) to $(a) you get: $(a2)")
@@ -657,9 +668,8 @@ function typer(sf3::TypeSynthableToMakeCheck)::TypecheckRes
 end
 
 # Fourth Secret Feature: takes a context TO CHECK IN ABS MODE and returns THE CORRESPONDING TFORALL(TFUN).
-# YES, it's recursive, but that's Not The Point. It's not a problem.
-function typer(sf4::TypeCheckableToFunc)::TypesynthRes
-    res = typer(sf4.tcable)
+function typer(sf4::TypeCheckedToFunc)::TypesynthRes
+    res = sf4.tcheckRes
     # res is the TYPECHECKED CONTEXT
 
     # SIMPLER/ ORIGINAL
@@ -725,7 +735,6 @@ function typer(gamma::Context, expr::EProd)::TypesynthRes
         res = typer(gamma, e)
         if res isa Error return res end
         (t, gamma) = res
-        push!(types, t)
     end
     (TProd(types), gamma)
 end
@@ -736,7 +745,8 @@ function typer(gamma::Context, expr::EApp)::TypesynthRes
     res = typer(tsable)
     if (typeof(res) === Error) return res end
     (a, theta) = res
-    typer(theta, apply(theta, a), expr.arg)
+    # # # ress = typer(theta, apply(theta, a), expr.arg)
+    (theta, apply(theta, a), expr.arg)
 end
 ##################################################################
 
@@ -744,47 +754,56 @@ end
 
 
 # typecheck forall
-function typer(gamma::Context, expr, typ::TForall)::TypecheckRes
+function typer(gamma::Context, expr, typ::TForall)::Typable
     lgamma, ltyp = length(gamma), typ.body |> arity # we DON'T want this to exist :(
     tcable = TypeCheckable(
         vcat(gamma, [CForall() for i in 1:ltyp]), 
         expr,
         subst(Array{Type_}([TLoc(i + lgamma) for i in 1:ltyp]), typ.body)
     )
-    typer(TypeCheckableToClip(tcable, lgamma))#first secret feat
+    # # # ress = typer(TypeCheckableToClip(tcable, lgamma))#first secret feat
+    TypeCheckableToClip(tcable, lgamma)
 end
 
-function typer(gamma::Context, expr::EAbs, typ::TFun)::TypecheckRes
+function typer(gamma::Context, expr::EAbs, typ::TFun)::Typable
     lgamma, lexpr = length(gamma), expr.body |> arity # we DON'T want this to exist
     if lexpr > length(typ.inputs.data) return Error("$(expr |> pr) has too many vars to be of type $(typ |> pr) (the first has $(lexpr) vars, the second $(length(typ.inputs.data)))") end
     tcable = TypeCheckable(
         vcat(gamma, [CVar(t) for t in typ.inputs.data]), 
         subst(Array{Expr}([ELoc(i + lgamma) for i in 1:lexpr]), expr.body),
         typ.t2)
-    typer(TypeCheckableToClip(tcable, lgamma)) #first secret feat
+    # # # ress = typer(TypeCheckableToClip(tcable, lgamma)) #first secret feat
+    TypeCheckableToClip(tcable, lgamma)
 end
 # IMPORTANT NOTE: it DOES NOT return the ASSUMPTION WITHIN THE body    
 
-function typer(gamma::Context, expr::EAnno)::TypesynthRes 
+function typer(gamma::Context, expr::EAnno)::Typable 
     tcable = TypeCheckable(
         gamma, expr.expr, expr.type)
-    typer(TypeCheckableToMakeSynth(expr.type, tcable)) # this Second Secret Feature turns a checked type into a "synthed" one
+    # # # ress = typer(TypeCheckableToMakeSynth(expr.type, tcable)) # this Second Secret Feature turns a checked type into a "synthed" one
+    TypeCheckableToMakeSynth(expr.type, tcable)
 end
 
-function typer(gamma::Context, expr, typ::Type_)::TypecheckRes # check
+function typer(gamma::Context, expr, typ::Type_)::Typable # check
     # this is good
     tsable = TypeSynthable(gamma, expr)
-    typer(TypeSynthableToMakeCheck(typ, tsable))
+    # # # ress = typer(TypeSynthableToMakeCheck(typ, tsable))
+    TypeSynthableToMakeCheck(typ, tsable)
 end
 
 
+# (typeof(res) !== Error) ? res[1:sf1.lgamma] : res
+
+
+# typersecond's CONSUME stack elements, YES. But where do the result go ???
+# idea: the result is NOT the prev element in the stack (duh, y would it), instead, new meaning is produced, IN PARTICULAR (but not only), via the MEANING CARRYING TOOL, Context.
 # -- | Type synthesising:
 # --   typer Γ e = (A, Δ) <=> Γ |- e => A -| Δ
 
 # typer(Context([CVar(TGlob("G"))]), EAnno(EGlobAuto("g"), TExists(1))) # SHOULD raise error
 # ^ note that it WORKS, it just returns TExists(1) again
 
-function typer(gamma::Context, expr::EAbs)::TypesynthRes 
+function typer(gamma::Context, expr::EAbs)::Typable 
     lgamma, lexpr = length(gamma), expr.body |> arity
     alphas = [CExists() for i in 1:lexpr] 
     x2s = [CVar(TExists(lgamma + i)) for i in 1:lexpr] # x2:alpha
@@ -797,51 +816,51 @@ function typer(gamma::Context, expr::EAbs)::TypesynthRes
     a2 = subst(Array{Expr}(newlocs), expr.body) # var of type alpha   
     # but isn't just alpha enough????????? -> I'm going with NO, now!! (because you would lose EQUALITY, i dunno if it's a thing)
     tcable = TypeCheckable(delta, a2, beta)
-    typer(TypeCheckableToFunc(tcable, ReturnTFunFlag(lexpr, lgamma)))
+    # # # ress = typer(TypeCheckableToFunc(tcable, ReturnTFunFlag(lexpr, lgamma)))
+    TypeCheckableToFunc(tcable, ReturnTFunFlag(lexpr, lgamma))
 end
 
 # -- | Type application synthesising
 # --   typer Γ A e = (C, Δ) <=> Γ |- A . e =>> C -| Δ
 
-function typer(gamma::Context, typ::TForall, expr::Expr)::TypesynthRes
+function typer(gamma::Context, typ::TForall, expr::Expr)::Typable
     lgamma, ltyp = length(gamma), typ.body |> arity # we DON'T want this to exist :(
     tcable = TypeAppSynthable(
         vcat(gamma, [CExists() for i in 1:ltyp]), 
         subst(Array{Type_}([TExists(i + lgamma) for i in 1:ltyp]), typ.body),
         expr,
     )
-    typer(tcable)
+    # # # ress = typer(tcable)
+    tcable
 end
 
-function typer(gamma::Context, typ::TExists, expr::Expr)::TypesynthRes
+function typer(gamma::Context, typ::TExists, expr::Expr)::Typable
     lgamma = length(gamma)
     println("yep.. Definitely happing")
     #                   alpha2, alpha1
     tcable = TypeCheckable(
         vcat(gamma, [CExists(), CExists(), CExistsSolved(TFun(TExists(lgamma + 2), TExists(lgamma + 1)))]),
         expr, TExists(lgamma + 2))
-    typer(TypeCheckableToMakeSynth(TExists(lgamma + 1), tcable)) # This is the Second Secret Feature
+    # # # ress = typer(TypeCheckableToMakeSynth(TExists(lgamma + 1), tcable)) # This is the Second Secret Feature
+    TypeCheckableToMakeSynth(TExists(lgamma + 1), tcable)
 end
 
-function typer(gamma::Context, typ::TFun, expr::Expr)::TypesynthRes
+function typer(gamma::Context, typ::TFun, expr::Expr)::Typable
     tcable = TypeCheckable(gamma, expr, typ.inputs)
-    typer(TypeCheckableToMakeSynth(typ.t2, tcable)) # This is the Second Secret Feature
+    # # # ress = typer(TypeCheckableToMakeSynth(typ.t2, tcable)) # This is the Second Secret Feature
+    TypeCheckableToMakeSynth(typ.t2, tcable)
 end
 
-function TypeSynthExecutor(c::Context, e::Expr)::TypesynthRes
-    typable = TypeSynthable(c, e)
-    while true
-        typable_ = typer(typable)
-        # ^ his can be: a Typable, or a TypesynthRes or TypeCheckRes directly (which means can be an error, too.)
-        if (typable_ isa Error) |  (typable_ isa Tuple{Type_, Context}) typable_ end
-        if (typable_ isa Context) throw(DomainError("huh...... $(typable_)")) end
-        
-        @assert typable_ isa Typable
-        # return typer(typable) # This uses a Secret Feature!
-        typable = typable_
-    end
-    n
-end
+
+
+gstack = []
+
+
+
+
+
+
+
 
 
 
@@ -862,36 +881,80 @@ end
 @assert subtype(Context([]), TForall(TFunAuto(TLoc(1), TLoc(2))), TFunAuto(TGlob("A"), TGlob("B"))) == Context([])
 @assert subtype(Context([CExists()]), TForall(TExists(1)), TGlob("A")) == Context([CExistsSolved(TGlob("A"))])
 @assert subtype(Context([CExists()]), TForall(TFunAuto(TLoc(1), TExists(1))), TFunAuto(TGlob("A"), TGlob("B"))) == Context([CExistsSolved(TGlob("B"))])
-@assert typer(Context([CForall()]), EUnit(), TUnit()) == Context([CForall()])
-@assert typer(Context([]), EUnit(), TForall(TForall(TUnit()))) == Context([])
-@assert typer(Context([]), EAbs(EUnit()), TFunAuto(TForall(TUnit()), TUnit())) == Context([])
-@assert typer(Context([]), EGlobAuto("g"), TGlob("F")) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"G\"), TGlob(\"F\")"
+@assert typerExecutor(Context([CForall()]), EUnit(), TUnit()) == Context([CForall()])
+@assert typerExecutor(Context([]), EUnit(), TForall(TForall(TUnit()))) == Context([])
+@assert typerExecutor(Context([]), EAbs(EUnit()), TFunAuto(TForall(TUnit()), TUnit())) == Context([])
+@assert typerExecutor(Context([]), EGlobAuto("g"), TGlob("F")) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"G\"), TGlob(\"F\")"
 @assert subst(Array{Expr}([ELoc(4)]), EAbs(ELoc(1)).body) == ELoc(4)
-@assert typer(Context([CVar(TGlob("F"))]), ELoc(1), TGlob("F")) == Context([CVar(TGlob("F"))])
-@assert typer(Context([CExistsSolved(TGlob("G"))]), EGlobAuto("g"), TExists(1)) == Context([CExistsSolved(TGlob("G"))])
-@assert typer(Context([CExistsSolved(TGlob("G"))]), EGlobAuto("f"), TExists(1)) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"F\"), TGlob(\"G\")"
-@assert typer(Context([CExists()]), EGlobAuto("g"), TExists(1)) == Context([CExistsSolved(TGlob("G"))])
-@assert typer(Context([CExists(), CVar(TLoc(1))]), ELoc(2), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TLoc(1))])
-@assert typer(Context([CExistsSolved(TGlob("F")), CVar(TGlob("F"))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CVar(TGlob("F"))])
-@assert typer(Context([CExistsSolved(TGlob("F")), CVar(TExists(1))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CVar(TExists(1))])
-@assert typer(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CVar(TExists(1))])
-@assert typer(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TExists(1)), TGlob("F")) == Context([CExistsSolved(TGlob("F")), CVar(TExists(1))])
-@assert typer(Context([CExists(), CVar(TLoc(1))]), EAnno(ELoc(2), TLoc(1)), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TLoc(1))])
-@assert typer(Context([CExists(), CVar(TExists(1))]), EProd([EAnno(ELoc(2), TGlob("G")), EAnno(ELoc(2), TExists(1))]), TProd([TExists(1), TGlob("G")])) == Context([CExistsSolved(TGlob("G")), CVar(TExists(1))])
-@assert typer(Context([CVar(TGlob("K"))]), EAnno(EGlobAuto("g"), TGlob("G"))) == (TGlob("G"), ContextElem[CVar(TGlob("K"))])
-@assert typer(Context([CVar(TGlob("K"))]), EAnno(EGlobAuto("f"), TGlob("G"))) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"F\"), TGlob(\"G\")" # shouldn't typer
-@assert typer(Context([CExistsSolved(TGlob("G"))]), EAnno(EGlobAuto("g"), TExists(1))) == (TExists(1), ContextElem[CExistsSolved(TGlob("G"))])
-@assert typer(Context([CVar(TGlob("K"))]), EAbs(EAnno(ELoc(1), TGlob("A")))) == (TForall(TFun(TProd(Type_[TGlob("A")]), TGlob("A"))), ContextElem[CVar(TGlob("K"))])
-@assert typer(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f"))) |> (x->apply(x[2], x[1])) == TProd([TGlob("F"), TGlob("G")])
-@assert typer(Context([]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TGlob("G")]))))) == (TForall(TFun(TProd([TLoc(1)]), TProd([TLoc(1), TGlob("G")]))), ContextElem[])
-@assert typer(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f"))) |> (x->apply(x[2], x[1])) == TProd([TGlob("F"), TGlob("G")])
-@assert typer(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TLoc(1)), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TExists(1))])
+@assert typerExecutor(Context([CVar(TGlob("F"))]), ELoc(1), TGlob("F")) == Context([CVar(TGlob("F"))])
+@assert typerExecutor(Context([CExistsSolved(TGlob("G"))]), EGlobAuto("g"), TExists(1)) == Context([CExistsSolved(TGlob("G"))])
+@assert typerExecutor(Context([CExistsSolved(TGlob("G"))]), EGlobAuto("f"), TExists(1)) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"F\"), TGlob(\"G\")"
+@assert typerExecutor(Context([CExists()]), EGlobAuto("g"), TExists(1)) == Context([CExistsSolved(TGlob("G"))])
+@assert typerExecutor(Context([CExists(), CVar(TLoc(1))]), ELoc(2), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TLoc(1))])
+@assert typerExecutor(Context([CExistsSolved(TGlob("F")), CVar(TGlob("F"))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CVar(TGlob("F"))])
+@assert typerExecutor(Context([CExistsSolved(TGlob("F")), CVar(TExists(1))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CVar(TExists(1))])
+@assert typerExecutor(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CVar(TExists(1))])
+@assert typerExecutor(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TExists(1)), TGlob("F")) == Context([CExistsSolved(TGlob("F")), CVar(TExists(1))])
+@assert typerExecutor(Context([CExists(), CVar(TLoc(1))]), EAnno(ELoc(2), TLoc(1)), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TLoc(1))])
+@assert typerExecutor(Context([CExists(), CVar(TExists(1))]), EProd([EAnno(ELoc(2), TGlob("G")), EAnno(ELoc(2), TExists(1))]), TProd([TExists(1), TGlob("G")])) == Context([CExistsSolved(TGlob("G")), CVar(TExists(1))])
+
+@assert typerExecutor(Context([CVar(TGlob("K"))]), EAnno(EGlobAuto("g"), TGlob("G"))) == (TGlob("G"), ContextElem[CVar(TGlob("K"))])
+@assert typerExecutor(Context([CVar(TGlob("K"))]), EAnno(EGlobAuto("f"), TGlob("G"))) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"F\"), TGlob(\"G\")" # shouldn't typerExecutor
+@assert typerExecutor(Context([CExistsSolved(TGlob("G"))]), EAnno(EGlobAuto("g"), TExists(1))) == (TExists(1), ContextElem[CExistsSolved(TGlob("G"))])
+@assert typerExecutor(Context([CVar(TGlob("K"))]), EAbs(EAnno(ELoc(1), TGlob("A")))) == (TForall(TFun(TProd(Type_[TGlob("A")]), TGlob("A"))), ContextElem[CVar(TGlob("K"))])
+@assert typerExecutor(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f"))) |> (x->apply(x[2], x[1])) == TProd([TGlob("F"), TGlob("G")])
+@assert typerExecutor(Context([]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TGlob("G")]))))) == (TForall(TFun(TProd([TLoc(1)]), TProd([TLoc(1), TGlob("G")]))), ContextElem[])
+@assert typerExecutor(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f"))) |> (x->apply(x[2], x[1])) == TProd([TGlob("F"), TGlob("G")])
+@assert typerExecutor(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TLoc(1)), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TExists(1))])
 
 gamma, expr = Context([CVar(TGlob("K"))]), EAbs(ELoc(1))
+r1 = typer(gamma, expr) #:: TypeCheckableToFunc
+r2 = typer(r1.tcable) # :: TypeSynthableToMakeCheck
+r3 = typer(r2.tsable) # :: TypesynthRes
+# r4 = typer(r3) # :: TypesynthRes
+r3 isa Typed
+
+table_2_ted(t::TypeSynthableToMakeCheck, res::TypesynthRes) = ((type, ctx) = res; TypeSynthedToMakeCheck(t.type, ctx, type))
+table_2_ted(t::TypeCheckableToClip, res::TypecheckRes) = TypeCheckedToClip(res, t.lgamma)
+table_2_ted(t::TypeCheckableToFunc, res::TypecheckRes) = TypeCheckedToFunc(res, t.f)
+table_2_ted(t::TypeCheckableToMakeSynth, res::TypecheckRes) = TypeCheckedToMakeSynth(t.type, res)
+table_2_ted(t::TypeCheckable, res::TypecheckRes) = res
+table_2_ted(t::TypeSynthable, res::TypesynthRes) = res
+# what now ???
+get_tcable(t::TypeCheckableToFunc) = t.tcable
+get_tcable(t::TypeCheckableToClip) = t.tcable
+get_tcable(t::TypeCheckableToMakeSynth) = t.tcable
+get_tcable(t::TypeSynthableToMakeCheck) = t.tsable
+get_tcable(t::TypeSynthable) = t
+get_tcable(t::TypeSynthable) = t
+
+TAble = Union{Typable, Typed, TypecheckRes, TypesynthRes}
+
+function typerExecutor(typable::Typable)
+    stack = Array{TAble}([typable])
+    push!(stack, typer(stack[end]))
+    while stack |> length > 1
+        # ^ his can be: a Typable, or a Typed, or TypeCheckRes directly (which means can be an error, too.)
+        if stack[end] isa Error return stack[end]
+        elseif stack[end] isa Typable push!(stack, typer(get_tcable(stack[end])))
+        elseif stack[end] isa Typed stack[end]=typer(stack[end])#secret feature!!!
+        else
+            res = pop!(stack)
+            stack[end] = table_2_ted(stack[end], res)
+        end
+        #println(stack)
+    end
+    stack[1]
+end
+typerExecutor(c::Context, e::Expr) = typerExecutor(TypeSynthable(c, e))
+typerExecutor(c::Context, e::Expr, t::Type_) = typerExecutor(TypeCheckable(c, e, t))
+
+typerExecutor(gamma, expr)
+
+
 @assert typer(gamma, expr) == (TForall(TFun(TProd(Type_[TLoc(1)]), TLoc(1))), ContextElem[CVar(TGlob("K"))]) 
 c, e = Context([CExists()]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TExists(1)]))))
 @assert typer(c, e) == (TForall(TFun(TProd(Array{Type_}([TLoc(1)])), TProd(Array{Type_}([TLoc(1), TExists(1)])))), ContextElem[CExistsSolved(TGlob("G"))])
-
 
 
 
