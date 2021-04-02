@@ -510,60 +510,60 @@ struct TypeCheckableToClip <: Typable  # First secret Feature
     tcable::TypeCheckable
     lgamma::Index
 end
-struct TypeCheckedToClip <: Typed  # First secret Feature
-    tcheckRes::Context
-    lgamma::Index
-end
 struct TypeCheckableToMakeSynth <: Typable  # Second secret Feature
     type::Type_
     tcable::TypeCheckable
 end
-struct TypeCheckedToMakeSynth <: Typed  # Second secret Feature
-    type::Type_
-    tcheckRes::Context
-end
 struct TypeSynthableToMakeCheck <: Typable  # Third secret Feature
     type::Type_
     tsable::TypeSynthable
-end
-struct TypeSynthedToMakeCheck <: Typed  # Third secret Feature
-    type::Type_
-    tsynthResC::Context
-    tsynthResT::Type_
 end
 
 struct ReturnTFunFlag
     lexpr::Index
     lgamma::Index
 end
-struct TypeCheckedToFunc <: Typed  # Fourth secret Feature
-    tcheckRes::Context
-    f::ReturnTFunFlag
-end
 struct TypeCheckableToFunc <: Typable  # Fourth secret Feature
     tcable::TypeCheckable
     f::ReturnTFunFlag
 end
 
-struct TypeSynthedToMakeProd <: Typed  # Fifth secret feature: PARALLEL BRANCHING, PRODS
-    tsynthResC::Context
-    tsynthResTs::Array{Type_}
-end
 struct TypeSynthableToMakeProd <: Typable  # Fifth secret Feature
     c::Context
     i::Int # where you at (what's the NEXT TO DO, so starts at 1)
     types::Array{Union{TypeSynthable, Type_}}
-end
-struct TypeSynthedToMakeApp <: Typed  # Sixth secret feature: SEQUENTIAL BRANCHING, or APP
-    typedFunc::Type_
-    theta::Context
-    typedArg::Type_
 end
 struct TypeSynthableToMakeApp <: Typable  # Sixth secret Feature
     func::TypeSynthable
     argToBecomeTypeCheckable::Union{TypeCheckable, Expr}
 end
 
+# struct TypeCheckedToClip <: Typed  # First secret Feature
+#     tcheckRes::Context
+#     lgamma::Index
+# end
+# struct TypeCheckedToMakeSynth <: Typed  # Second secret Feature
+#     type::Type_
+#     tcheckRes::Context
+# end
+# struct TypeSynthedToMakeCheck <: Typed  # Third secret Feature
+#     type::Type_
+#     tsynthResC::Context
+#     tsynthResT::Type_
+# end
+# struct TypeCheckedToFunc <: Typed  # Fourth secret Feature
+#     tcheckRes::Context
+#     f::ReturnTFunFlag
+# end
+# struct TypeSynthedToMakeProd <: Typed  # Fifth secret feature: PARALLEL BRANCHING, PRODS
+#     tsynthResC::Context
+#     tsynthResTs::Array{Type_}
+# end
+# struct TypeSynthedToMakeApp <: Typed  # Sixth secret feature: SEQUENTIAL BRANCHING, or APP
+#     typedFunc::Type_
+#     theta::Context
+#     typedArg::Type_
+# end
 
 
 function typer(t::TypeCheckable)
@@ -581,24 +581,26 @@ function typer(gamma::Context, expr::EUnit, typ::TUnit)::TypecheckRes
 end
 
 # First Secret Feature: if lgamma is present, Clip Away context if not Error!!
-function typer(sf1::TypeCheckedToClip)::TypecheckRes
-    sf1.tcheckRes[1:sf1.lgamma]
+function typer(tcheckRes::Context, lgamma::Index)::TypecheckRes  # FROM: TypeCheckedToClip
+    tcheckRes[1:lgamma]
 end
+
 
 # Second Secret Feature: if typ is present, Decorate context if not Error!!
 # Also note how decorator is passed FIRST to distinguish from something you typecheck
 # this Secret Feature turns a checked type into a "synthed" one.
 # Yes, in real use type always == tcable.typ. I don't care now.
-function typer(sf2::TypeCheckedToMakeSynth)::TypesynthRes
-    (sf2.type, sf2.tcheckRes) 
+function typer(type::Type_, tcheckRes::Context)::TypesynthRes  # TypeCheckedToMakeSynth
+    (type, tcheckRes) 
 end
+
 
 #Third Secret Feature: Apply a Subtyping check to the result of a typeSynth.
 # this Secret Feature turns a synthed type into a checked one, if subtypes.
-function typer(sf3::TypeSynthedToMakeCheck)::TypecheckRes
-    (a, theta) = sf3.tsynthResT, sf3.tsynthResC
+function typer(type::Type_, tsynthResC::Context, tsynthResT::Type_)::TypecheckRes  # TypeSynthedToMakeCheck
+    (a, theta) = tsynthResT, tsynthResC
     # subtype(theta, apply(theta, a), apply(theta, typ)) # <------------ THING
-    a2, typ2 = apply(theta, a), apply(theta, sf3.type)
+    a2, typ2 = apply(theta, a), apply(theta, type)
     # println("after applying $(theta) to $(a) you get: $(a2)")
     # println("after applying $(theta) to $(typ) you get: $(typ2)")
     theta2 = subtype(theta, a2, typ2)
@@ -611,9 +613,10 @@ function typer(sf3::TypeSynthedToMakeCheck)::TypecheckRes
     end
 end
 
+
 # Fourth Secret Feature: takes a context TO CHECK IN ABS MODE and returns THE CORRESPONDING TFORALL(TFUN).
-function typer(sf4::TypeCheckedToFunc)::TypesynthRes
-    res = sf4.tcheckRes
+function typer(tcheckRes::Context, f::ReturnTFunFlag)::TypesynthRes  # TypeCheckedToFunc
+    res = tcheckRes
     # res is the TYPECHECKED CONTEXT
 
     # SIMPLER/ ORIGINAL
@@ -624,8 +627,8 @@ function typer(sf4::TypeCheckedToFunc)::TypesynthRes
     # are we just assuming it's never an error?
     @assert (! (res isa Error)) res
 
-    lgamma = sf4.f.lgamma
-    lexpr = sf4.f.lexpr
+    lgamma = f.lgamma
+    lexpr = f.lexpr
     # IDEA: first 1. you APPPLY all (TExists pointing to) CExistsSolved's directly into return type, second 2. you Turn all REMAINING (TExists pointing to) CExist's into TLoc's !!!
 
     #1.
@@ -645,6 +648,7 @@ function typer(sf4::TypeCheckedToFunc)::TypesynthRes
     end
     return (TForall(tau), delta)# or res? Don't think gamma...
 end
+
 
 # Base cases: # Are not a problem are they?
 
@@ -676,7 +680,7 @@ end
 function typer(lgamma::Index, expr::EProd)::TypesynthRes 
     TypeSynthableToMakeProd(Context([]), 1, Array{Union{TypeSynthable, Type_}}([TypeSynthable(Context([]), d) for d in expr.data]))
 end
-function typer(sf5::TypeSynthedToMakeProd)::TypesynthRes 
+function typer()::TypesynthRes   # TypeSynthedToMakeProd
     (TProd(sf5.tsynthResTs), sf5.tsynthResC)
 end
 
@@ -685,9 +689,10 @@ end
 function typer(lgamma::Index, expr::EApp)::TypesynthRes
     TypeSynthableToMakeApp(TypeSynthable(gamma, expr.func), expr.arg)
 end
-function typer(sf6::TypeSynthedToMakeApp)::TypesynthRes
-    sf6.theta
+function typer(theta::Context, typedFunc::Type_, typedArg::Type_)::TypesynthRes
+    theta
 end
+
 ##################################################################
 
 
@@ -853,10 +858,10 @@ r3 = typer(r2.tsable) # :: TypesynthRes
 # r4 = typer(r3) # :: TypesynthRes
 r3 isa Typed
 
-table_2_ted(t::TypeSynthableToMakeCheck, res::TypesynthRes) = ((type, ctx) = res; TypeSynthedToMakeCheck(t.type, ctx, type))
-table_2_ted(t::TypeCheckableToClip, res::TypecheckRes) = TypeCheckedToClip(res, t.lgamma)
-table_2_ted(t::TypeCheckableToFunc, res::TypecheckRes) = TypeCheckedToFunc(res, t.f)
-table_2_ted(t::TypeCheckableToMakeSynth, res::TypecheckRes) = TypeCheckedToMakeSynth(t.type, res)
+table_2_ted(t::TypeSynthableToMakeCheck, res::TypesynthRes) = ((type, ctx) = res; (t.type, ctx, type))
+table_2_ted(t::TypeCheckableToClip, res::TypecheckRes) = (res, t.lgamma)
+table_2_ted(t::TypeCheckableToFunc, res::TypecheckRes) = (res, t.f)
+table_2_ted(t::TypeCheckableToMakeSynth, res::TypecheckRes) = (t.type, res)
 table_2_ted(t::TypeCheckable, res::TypecheckRes) = res
 table_2_ted(t::TypeSynthable, res::TypesynthRes) = res
 function table_2_ted(t::TypeSynthableToMakeProd, res::TypesynthRes) 
@@ -864,13 +869,13 @@ function table_2_ted(t::TypeSynthableToMakeProd, res::TypesynthRes)
     t.c=ctx
     t.types[t.i] = type
     t.i = t.i+1
-    (t.i > t.types |> length) ? TypeSynthedToMakeProd(t.c, Array{Type_}(t.types)) : t
+    (t.i > t.types |> length) ? (t.c, Array{Type_}(t.types)) : t
 end
 function table_2_ted(t::TypeSynthableToMakeApp, res::Union{TypesynthRes, TypecheckRes}) 
     if (t.argToBecomeTypeCheckable isa TypeCheckable) & (res isa TypecheckRes)
         TypeSynthedToMakeApp()#smthg, #smthg)
     elseif (t.argToBecomeTypeCheckable isa Expr) & (res isa TypesynthRes)
-        TypeSynthableToMakeApp()#smthg, #smthg)
+        TypeSynthableToMakeApp()#smthg, #smthg) # REMBER: check the order!!
     else
         throw(DomainError("Whaat, ")) #probably
 end
@@ -901,9 +906,8 @@ function typerExecutor(typable::Typable)
         # ^ his can be: a Typable, or a Typed, or TypeCheckRes directly (which means can be an error, too.)
         if stack[end] isa Error return stack[end]
         elseif stack[end] isa Typable push!(stack, typer(get_tcable(stack[end])))
-        elseif stack[end] isa Typed stack[end]=typer(stack[end])#secret feature!!!
         else
-            res = pop!(stack)
+            res = typer(pop!(stack))#secret feature!!!
             stack[end] = table_2_ted(stack[end], res) # NOT atcually necessairly to ted every time, and this is RIGHT (cuz DFT, yes :check::check:)
         end
         #println(stack)
