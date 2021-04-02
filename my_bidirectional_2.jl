@@ -673,8 +673,8 @@ end
 
 
 ###########################################
-function typer(gamma::Context, expr::EProd)::TypesynthRes 
-    TypeSynthableToMakeProd(gamma, 1, Array{Union{TypeSynthable, Type_}}([TypeSynthable(gamma, d) for d in TypeSynthableToMakeApp]))
+function typer(lgamma::Index, expr::EProd)::TypesynthRes 
+    TypeSynthableToMakeProd(Context([]), 1, Array{Union{TypeSynthable, Type_}}([TypeSynthable(Context([]), d) for d in expr.data]))
 end
 function typer(sf5::TypeSynthedToMakeProd)::TypesynthRes 
     (TProd(sf5.tsynthResTs), sf5.tsynthResC)
@@ -682,7 +682,7 @@ end
 
 ###########################################
 ##################################################################
-function typer(gamma::Context, expr::EApp)::TypesynthRes
+function typer(lgamma::Index, expr::EApp)::TypesynthRes
     TypeSynthableToMakeApp(TypeSynthable(gamma, expr.func), expr.arg)
 end
 function typer(sf6::TypeSynthedToMakeApp)::TypesynthRes
@@ -694,10 +694,10 @@ end
 
 
 # typecheck forall
-function typer(gamma::Context, expr, typ::TForall)::Typable
-    lgamma, ltyp = length(gamma), typ.body |> arity # we DON'T want this to exist :(
+function typer(lgamma::Index, expr, typ::TForall)::Typable
+    ltyp = typ.body |> arity # we DON'T want this to exist :(
     tcable = TypeCheckable(
-        vcat(gamma, [CForall() for i in 1:ltyp]), 
+        [CForall() for i in 1:ltyp], 
         expr,
         subst(Array{Type_}([TLoc(i + lgamma) for i in 1:ltyp]), typ.body)
     )
@@ -705,11 +705,11 @@ function typer(gamma::Context, expr, typ::TForall)::Typable
     TypeCheckableToClip(tcable, lgamma)
 end
 
-function typer(gamma::Context, expr::EAbs, typ::TFun)::Typable
-    lgamma, lexpr = length(gamma), expr.body |> arity # we DON'T want this to exist
+function typer(lgamma::Index, expr::EAbs, typ::TFun)::Typable
+    lexpr = expr.body |> arity # we DON'T want this to exist
     if lexpr > length(typ.inputs.data) return Error("$(expr |> pr) has too many vars to be of type $(typ |> pr) (the first has $(lexpr) vars, the second $(length(typ.inputs.data)))") end
     tcable = TypeCheckable(
-        vcat(gamma, [CVar(t) for t in typ.inputs.data]), 
+        [CVar(t) for t in typ.inputs.data], 
         subst(Array{Expr}([ELoc(i + lgamma) for i in 1:lexpr]), expr.body),
         typ.t2)
     # # # ress = typer(TypeCheckableToClip(tcable, lgamma)) #first secret feat
@@ -717,16 +717,16 @@ function typer(gamma::Context, expr::EAbs, typ::TFun)::Typable
 end
 # IMPORTANT NOTE: it DOES NOT return the ASSUMPTION WITHIN THE body    
 
-function typer(gamma::Context, expr::EAnno)::Typable 
+function typer(lgamma::Index, expr::EAnno)::Typable 
     tcable = TypeCheckable(
-        gamma, expr.expr, expr.type)
+        Context([]), expr.expr, expr.type)
     # # # ress = typer(TypeCheckableToMakeSynth(expr.type, tcable)) # this Second Secret Feature turns a checked type into a "synthed" one
     TypeCheckableToMakeSynth(expr.type, tcable)
 end
 
-function typer(gamma::Context, expr, typ::Type_)::Typable # check
+function typer(lgamma::Index, expr, typ::Type_)::Typable # check
     # this is good
-    tsable = TypeSynthable(gamma, expr)
+    tsable = TypeSynthable(Context([]), expr)
     # # # ress = typer(TypeSynthableToMakeCheck(typ, tsable))
     TypeSynthableToMakeCheck(typ, tsable)
 end
@@ -743,8 +743,8 @@ end
 # typer(Context([CVar(TGlob("G"))]), EAnno(EGlobAuto("g"), TExists(1))) # SHOULD raise error
 # ^ note that it WORKS, it just returns TExists(1) again
 
-function typer(gamma::Context, expr::EAbs)::Typable 
-    lgamma, lexpr = length(gamma), expr.body |> arity
+function typer(lgamma::Index, expr::EAbs)::Typable 
+    lexpr = expr.body |> arity
     alphas = [CExists() for i in 1:lexpr] 
     x2s = [CVar(TExists(lgamma + i)) for i in 1:lexpr] # x2:alpha
     texists = [TExists(lgamma + i) for i in 1:lexpr] # pointing to alphas
@@ -763,10 +763,10 @@ end
 # -- | Type application synthesising
 # --   typer Γ A e = (C, Δ) <=> Γ |- A . e =>> C -| Δ
 
-function typer(gamma::Context, typ::TForall, expr::Expr)::Typable
-    lgamma, ltyp = length(gamma), typ.body |> arity # we DON'T want this to exist :(
+function typer(lgamma::Index, typ::TForall, expr::Expr)::Typable
+    ltyp = typ.body |> arity # we DON'T want this to exist :(
     tcable = TypeAppSynthable(
-        vcat(gamma, [CExists() for i in 1:ltyp]), 
+        [CExists() for i in 1:ltyp], 
         subst(Array{Type_}([TExists(i + lgamma) for i in 1:ltyp]), typ.body),
         expr,
     )
@@ -774,19 +774,18 @@ function typer(gamma::Context, typ::TForall, expr::Expr)::Typable
     tcable
 end
 
-function typer(gamma::Context, typ::TExists, expr::Expr)::Typable
-    lgamma = length(gamma)
+function typer(lgamma::Index, typ::TExists, expr::Expr)::Typable
     println("yep.. Definitely happing")
     #                   alpha2, alpha1
     tcable = TypeCheckable(
-        vcat(gamma, [CExists(), CExists(), CExistsSolved(TFun(TExists(lgamma + 2), TExists(lgamma + 1)))]),
+        [CExists(), CExists(), CExistsSolved(TFun(TExists(lgamma + 2), TExists(lgamma + 1)))],
         expr, TExists(lgamma + 2))
     # # # ress = typer(TypeCheckableToMakeSynth(TExists(lgamma + 1), tcable)) # This is the Second Secret Feature
     TypeCheckableToMakeSynth(TExists(lgamma + 1), tcable)
 end
 
-function typer(gamma::Context, typ::TFun, expr::Expr)::Typable
-    tcable = TypeCheckable(gamma, expr, typ.inputs)
+function typer(lgamma::Index, typ::TFun, expr::Expr)::Typable
+    tcable = TypeCheckable(Context([]), expr, typ.inputs)
     # # # ress = typer(TypeCheckableToMakeSynth(typ.t2, tcable)) # This is the Second Secret Feature
     TypeCheckableToMakeSynth(typ.t2, tcable)
 end
@@ -896,6 +895,7 @@ TAble = Union{Typable, Typed, TypecheckRes, TypesynthRes}
 
 function typerExecutor(typable::Typable)
     stack = Array{TAble}([typable])
+    # IMPORTANT: PLEASE remember this: KEEP A COMPOUND of all the VARIOUS GAMMA's in Stack and VCAT THEM!
     push!(stack, typer(stack[end]))
     while stack |> length > 1
         # ^ his can be: a Typable, or a Typed, or TypeCheckRes directly (which means can be an error, too.)
