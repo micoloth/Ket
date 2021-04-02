@@ -487,93 +487,18 @@ TypingRes = Union{TypecheckRes, TypesynthRes}
 
 ###############################################################################
 
-# abstract type T end
-# struct A <: T
-#     x::Int
-# end
-# struct B<: T
-#     x::String
-# end
-
-# struct TCont
-#     t::T
-# end
-
-# pr(a::A) = "A, val $(a.x)"
-# pr(a::B) = "B, val $(a.x)"
-# pr(t::TCont) = "Is a: "*pr(t.t)
-
-# pr(TCont(B("3")))
-
 abstract type Typable end
 abstract type Typed end
-# struct TypeCheckableUnit <: Typable
-#     gamma::Context
-#     expr::EUnit
-#     typ::TUnit
-# end
-# struct TypeCheckableForall <: Typable
-#     gamma::Context
-#     expr
-#     typ::TForall
-# end
-# struct TypeCheckableFun <: Typable
-#     gamma::Context
-#     expr::EAbs
-#     typ::TFun
-# end
-# struct TypeSynthableGlob <: Typable
-#     gamma::Context
-#     expr::EGlob
-# end
-# struct TypeSynthableLoc <: Typable
-#     gamma::Context
-#     expr::ELoc
-# end
-# struct TypeSynthableAnno <: Typable
-#     gamma::Context
-#     expr::EAnno
-# end
-# struct TypeSynthableProd <: Typable
-#     gamma::Context
-#     expr::EProd
-# end
+
 struct TypeCheckable <: Typable
     gamma::Context
     expr::Expr
     typ::Type_
 end
-# struct TypeSynthableUnit <: Typable
-#     gamma::Context
-#     expr::EUnit
-# end
-# struct TypeSynthableAbs <: Typable
-#     gamma::Context
-#     expr::EAbs
-# end
-# struct TypeSynthableApp <: Typable
-#     gamma::Context
-#     expr::EApp
-# end
 struct TypeSynthable <: Typable
     gamma::Context
     expr::Expr
 end
-# struct TypeAppSynthableForall <: Typable
-#     gamma::Context
-#     typ::TForal
-#     expr::Expr
-# end
-# struct TypeAppSynthableExists <: Typable
-#     gamma::Context
-#     typ::TExist
-#     expr::Expr
-# end
-# struct TypeAppSynthableFun <: Typable
-#     gamma::Context
-#     typ::TFun
-#     expr::Expr
-# end
 struct TypeAppSynthable <: Typable
     gamma::Context
     typ::Type_
@@ -618,6 +543,25 @@ end
 struct TypeCheckableToFunc <: Typable  # Fourth secret Feature
     tcable::TypeCheckable
     f::ReturnTFunFlag
+end
+
+struct TypeSynthedToMakeProd <: Typed  # Fifth secret feature: PARALLEL BRANCHING, PRODS
+    tsynthResC::Context
+    tsynthResTs::Array{Type_}
+end
+struct TypeSynthableToMakeProd <: Typable  # Fifth secret Feature
+    c::Context
+    i::Int # where you at (what's the NEXT TO DO, so starts at 1)
+    types::Array{Union{TypeSynthable, Type_}}
+end
+struct TypeSynthedToMakeApp <: Typed  # Sixth secret feature: SEQUENTIAL BRANCHING, or APP
+    typedFunc::Type_
+    theta::Context
+    typedArg::Type_
+end
+struct TypeSynthableToMakeApp <: Typable  # Sixth secret Feature
+    func::TypeSynthable
+    argToBecomeTypeCheckable::Union{TypeCheckable, Expr}
 end
 
 
@@ -730,23 +674,19 @@ end
 
 ###########################################
 function typer(gamma::Context, expr::EProd)::TypesynthRes 
-    types = Array{Type_}([])
-    for e in expr.data
-        res = typer(gamma, e)
-        if res isa Error return res end
-        (t, gamma) = res
-    end
-    (TProd(types), gamma)
+    TypeSynthableToMakeProd(gamma, 1, Array{Union{TypeSynthable, Type_}}([TypeSynthable(gamma, d) for d in TypeSynthableToMakeApp]))
 end
+function typer(sf5::TypeSynthedToMakeProd)::TypesynthRes 
+    (TProd(sf5.tsynthResTs), sf5.tsynthResC)
+end
+
 ###########################################
 ##################################################################
 function typer(gamma::Context, expr::EApp)::TypesynthRes
-    tsable = TypeSynthable(gamma, expr.func)
-    res = typer(tsable)
-    if (typeof(res) === Error) return res end
-    (a, theta) = res
-    # # # ress = typer(theta, apply(theta, a), expr.arg)
-    (theta, apply(theta, a), expr.arg)
+    TypeSynthableToMakeApp(TypeSynthable(gamma, expr.func), expr.arg)
+end
+function typer(sf6::TypeSynthedToMakeApp)::TypesynthRes
+    sf6.theta
 end
 ##################################################################
 
@@ -920,12 +860,36 @@ table_2_ted(t::TypeCheckableToFunc, res::TypecheckRes) = TypeCheckedToFunc(res, 
 table_2_ted(t::TypeCheckableToMakeSynth, res::TypecheckRes) = TypeCheckedToMakeSynth(t.type, res)
 table_2_ted(t::TypeCheckable, res::TypecheckRes) = res
 table_2_ted(t::TypeSynthable, res::TypesynthRes) = res
+function table_2_ted(t::TypeSynthableToMakeProd, res::TypesynthRes) 
+    (type, ctx) = res
+    t.c=ctx
+    t.types[t.i] = type
+    t.i = t.i+1
+    (t.i > t.types |> length) ? TypeSynthedToMakeProd(t.c, Array{Type_}(t.types)) : t
+end
+function table_2_ted(t::TypeSynthableToMakeApp, res::Union{TypesynthRes, TypecheckRes}) 
+    if (t.argToBecomeTypeCheckable isa TypeCheckable) & (res isa TypecheckRes)
+        TypeSynthedToMakeApp()#smthg, #smthg)
+    elseif (t.argToBecomeTypeCheckable isa Expr) & (res isa TypesynthRes)
+        TypeSynthableToMakeApp()#smthg, #smthg)
+    else
+        throw(DomainError("Whaat, ")) #probably
+end
+# tsable = TypeSynthable(gamma, expr.func)
+# res = typer(tsable)
+# if (typeof(res) === Error) return res end
+# (a, theta) = res
+# # # # ress = typer(theta, apply(theta, a), expr.arg)
+# (theta, apply(theta, a), expr.arg)
+
 # what now ???
 get_tcable(t::TypeCheckableToFunc) = t.tcable
 get_tcable(t::TypeCheckableToClip) = t.tcable
 get_tcable(t::TypeCheckableToMakeSynth) = t.tcable
+get_tcable(t::TypeCheckable) = t
 get_tcable(t::TypeSynthableToMakeCheck) = t.tsable
-get_tcable(t::TypeSynthable) = t
+get_tcable(t::TypeSynthableToMakeProd) = t.types[i]
+get_tcable(t::TypeSynthableToMakeApp) = t.types[i]
 get_tcable(t::TypeSynthable) = t
 
 TAble = Union{Typable, Typed, TypecheckRes, TypesynthRes}
@@ -940,7 +904,7 @@ function typerExecutor(typable::Typable)
         elseif stack[end] isa Typed stack[end]=typer(stack[end])#secret feature!!!
         else
             res = pop!(stack)
-            stack[end] = table_2_ted(stack[end], res)
+            stack[end] = table_2_ted(stack[end], res) # NOT atcually necessairly to ted every time, and this is RIGHT (cuz DFT, yes :check::check:)
         end
         #println(stack)
     end
