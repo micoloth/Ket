@@ -18,8 +18,11 @@ end
 struct ELoc <: Expr n::Index end
 struct EUnit <: Expr end
 struct EApp <: Expr
-    func::Expr # must compute to a lambda
-    arg::Expr # must compute to a PROD
+    ops_dot_ordered::Array{Expr} 
+    # Each one must compute to a lambda
+    # Each lambda must RETURN a PROD, but really WE WILL BE EXTREMELY GENEROUS WITH THE TYPECHECKING
+    # Furthermore, the FIRST one (dot_ordered) can (should?) should be a lambda with ZERO arguments, but again, WE WILL BE EXTREMELY GENEROUS WITH THE TYPECHECKING
+    # Is typechecking still what we are doing?🤔
 end
 struct EAbs <: Expr # lambda, for some reason
     body::Expr 
@@ -51,30 +54,40 @@ struct TForall <: Type_
     body::Type_ # idea: this CAN contain (type level) local variables
 end
 struct TFun <: Type_
-    inputs::Type_ # must compute to a PROD
-    t2::Type_
+    typs_dot_ordered::Array{Type_} # Moslty should compute to PRODS (they are the INTERMEDIATE results)
 end
 struct TProd <: Type_
     data::Array{Type_}
 end
 Base.:(==)(a::TProd, b::TProd) = Base.:(==)(a.data, b.data)
-Base.:(==)(a::TFun, b::TFun) = Base.:(==)(a.inputs, b.inputs) & Base.:(==)(a.t2, b.t2)
+Base.:(==)(a::TFun, b::TFun) = a.typs_dot_ordered == b.typs_dot_ordered
 Base.:(==)(a::TForall, b::TForall) = Base.:(==)(a.body, b.body)
+
 
 pr(x::EGlob)::String = "$(x.n)"
 pr(x::ELoc)::String = "$(x.n)"
 pr(x::EUnit)::String = "T" 
 # pr(x::EApp)::String = "(" * pr(x.arg) * " ." * pr(x.func) *")" # join(x.func .|> pr, ".")
-pr(x::EApp)::String = (arg = length(x.arg.data)!=1 ? (x.arg |> pr) : (x.arg.data[1] |> pr); pr(x.func) * "(" * arg * ")")
 pr(x::EAbs)::String = "/{$(pr(x.body))}" 
 pr(x::EProd)::String = "[$(join(x.data .|> pr, ", ")),]" 
 pr(x::EAnno)::String = "$(pr(x.expr)):$(pr(x.type))" 
+function pr(x::EApp)::String
+    if length(x.ops_dot_ordered) == 2
+        arg, func = x.ops_dot_ordered[1], x.ops_dot_ordered[2]
+        arg = (arg isa EProd && length(arg.data)==1) ? (arg.data[1] |> pr) : (arg |> pr)
+        pr(func) * "(" * arg * ")"
+    elseif length(x.ops_dot_ordered) <= 1
+        throw(DomainError("howw $(x)"))
+    else
+        x.ops_dot_ordered .|> pr |> x->join(x, ".")
+    end
+end
 
 
 subst(news::Array{Expr}, t::EGlob)::Expr= t 
 subst(news::Array{Expr}, t::ELoc)::Expr = if t.n <= length(news) news[t.n] else throw(DomainError("Undefined local var $(t.n), n args given = $(length(news))" )) end
 subst(news::Array{Expr}, t::EUnit)::Expr = t 
-subst(news::Array{Expr}, t::EApp)::Expr = EApp(subst(news, t.func), subst(news, t.arg)) 
+subst(news::Array{Expr}, t::EApp)::Expr = EApp(t.ops_dot_ordered .|> x->subst(news, x)) 
 subst(news::Array{Expr}, t::EAbs)::Expr = t # EAbs(subst(news, t.body)) 
 subst(news::Array{Expr}, t::EAnno)::Expr = EAnno(subst(news, t.expr), t.type) 
 subst(news::Array{Expr}, t::EProd)::Expr = EProd(t.data .|> (x->subst(news, x))) 
@@ -83,41 +96,41 @@ reduc(t::EGlob)::Expr = t
 reduc(t::ELoc)::Expr = t
 reduc(t::EUnit)::Expr = t
 reduc(t::EAbs)::Expr = EAbs(reduc(t.body))
-reduc(t::EApp)::Expr = (t|>pr|>println; reduc(reduc(t.func), reduc(t.arg))) # EApp is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
+reduc(t::EApp)::Expr = (t|>pr|>println; reduc(t.ops_dot_ordered .|> reduc)) # EApp is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
 reduc(t::EProd)::Expr = EProd(t.data .|> reduc)
 reduc(t::EAnno)::Expr = EAnno(t.expr |> reduc, t.type)
-function reduc(func::EAbs, arg::EProd)
+function reduc(ops::Array{Expr})
     #println("> doing the ", typeof(func),  " ", typeof(arg), " thing")
-    temp = subst(arg.data, func.body)
-    #println( "creating  > ", temp|>pr, "\n")
-    reduc(temp)
-end
-function reduc(func, arg)
-    #println("> STOP, since apparently they are ", typeof(func),  " ", typeof(arg), " ...")
-    EApp(func, arg)
+    if ops[1] isa EAbs ops[1] = reduc(Array{Expr}([EProd([]), ops[1]])) end # this is because i still havent decided between prods and 0-arg'd lambda's. 
+    #^ this MIGHT VERY WELL FAIL, idk
+    while (length(ops) >= 2 && ops[1] isa EProd && ops[2] isa EAbs) ops = vcat([subst(ops[1].data, ops[2].body) |> reduc], ops[3:end]) end
+    # TODO: make this into a more reasonable stack
+    return length(ops) >= 2 ? EApp(ops) : ops[1]
 end
 
 # small helper funcs
-EAppAuto(x, y) = EApp(x, EProd([y]))
+EAppSwitch(func, args) = EApp([args, func])
+EAppAuto(func, args) = EApp([EProd([args]), func])
 EGlobAuto(n::Id) = EGlob(n, TGlob(uppercase(n)))
+
 
 S = EAbs(EAppAuto(EAppAuto(ELoc(1), ELoc(3)), EAppAuto(ELoc(2), ELoc(3))))
 pr(S)
 
-reduc(EAbs(EApp(S, EProd([EGlobAuto("f"), EGlobAuto("g"), EGlobAuto("x")])))) |> pr
+reduc(EAbs(EAppSwitch(S, EProd([EGlobAuto("f"), EGlobAuto("g"), EGlobAuto("x")])))) |> pr
 
 f = EAbs(ELoc(1))
 g = EAbs(EGlobAuto("y"))
-reduc(EApp(S, EProd([f, g, EGlobAuto("x")]))) |> pr
+reduc(EAppSwitch(S, EProd([f, g, EGlobAuto("x")]))) |> pr
 
 
 # NOT used by the above:
 arity(base::Index, t::EGlob)::Index= base 
 arity(base::Index, t::ELoc)::Index = max(base, t.n)
 arity(base::Index, t::EUnit)::Index = base 
-arity(base::Index, t::EApp)::Index = max(arity(base, t.func), arity(base, t.arg)) 
+arity(base::Index, t::EApp)::Index = t.ops_dot_ordered .|> arity |> maximum
 arity(base::Index, t::EAbs)::Index = base # Lam(arity(base, t.body)) 
-arity(base::Index, t::EProd)::Index = reduce(max, t.data .|> (x->arity(base, x))) 
+arity(base::Index, t::EProd)::Index = t.data .|> (x->arity(base, x)) |> maximum
 arity(base::Index, t::EAnno)::Index = arity(base, t.expr)
 arity(t::Expr)::Index = arity(0, t)
 
@@ -125,7 +138,8 @@ arity(t::Expr)::Index = arity(0, t)
 # Type functions 
 
 
-TFunAuto(x, y) = TFun(TProd([x]), y)
+TFunMake(tin, tout) = TFun([tin, tout])
+TFunAuto(tin, tout) = TFun([TProd([tin]), tout])
 
 
 pr(x::TGlob)::String = "$(x.var)"
@@ -133,13 +147,17 @@ pr(x::TLoc)::String = "T$(x.var)"
 pr(x::TUnit)::String = "UU"
 pr(x::TExists)::String = "∃$(x.var)"
 pr(x::TForall)::String = "∀($(x.body |> pr))"
-pr(x::TFun)::String = ( arg = length(x.inputs.data)!=1 ? (x.inputs |> pr) : (x.inputs.data[1] |> pr); "($(arg)->$(x.t2|>pr))" )
 pr(x::TProd)::String = "[$(join(x.data .|> pr, " x "))]" 
+pr_(x::Type_) = (x isa TProd && length(x.data)==1) ? (x.data[1] |> pr) : (x |> pr)
+function pr(x::TFun)::String
+    "(" * (x.typs_dot_ordered .|> pr_ |> x->join(x, "->")) * ")"
+end
+
 
 subst(news::Array{Type_}, t::TGlob)::Type_= t 
 subst(news::Array{Type_}, t::TLoc)::Type_ = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
 subst(news::Array{Type_}, t::TUnit)::Type_ = t 
-subst(news::Array{Type_}, t::TFun)::Type_ = TFun(subst(news, t.inputs), subst(news, t.t2)) 
+subst(news::Array{Type_}, t::TFun)::Type_ = TFun(t.typs_dot_ordered .|> x->subst(news, x)) 
 subst(news::Array{Type_}, t::TForall)::Type_ = t # TForall(subst(news, t.body)) 
 subst(news::Array{Type_}, t::TProd)::Type_ = TProd(t.data .|> (x->subst(news, x))) 
 subst(news::Array{Type_}, t::TExists)::Type_ = t
@@ -148,28 +166,26 @@ reduc(t::TGlob)::Type_ = t
 reduc(t::TLoc)::Type_ = t
 reduc(t::TUnit)::Type_ = t
 reduc(t::TForall)::Type_ = TForall(reduc(t.body))
-reduc(t::TFun)::Type_ = (t|>pr|>println; reduc(reduc(t.inputs), reduc(t.t2))) # EApp is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
+reduc(t::TFun)::Type_ = (t|>pr|>println; reduc(t.typs_dot_ordered .|> reduc)) # EApp is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
 reduc(t::TProd)::Type_ = TProd(t.data .|> reduc)
 reduc(t::TExists)::Type_ = t
-function reduc(func::TForall, arg::TProd)
+function reduc(ops::Array{Type_})
     #println("> doing the ", typeof(func),  " ", typeof(arg), " thing")
-    temp = subst(arg.data, func.body)
-    #println( "creating  > ", temp|>pr, "\n")
-    reduc(temp)
-end
-function reduc(func, arg)
-    #println("> STOP, since apparently they are ", typeof(func),  " ", typeof(arg), " ...")
-    EApp(func, arg)
+    if ops[1] isa TForall ops[1] = reduc(Array{Type_}([TProd([]), ops[1]])) end # this is because i still havent decided between prods and 0-arg'd lambda's. 
+    #^ this MIGHT VERY WELL FAIL, idk
+    while (length(ops) >= 2 && ops[1] isa TProd && ops[2] isa TForall) ops = vcat([subst(ops[1].data, ops[2].body) |> reduc], ops[3:end]) end
+    # TODO: make this into a more reasonable stack
+    return length(ops) >= 2 ? EApp(ops) : ops[1]
 end
 
 # NOT used by the above:
 arity(base::Index, t::TGlob)::Index= base 
 arity(base::Index, t::TLoc)::Index = max(base, t.var)
 arity(base::Index, t::TUnit)::Index = base 
-arity(base::Index, t::TFun)::Index = max(arity(base, t.inputs), arity(base, t.t2)) 
+arity(base::Index, t::TFun)::Index = t.typs_dot_ordered .|> (x->arity(base, x)) |> maximum
 arity(base::Index, t::TForall)::Index = base # Lam(arity(base, t.body)) 
 arity(base::Index, t::TExists)::Index = base
-arity(base::Index, t::TProd)::Index = reduce(max, t.data .|> (x->arity(base, x))) 
+arity(base::Index, t::TProd)::Index = t.data .|> (x->arity(base, x)) |> maximum
 arity(t::Type_)::Index = arity(0, t)
 
 EGlob("x", TGlob("A"))
@@ -182,28 +198,21 @@ SType = TFunAuto(TProd([SType2, SType1, TGlob("X")]), TGlob("B"))
 
 
 EGlob("S", TFunAuto(TGlob("A"), TGlob("B"))) |> pr
+TFunAuto(TGlob("A"), TGlob("B")) |> pr
 
 # Now polymorphicly:
 SType1P = TFunAuto(TLoc(3), TLoc(2))
 SType2P = TFunAuto(TLoc(3), TFunAuto(TLoc(2), TLoc(1)))
-STypeP = TForall(TFun(TProd([SType2P, SType1P, TLoc(3)]), TLoc(1)))
-
+STypeP = TForall(TFunMake(TProd([SType2P, SType1P, TLoc(3)]), TLoc(1)))
+STypeP |> pr
 
 
 ########## Context elements:
 
-struct CForall <: ContextElem end # PLACEHOLDER, also called ANY TYPE.
-# The Tvar referring to this position can be ANY TYPE.
-# Does this IMPLICITELY DEFINE A FUNCTION SCOPE ON THE FOLLOWING???
-# ^ originally had a Tvar
-# struct CVar <: ContextElem
-#     type::Type_ # type (annotation) of the VAR (NOT Tvar) referring to this position. 
-# end
 struct CExists <: ContextElem end # difference w/ CForall ??? # the difference is: this is WAITING to be solved, i think
 struct CExistsSolved <: ContextElem
     type::Type_ # type (meaning) of the Tvar referring to this position.
 end
-struct CMarker <: ContextElem end # K now i'm lost. "scoping reasons", he says
 
 # i REALLY wish i didn't need these :(
 # what these do is: they DEREFERENCE ALL TExists IN THE GAMMA, returning the RESULTING Type_ IF solved, or TExist again if unsolved
@@ -213,13 +222,11 @@ apply(gamma:: Context, typ::TGlob)::Type_ = typ
 apply(gamma:: Context, typ::TLoc)::Type_ = typ
 apply(gamma:: Context, typ::TForall)::Type_ = TForall(apply(gamma, typ.body))
 apply(gamma:: Context, typ::TProd)::Type_ = TProd(typ.data .|> (x->apply(gamma, x)))
-apply(gamma:: Context, typ::TFun)::Type_ = TFun(apply(gamma, typ.inputs), apply(gamma, typ.t2))
+apply(gamma:: Context, typ::TFun)::Type_ = TFun(typ.typs_dot_ordered .|> x->apply(gamma, x))
 function apply(gamma:: Context, typ::TExists)::Type_
     # the IDEA would be that this includes findSolved, idk if this turning a O(x) into O(0) means i'm missing something....
     if  typ.var > length(gamma)
         throw(DomainError("Undefined local var $(typ.var), n args given = $(length(gamma))"))
-    elseif !(gamma[typ.var] isa CExistsSolved || gamma[typ.var] isa CExists)
-        throw(DomainError("Wrong u lil shit, $(typ.var), should point to a CExists or CExistsSolved in $(length(gamma)), how can you not know"))
     elseif gamma[typ.var] isa CExistsSolved
         apply(gamma, gamma[typ.var].type)
     else
@@ -231,15 +238,13 @@ apply(gamma:: Context, typ::TGlob, lev_to_start_from:: Index)::Type_ = typ
 apply(gamma:: Context, typ::TLoc, lev_to_start_from:: Index)::Type_ = typ
 apply(gamma:: Context, typ::TForall, lev_to_start_from:: Index)::Type_ = TForall(apply(gamma, typ.body, lev_to_start_from))
 apply(gamma:: Context, typ::TProd, lev_to_start_from:: Index)::Type_ = TProd(typ.data .|> (x->apply(gamma, x, lev_to_start_from)))
-apply(gamma:: Context, typ::TFun, lev_to_start_from:: Index)::Type_ = TFun(apply(gamma, typ.inputs, lev_to_start_from), apply(gamma, typ.t2, lev_to_start_from))
+apply(gamma:: Context, typ::TFun, lev_to_start_from:: Index)::Type_ = TFun(typ.typs_dot_ordered .|> x->apply(gamma, x, lev_to_start_from))
 function apply(gamma:: Context, typ::TExists, lev_to_start_from:: Index)::Type_
     # the IDEA would be that this includes findSolved, idk if this turning a O(x) into O(0) means i'm missing something....
     if typ.var < lev_to_start_from
         typ
     elseif  typ.var > length(gamma)
         throw(DomainError("Undefined local var $(typ.var), n args given = $(length(gamma))"))
-    elseif !(gamma[typ.var] isa CExistsSolved || gamma[typ.var] isa CExists)
-        throw(DomainError("Wrong u lil shit, $(typ.var), should point to a CExists or CExistsSolved in $(length(gamma)), how can you not know"))
     elseif gamma[typ.var] isa CExistsSolved
         apply(gamma, gamma[typ.var].type,lev_to_start_from)
     else
@@ -263,7 +268,7 @@ monotype(t::TGlob)::Bool = true # so yes
 monotype(t::TLoc)::Bool = true # so yes
 monotype(t::TForall)::Bool = false # so no
 monotype(t::TExists)::Bool = true # so yes
-monotype(t::TFun)::Bool = monotype(t.inputs) & monotype(t.t2)
+monotype(t::TFun)::Bool = t.typs_dot_ordered .|> monotype |> all
 monotype(t::TProd)::Bool = t.data .|> monotype |> all
 
 
@@ -326,6 +331,7 @@ monotype(t::TProd)::Bool = t.data .|> monotype |> all
 
 
 function solve(gamma::Context, alpha::Index, tau::Type_)::Union{Context, Nothing}
+    # SET POSITION ALPHA TO SOLVED TAU
     # important: tau was a MONOTYPE i.e. not a forall
     if typeof(gamma[alpha]) === CExistsSolved
         println("Why are you trying to solve already solved $(gamma[alpha].type |>pr) in $(gamma) ???")
@@ -388,7 +394,8 @@ subtype(gamma::Context, alpha::TLoc, alpha2::TLoc)::Union{Context, Error} = ((al
 subtype(gamma::Context, alpha::TGlob, alpha2::TGlob)::Union{Context, Error} = ((alpha == alpha2) ? gamma : err(alpha, alpha2))
 subtype(gamma::Context, alpha::TGlob, alpha2::TGlob)::Union{Context, Error} = ((alpha == alpha2) ? gamma : err(alpha, alpha2))
 subtype(gamma::Context, alpha::TUnit, alpha2::TUnit)::Union{Context, Error} = gamma
-subtype(gamma::Context, fa::TFun, fb::TFun)::Union{Context, Error} = (c=subtype(gamma, fb.inputs, fa.inputs); (c isa Error) ? c : subtype(c, apply(c, fa.t2), apply(c, fb.t2)))
+subtype(gamma::Context, fa::TFun, fb::TFun)::Union{Context, Error} = (c=subtype(gamma, fb.typs_dot_ordered[1], fa.typs_dot_ordered[1]); (c isa Error) ? c : subtype(c, apply(c, fa.typs_dot_ordered[end]), apply(c, fb.typs_dot_ordered[end])))
+#^ I DONT KNOW if the above subtyping rule is correct. It might very well not be.
 function subtype(gamma::Context, t1::TProd, t2::TProd)::Union{Context, Error}
     for (d1, d2) in zip(t1.data, t2.data)
         gamma = subtype(gamma, d1, d2)
@@ -422,8 +429,10 @@ function subtype(gamma::Context, a, t::TExists)::Union{Context, Error}
 end
 function subtype(gamma::Context, alpha::TExists, alpha2::TExists)::Union{Context, Error}
     if (alpha == alpha2) gamma  # typeof(gamma[alpha.var]) in [CExists, CExistsSolved]) 
-    elseif (gamma[alpha.var] isa CExists) instantiateR(gamma, alpha, alpha2.var) # could SO EASILY be L
     elseif (gamma[alpha2.var] isa CExists) instantiateL(gamma, alpha.var, alpha2) # could SO EASILY be R
+    elseif (gamma[alpha.var] isa CExists) 
+        println("Yes, it's R'ing :(")
+        instantiateR(gamma, alpha, alpha2.var) # could SO EASILY be L
     else err(alpha, alpha2)
     end
 end
@@ -487,7 +496,7 @@ substEx(new::Type_, var::Index, expr::TUnit)::Type_ = expr
 substEx(new::Type_, var::Index, expr::TLoc)::Type_ = expr
 substEx(new::Type_, var::Index, expr::TGlob)::Type_ = expr
 substEx(new::Type_, var::Index, expr::TProd)::Type_ = TProd(expr.data .|> (x->substEx(new, var, x)))
-substEx(new::Type_, var::Index, expr::TFun)::Type_ = TFun(substEx(new, var, expr.inputs), substEx(new, var, expr.t2))
+substEx(new::Type_, var::Index, expr::TFun)::Type_ = TFun(expr.typs_dot_ordered .|> (x->substEx(new, var, x)))
 substEx(new::Type_, var::Index, expr::TExists)::Type_ = (expr.var == var ? new : expr)
 # substEx(new::Type_, var::Index, expr::TForall)::Type_ = TForall(substEx(new, var, expr.body)) 
 # ^it's MORE COMPLICATED than this, due to the fact that, INTO THE SCOPE, Loc's HAVE A MEANING already...
@@ -552,11 +561,12 @@ struct TypeSynthToMakeCheck <: T2Container  # Third secret Feature
     t::Union{TypeSynthable, TypeSynthed}
 end
 
+
 struct ReturnTFunFlag
-    lexpr::Index
+    lexprs::Array{Index}
     lgamma::Index
 end
-struct TypeChecToFunc <: T2Container  # Fourth secret Feature
+struct TypeCheckToFunc <: T2Container  # Fourth secret Feature
     t::Union{TypeCheckable, TypeChecked}
     f::ReturnTFunFlag
 end
@@ -564,9 +574,8 @@ mutable struct TypeSynthToMakeProd <: T2Container  # Fifth secret Feature
     i::Int # where you at (what's the NEXT TO DO, so starts at 1)
     types::Array{Union{TypeSynthable, Type_}}
 end
-struct TypeSynthToMakeApp <: T2Container  # Sixth secret Feature
-    func::Union{TypeSynthable, TypeSynthed}
-    argToDoLater::Expr
+mutable struct TypeSynthToMakeApp <: T2Container  # Sixth secret Feature
+    types::Array{Union{Expr, TypeSynthed}}
 end
 struct TypeSynthToJustDereference <: T2Container
     var::Index
@@ -637,7 +646,7 @@ end
 
 
 # Fourth Secret Feature: takes a context TO CHECK IN ABS MODE and returns THE CORRESPONDING TFORALL(TFUN).
-function typer2(gamma::Context, t::TypeChecToFunc)::TypesynthRes  # TypeCheckedToFunc
+function typer2(gamma::Context, t::TypeCheckToFunc)::TypesynthRes  # TypeCheckedToFunc
     # ^ assumed to be ted'ed  # Fourth secret Feature
     res = gamma
     # res is the TYPECHECKED CONTEXT
@@ -651,18 +660,19 @@ function typer2(gamma::Context, t::TypeChecToFunc)::TypesynthRes  # TypeCheckedT
     @assert (! (res isa Error)) res
 
     lgamma = t.f.lgamma
-    lexpr = t.f.lexpr
+    lexprs = t.f.lexprs
     # IDEA: first 1. you APPPLY all (TExists pointing to) CExistsSolved's directly into return type, second 2. you Turn all REMAINING (TExists pointing to) CExist's into TLoc's !!!
 
     #1.
-    beta = TExists(lexpr + lgamma + 1) # this SHOULD BE EQUIVALENT to what you get from >>> t.t <<< !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    beta = TExists((lexprs|>sum) + lgamma + 1) # this SHOULD BE EQUIVALENT to what you get from >>> t.t <<< !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     # idea: rn left-to-right dependencies are BROKEN, but EVEN IN THE WORST CASE, i'm NEVER doing the thing of 
     # CHANGING WHAT COMES BEFORE...
     # SO, lgamma is a GOOD INFORMATION about where to split!!!
     (delta, delta2) = res[1:lgamma], res[lgamma+1:end]
-    texists = [TExists(i + lgamma) for i in 1:lexpr] # pointing to alphas IN delta2 
-    #^ yes right, the equivalent ones above are superfluous // OK no problem at all w/ texists, but beta ????
-    tau = apply(res, TFun(TProd(texists), beta), lgamma+1)
+    indices = lexprs |> (x->vcat([1], x)) |> cumsum
+    newLocs = [indices[l]:(indices[l+1]-1) for l in 1:length(indices)-1]
+    args = [TProd([TExists(i + lgamma) for i in l]) for l in newLocs] # pointing to alphas IN delta2 
+    tau = apply(res, TFun(vcat(args, [beta])), lgamma+1)
     
     #2.
     evars = [i + lgamma for (i, c) in enumerate(delta2) if c isa CExists]
@@ -691,16 +701,13 @@ end
 ###########################################
 ##################################################################
 function typer(lgamma::Index, expr::EApp)::T2ContainerWC
-    funcTerm = TypeSynthable(expr.func)
-    println("Warning-adding sneaky context here")
-    T2ContainerWC(Context([]), TypeSynthToMakeApp(funcTerm, expr.arg)) # Do you need a context here ???????????????????????????????????????????????
+    T2ContainerWC(Context([]), TypeSynthToMakeApp(expr.ops_dot_ordered)) # Do you need a context here ???????????????????????????????????????????????
 end
 # This is kind of a secret feature too:
 function typer2(gamma::Context, t::TypeSynthToMakeApp)::TypesynthRes
     # ^ assumed to be ted'ed  # Sixth Secret Feature
-    # print("Is this needed? Couldn't this be, like, not needed? :(")
-    # throw(DomainError(string(theta)*" "*string(typedFunc)*" "*string(typedRes)))
-    T2ContainerWC(gamma, TypeAppSynthContainerBase(TypeAppSynthable(t.func.typ, t.argToDoLater)))
+    @assert t.types[1] isa TypeSynthed
+    T2ContainerWC(gamma, TypeSynthContainerBase(t.types[1]))
 end
 typer2(gamma::Context, t::TypeAppSynthContainerBase) = (gamma=flattenContext(gamma); typer2(gamma, apply(gamma, t.t.typ)))
 # ^ assumed to be ted'ed  # do THIS VERY SPECIFIC THING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -724,7 +731,7 @@ end
 
 
 
-typer(lgamma::Index, t::TypeChecToFunc) = typer(lgamma, t.t.expr, t.t.typ)
+typer(lgamma::Index, t::TypeCheckToFunc) = typer(lgamma, t.t.expr, t.t.typ)
 typer(lgamma::Index, t::TypeCheckToClip) = typer(lgamma, t.t.expr, t.t.typ)
 typer(lgamma::Index, t::TypeCheckToMakeSynth) = typer(lgamma, t.t.expr, t.t.typ)
 typer(lgamma::Index, t::TypeCheckToMakeSynthANDApply) = typer(lgamma, t.t.expr, t.t.typ)
@@ -732,10 +739,16 @@ typer(lgamma::Index, t::TypeCheckContainerBase) = typer(lgamma, t.t.expr, t.t.ty
 typer(lgamma::Index, t::TypeSynthToMakeCheck) = typer(lgamma, t.t.expr)
 typer(lgamma::Index, t::TypeSynthToJustDereference) = nothing
 typer(lgamma::Index, t::TypeSynthToMakeProd) = typer(lgamma, t.types[t.i].expr)
-typer(lgamma::Index, t::TypeSynthToMakeApp) = typer(lgamma, t.func.expr)
 typer(lgamma::Index, t::TypeSynthContainerBase) = typer(lgamma, t.t.expr)
 typer(lgamma::Index, t::TypeAppSynthContainerBase) = typer(lgamma, t.t.typ, t.t.expr)
-
+function typer(lgamma::Index, t::TypeSynthToMakeApp) 
+    @assert t.types|>length == 2 "TEMPORARY assert because figuring this out is hard"
+    i=findlast(t.types .|> x->x isa Expr)
+    if i==t.types|>length typer(lgamma, t.types[i]) # type SYNTHing FUNC
+    else typer(lgamma, t.types[end].typ, t.types[i]) # type APPLY-SYNTHing ARG (and getting result)
+    # I HOPE it can be asserted that goes inth apply-synth...
+    end
+end
 
 function typer(lgamma::Index, expr::EGlob)::TypesynthRes 
     T2ContainerWC(Context([]), TypeSynthContainerBase(TypeSynthed(expr.type)))
@@ -767,11 +780,13 @@ end
 
 function typer(lgamma::Index, expr::EAbs, typ::TFun)::Union{T2ContainerWC, Error}
     lexpr = expr.body |> arity # we DON'T want this to exist
-    if lexpr > length(typ.inputs.data) return Error("$(expr |> pr) has too many vars to be of type $(typ |> pr) (the first has $(lexpr) vars, the second $(length(typ.inputs.data)))") end
-    tcable = T2ContainerWC(Context([CExistsSolved(t) for t in typ.inputs.data]),
+    if typ.typs_dot_ordered |> length > 2 return Error("An EAbs can only be a TFun with a single input and output, not a TFun intended as a computation and definitely not $(typ)") end
+    inputstypes, restype = typ.typs_dot_ordered[1], typ.typs_dot_ordered[2]
+    if lexpr > length(inputstypes.data) return Error("$(expr |> pr) has too many vars to be of type $(typ |> pr) (the first has $(lexpr) vars, the second $(length(inputstypes.data)))") end
+    tcable = T2ContainerWC(Context([CExistsSolved(t) for t in inputstypes.data]),
         TypeCheckToClip(
             TypeCheckable(subst(Array{Expr}([ELoc(i + lgamma) for i in 1:lexpr]), expr.body),
-            typ.t2),
+            restype),
             lgamma))
     tcable
 end
@@ -813,7 +828,7 @@ function typer(lgamma::Index, expr::EAbs)::T2ContainerWC
     delta = vcat(alphas, [CExists()]) # alphaS, beta, vars
     a2 = subst(Array{Expr}(newlocs), expr.body) # var of type alpha   
     # but isn't just alpha enough????????? -> I'm going with NO, now!! (because you would lose EQUALITY, i dunno if it's a thing)
-    T2ContainerWC(delta, TypeChecToFunc(TypeCheckable(a2, beta), ReturnTFunFlag(lexpr, lgamma)))
+    T2ContainerWC(delta, TypeCheckToFunc(TypeCheckable(a2, beta), ReturnTFunFlag([lexpr], lgamma)))
 end
 
 # -- | Type application synthesising
@@ -834,13 +849,14 @@ function typer(lgamma::Index, typ::TExists, expr::Expr)::T2ContainerWC # type is
     println("yep.. Definitely happing")
     tcable = T2ContainerWC(
         #           alpha2, alpha1
-        Context([CExists(), CExists(), CExistsSolved(TFun(TExists(lgamma + 2), TExists(lgamma + 1)))]),
+        Context([CExists(), CExists(), CExistsSolved(TFun([TExists(lgamma + 2), TExists(lgamma + 1)]))]),
         TypeCheckToMakeSynthANDApply(TExists(lgamma + 1), TypeCheckable(expr, TExists(lgamma + 2))))
     tcable
 end
 
 function typer(lgamma::Index, typ::TFun, expr::Expr)::T2ContainerWC # type is the FUNC and expr the ARG
-    tcable = T2ContainerWC(Context([]), TypeCheckToMakeSynth(typ.t2, TypeCheckable(expr, typ.inputs)))
+    @assert typ.typs_dot_ordered |> length ==2 typ
+    tcable = T2ContainerWC(Context([]), TypeCheckToMakeSynth(typ.typs_dot_ordered[2], TypeCheckable(expr, typ.typs_dot_ordered[1])))
     tcable
 end
 
@@ -851,11 +867,12 @@ typer(lgamma::Index, c::Nothing) = c ## This is a BASE CASE USED FOR JustDerefer
 
 table_2_ted(t::TypeSynthToMakeCheck, res::TypeSynthed)::TypeSynthToMakeCheck = TypeSynthToMakeCheck(t.type, res)  
 table_2_ted(t::TypeCheckToClip, res::TypeChecked)::TypeCheckToClip = TypeCheckToClip(res, t.lgamma)
-table_2_ted(t::TypeChecToFunc, res::TypeChecked)::TypeChecToFunc = TypeChecToFunc(res, t.f) 
+table_2_ted(t::TypeCheckToFunc, res::TypeChecked)::TypeCheckToFunc = TypeCheckToFunc(res, t.f) 
 table_2_ted(t::TypeCheckToMakeSynth, res::TypeChecked)::TypeCheckToMakeSynth = TypeCheckToMakeSynth(t.type, res) 
 table_2_ted(t::TypeCheckToMakeSynthANDApply, res::TypeChecked)::TypeCheckToMakeSynthANDApply = TypeCheckToMakeSynthANDApply(t.type, res) 
 table_2_ted(t::TypeCheckContainerBase, res::TypeChecked)::TypeCheckContainerBase = TypeCheckContainerBase(res) 
 table_2_ted(t::TypeSynthContainerBase, res::TypeSynthed)::TypeSynthContainerBase = TypeSynthContainerBase(res) 
+table_2_ted(t::TypeAppSynthContainerBase, res::TypeSynthed)::TypeAppSynthContainerBase = TypeAppSynthContainerBase(res) # ?????????????????????????????????????
 table_2_ted(t::TypeAppSynthContainerBase, res::TypeSynthed)::TypeAppSynthContainerBase = TypeAppSynthContainerBase(res) # ?????????????????????????????????????
     #@assert (!(res isa Error)) && (length(res[2]) == 0) (res) # god i hope this makes sense...
 function table_2_ted(t::TypeSynthToMakeProd, res::TypeSynthed)::TypeSynthToMakeProd 
@@ -865,18 +882,21 @@ function table_2_ted(t::TypeSynthToMakeProd, res::TypeSynthed)::TypeSynthToMakeP
     t
 end
 function table_2_ted(t::TypeSynthToMakeApp, res::TypeSynthed)::TypeSynthToMakeApp  # NOT a ted at all, you'll notice
-    TypeSynthToMakeApp(res, t.argToDoLater) # REMBER: the idea is to return the type of the RESULT of the app!!
+    i = findlast(t.types .|> x->x isa Expr)
+    t.types[i] = res
+    t
 end
-function table_2_ted(t::TypeSynthContainerBase, res::TypeAppSynthable)::TypeAppSynthContainerBase 
-    # This is for the TRICK where the APP routine does NOT return a TypED after typer2. :check:
-    # to be fair this is UGLY, but hey if it works it works
-    println(res)
-    TypeAppSynthContainerBase(res)
-end
+# function table_2_ted(t::TypeSynthContainerBase, res::TypeAppSynthable)::TypeAppSynthContainerBase 
+#     # This is for the TRICK where the APP routine does NOT return a TypED after typer2. :check:
+#     # to be fair this is UGLY, but hey if it works it works
+#     println(res)
+#     TypeAppSynthContainerBase(res)
+# end
 
+# True if "there is still work to do "
 is_typable(obj::T2ContainerWC) = is_typable(obj.t)
 is_typable(obj::T2Container) = obj.t isa Typable
-is_typable(obj::TypeSynthToMakeApp) = obj.func isa Typable 
+is_typable(obj::TypeSynthToMakeApp) = obj.types .|> (x->x isa Expr) |> any
 is_typable(obj::TypeSynthToMakeProd) = (obj.i <= obj.types |> length)
 is_typable(obj::TypeSynthToJustDereference) = obj.goBack === false
 
@@ -973,16 +993,24 @@ gstack = []
 @assert typerExecutor(Context([CExistsSolved(TGlob("K"))]), EAnno(EGlobAuto("f"), TGlob("G"))) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"F\"), TGlob(\"G\")" # shouldn't typerExecutor
 @assert typerExecutor(Context([CExistsSolved(TGlob("G"))]), EAnno(EGlobAuto("g"), TExists(1))) == (TExists(1), ContextElem[CExistsSolved(TGlob("G"))])
 @assert typerExecutor(Context([CExists(), CExistsSolved(TExists(1))]), EAnno(ELoc(2), TLoc(1)), TExists(1)) == Context([CExistsSolved(TLoc(1)), CExistsSolved(TExists(1))])
-@assert typerExecutor(Context([CExistsSolved(TGlob("K"))]), EAbs(EAnno(ELoc(1), TGlob("A")))) == (TForall(TFun(TProd(Type_[TGlob("A")]), TGlob("A"))), ContextElem[CExistsSolved(TGlob("K"))])
-@assert typerExecutor(Context([]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TGlob("G")]))))) == (TForall(TFun(TProd([TLoc(1)]), TProd([TLoc(1), TGlob("G")]))), ContextElem[])
-@assert typerExecutor(Context([CExistsSolved(TGlob("K"))]), EAbs(ELoc(1))) == (TForall(TFun(TProd(Type_[TLoc(1)]), TLoc(1))), ContextElem[CExistsSolved(TGlob("K"))])
+@assert typerExecutor(Context([CExistsSolved(TGlob("K"))]), EAbs(EAnno(ELoc(1), TGlob("A")))) == (TForall(TFunMake(TProd(Type_[TGlob("A")]), TGlob("A"))), ContextElem[CExistsSolved(TGlob("K"))])
+@assert typerExecutor(Context([]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TGlob("G")]))))) == (TForall(TFunMake(TProd([TLoc(1)]), TProd([TLoc(1), TGlob("G")]))), ContextElem[])
+@assert typerExecutor(Context([CExistsSolved(TGlob("K"))]), EAbs(ELoc(1))) == (TForall(TFunMake(TProd(Type_[TLoc(1)]), TLoc(1))), ContextElem[CExistsSolved(TGlob("K"))])
+@assert typerExecutor(Context([]), EAbs(EProd([EAnno(ELoc(1), TGlob("T")), ELoc(1)]))) == (TForall(TFun(Type_[TProd(Type_[TGlob("T")]), TProd(Type_[TGlob("T"), TGlob("T")])])), ContextElem[])
+@assert typerExecutor(Context([CExists()]), EAbs(EProd([EAnno(ELoc(1), TExists(1)), ELoc(1)])), TFunAuto(TGlob("A"), TProd([TGlob("A"),TGlob("A")]))) == Context([CExistsSolved(TGlob("A"))])
+@assert typerExecutor(Context([]), EAbs(EProd([EAnno(ELoc(1), TGlob("B")), ELoc(1)])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1),TLoc(1)])))) == Context([])
+@assert typerExecutor(Context([]), EAbs(EProd([EAnno(ELoc(1), TGlob("B")), ELoc(1)])), TForall(TFunAuto(TLoc(1), TProd([TLoc(2),TLoc(3)])))) == Context([])
+typerExecutor(Context([CExists()]), EAbs(EProd([EAnno(ELoc(1), TExists(1)), ELoc(1)])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1),TLoc(1)]))))
 @assert typerExecutor(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f"))) |> (x->apply(x[2], x[1])) == TProd([TGlob("F"), TGlob("G")])
 @assert typerExecutor(Context([CExists()]), EAppAuto(EAbs(EProd([EAnno(ELoc(1), TExists(1)), EGlobAuto("g")])), EGlobAuto("f"))) == (TProd(Type_[TGlob("F"), TGlob("G")]), ContextElem[CExistsSolved(TGlob("F"))])
 c, e = Context([CExists()]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TExists(1)]))))
-@assert typerExecutor(c, e) == (TForall(TFun(TProd(Array{Type_}([TLoc(1)])), TProd(Array{Type_}([TLoc(1), TExists(1)])))), ContextElem[CExistsSolved(TGlob("G"))])
+@assert typerExecutor(c, e) == (TForall(TFunMake(TProd(Array{Type_}([TLoc(1)])), TProd(Array{Type_}([TLoc(1), TExists(1)])))), ContextElem[CExistsSolved(TGlob("G"))])
 
-typerExecutor(Context([CExists(), CExistsSolved(TExists(1))]), EAppAuto(ELoc(2), EGlobAuto("f"))) == Context([CExistsSolved()])# "breaks" 
+
+# BROKEN
+
 typerExecutor(Context([CExists(), CExistsSolved(TExists(1))]), EAnno(EAppAuto(ELoc(2), EGlobAuto("f")), TGlob("G")))# actually breaks
+typerExecutor(Context([CExists(), CExistsSolved(TExists(1))]), EAppAuto(ELoc(2), EGlobAuto("f"))) == (TGlob("F"), Context([CExistsSolved(TForall(TFun(TProd([TGlob("F")]), TLoc(1)))), CExistsSolved(TExists(1))]))# "breaks" 
 
 
 
