@@ -196,9 +196,9 @@ struct CForall <: ContextElem end # PLACEHOLDER, also called ANY TYPE.
 # The Tvar referring to this position can be ANY TYPE.
 # Does this IMPLICITELY DEFINE A FUNCTION SCOPE ON THE FOLLOWING???
 # ^ originally had a Tvar
-struct CVar <: ContextElem
-    type::Type_ # type (annotation) of the VAR (NOT Tvar) referring to this position. 
-end
+# struct CVar <: ContextElem
+#     type::Type_ # type (annotation) of the VAR (NOT Tvar) referring to this position. 
+# end
 struct CExists <: ContextElem end # difference w/ CForall ??? # the difference is: this is WAITING to be solved, i think
 struct CExistsSolved <: ContextElem
     type::Type_ # type (meaning) of the Tvar referring to this position.
@@ -249,7 +249,7 @@ end
 # QUESTION: i COULD rework this^ into a thing that REMOVES the solved ones from the context too, PROPERLY taking care of all he following TExists, BUT:
 # Is this what i want? And if yes, always?   # -> What if the solved type is long and complex? We like references, don't we?
 
-flattenContext(cc::Context, c::CVar) = c
+# flattenContext(cc::Context, c::CVar) = c
 flattenContext(cc::Context, c::CExists) = c
 flattenContext(cc::Context, c::CExistsSolved) = CExistsSolved(apply(cc, c.type))
 flattenContext(cc::Context)::Context = cc .|> (x->flattenContext(cc,x))
@@ -712,10 +712,10 @@ function typer2(gamma::Context, t::TypeSynthToJustDereference)::TypesynthRes
     # ^ assumed to be ted'ed  # Seventh seventh Secret Feature
     if t.var > length(gamma)
         throw(DomainError("Undefined local var $(t.var), n args given = $(length(gamma))"))
-    elseif !(gamma[t.var] isa CVar)
-        Error("typer: ELoc not pointing to CVar: var $(expr), in $(gamma)")
-    else
+    elseif gamma[t.var] isa CExistsSolved
         T2ContainerWC(gamma, TypeSynthContainerBase(TypeSynthed(gamma[t.var].type)), )
+    else
+        T2ContainerWC(gamma, TypeSynthContainerBase(TypeSynthed(TExists(t.var))), )
     end    
 end  
 
@@ -768,7 +768,7 @@ end
 function typer(lgamma::Index, expr::EAbs, typ::TFun)::Union{T2ContainerWC, Error}
     lexpr = expr.body |> arity # we DON'T want this to exist
     if lexpr > length(typ.inputs.data) return Error("$(expr |> pr) has too many vars to be of type $(typ |> pr) (the first has $(lexpr) vars, the second $(length(typ.inputs.data)))") end
-    tcable = T2ContainerWC(Context([CVar(t) for t in typ.inputs.data]),
+    tcable = T2ContainerWC(Context([CExistsSolved(t) for t in typ.inputs.data]),
         TypeCheckToClip(
             TypeCheckable(subst(Array{Expr}([ELoc(i + lgamma) for i in 1:lexpr]), expr.body),
             typ.t2),
@@ -806,13 +806,11 @@ end
 function typer(lgamma::Index, expr::EAbs)::T2ContainerWC 
     lexpr = expr.body |> arity
     alphas = [CExists() for i in 1:lexpr] 
-    x2s = [CVar(TExists(lgamma + i)) for i in 1:lexpr] # x2:alpha
-    texists = [TExists(lgamma + i) for i in 1:lexpr] # pointing to alphas
     # positions where x2's end up: lgamma + lexpr + 1 + 1 tolgamma + lexpr + 1 + lexpr
-    newlocs = [ELoc(lgamma + lexpr + 1 + i) for i in 1:lexpr] 
+    newlocs = [ELoc(lgamma + i) for i in 1:lexpr] 
     beta = TExists(lgamma + lexpr + 1)
 
-    delta = vcat(alphas, [CExists()], x2s) # alphaS, beta, vars
+    delta = vcat(alphas, [CExists()]) # alphaS, beta, vars
     a2 = subst(Array{Expr}(newlocs), expr.body) # var of type alpha   
     # but isn't just alpha enough????????? -> I'm going with NO, now!! (because you would lose EQUALITY, i dunno if it's a thing)
     T2ContainerWC(delta, TypeChecToFunc(TypeCheckable(a2, beta), ReturnTFunFlag(lexpr, lgamma)))
@@ -958,33 +956,33 @@ gstack = []
 @assert typerExecutor(Context([]), EUnit(), TForall(TForall(TUnit()))) == Context([])
 @assert typerExecutor(Context([]), EAbs(EUnit()), TFunAuto(TForall(TUnit()), TUnit())) == Context([])
 @assert typerExecutor(Context([]), EGlobAuto("g"), TGlob("F")) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"G\"), TGlob(\"F\")"
-@assert typerExecutor(Context([CVar(TGlob("F"))]), ELoc(1), TGlob("F")) == Context([CVar(TGlob("F"))])
+@assert typerExecutor(Context([CExistsSolved(TGlob("F"))]), ELoc(1), TGlob("F")) == Context([CExistsSolved(TGlob("F"))])
 @assert typerExecutor(Context([]), EGlobAuto("f"),  TForall(TLoc(1))) == Context([])
 @assert typerExecutor(Context([]), EProd([EGlobAuto("g"), EGlobAuto("f")]),  TForall(TProd([TLoc(1), TGlob("F")]))) == Context([])
 @assert typerExecutor(Context([CExistsSolved(TGlob("G"))]), EGlobAuto("g"), TExists(1)) == Context([CExistsSolved(TGlob("G"))])
 @assert typerExecutor(Context([CExistsSolved(TGlob("G"))]), EGlobAuto("f"), TExists(1)) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"F\"), TGlob(\"G\")"
 @assert typerExecutor(Context([CExists()]), EGlobAuto("g"), TExists(1)) == Context([CExistsSolved(TGlob("G"))])
-@assert typerExecutor(Context([CExists(), CVar(TLoc(1))]), ELoc(2), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TLoc(1))])
-@assert typerExecutor(Context([CExistsSolved(TGlob("F")), CVar(TGlob("F"))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CVar(TGlob("F"))])
-@assert typerExecutor(Context([CExistsSolved(TGlob("F")), CVar(TExists(1))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CVar(TExists(1))])
-@assert typerExecutor(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CVar(TExists(1))])
-@assert typerExecutor(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TExists(1)), TGlob("F")) == Context([CExistsSolved(TGlob("F")), CVar(TExists(1))])
-@assert typerExecutor(Context([CExists(), CVar(TLoc(1))]), EAnno(ELoc(2), TLoc(1)), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TLoc(1))])
-@assert typerExecutor(Context([CExists(), CVar(TExists(1))]), EProd([EAnno(ELoc(2), TGlob("G")), EAnno(ELoc(2), TExists(1))]), TProd([TExists(1), TGlob("G")])) == Context([CExistsSolved(TGlob("G")), CVar(TExists(1))])
-@assert typerExecutor(Context([CVar(TGlob("K"))]), EAnno(EGlobAuto("g"), TGlob("G"))) == (TGlob("G"), ContextElem[CVar(TGlob("K"))])
-@assert typerExecutor(Context([CVar(TGlob("K"))]), EAnno(EGlobAuto("f"), TGlob("G"))) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"F\"), TGlob(\"G\")" # shouldn't typerExecutor
+@assert typerExecutor(Context([CExists(), CExistsSolved(TLoc(1))]), ELoc(2), TExists(1)) == Context([CExistsSolved(TLoc(1)), CExistsSolved(TLoc(1))])
+@assert typerExecutor(Context([CExistsSolved(TGlob("F")), CExistsSolved(TGlob("F"))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CExistsSolved(TGlob("F"))])
+@assert typerExecutor(Context([CExistsSolved(TGlob("F")), CExistsSolved(TExists(1))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CExistsSolved(TExists(1))])
+@assert typerExecutor(Context([CExists(), CExistsSolved(TExists(1))]), EAnno(ELoc(2), TGlob("F")), TExists(1)) == Context([CExistsSolved(TGlob("F")), CExistsSolved(TExists(1))])
+@assert typerExecutor(Context([CExists(), CExistsSolved(TExists(1))]), EAnno(ELoc(2), TExists(1)), TGlob("F")) == Context([CExistsSolved(TGlob("F")), CExistsSolved(TExists(1))])
+@assert typerExecutor(Context([CExists(), CExistsSolved(TLoc(1))]), EAnno(ELoc(2), TLoc(1)), TExists(1)) == Context([CExistsSolved(TLoc(1)), CExistsSolved(TLoc(1))])
+@assert typerExecutor(Context([CExists(), CExistsSolved(TExists(1))]), EProd([EAnno(ELoc(2), TGlob("G")), EAnno(ELoc(2), TExists(1))]), TProd([TExists(1), TGlob("G")])) == Context([CExistsSolved(TGlob("G")), CExistsSolved(TExists(1))])
+@assert typerExecutor(Context([CExistsSolved(TGlob("K"))]), EAnno(EGlobAuto("g"), TGlob("G"))) == (TGlob("G"), ContextElem[CExistsSolved(TGlob("K"))])
+@assert typerExecutor(Context([CExistsSolved(TGlob("K"))]), EAnno(EGlobAuto("f"), TGlob("G"))) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"F\"), TGlob(\"G\")" # shouldn't typerExecutor
 @assert typerExecutor(Context([CExistsSolved(TGlob("G"))]), EAnno(EGlobAuto("g"), TExists(1))) == (TExists(1), ContextElem[CExistsSolved(TGlob("G"))])
-@assert typerExecutor(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TLoc(1)), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TExists(1))])
-@assert typerExecutor(Context([CVar(TGlob("K"))]), EAbs(EAnno(ELoc(1), TGlob("A")))) == (TForall(TFun(TProd(Type_[TGlob("A")]), TGlob("A"))), ContextElem[CVar(TGlob("K"))])
+@assert typerExecutor(Context([CExists(), CExistsSolved(TExists(1))]), EAnno(ELoc(2), TLoc(1)), TExists(1)) == Context([CExistsSolved(TLoc(1)), CExistsSolved(TExists(1))])
+@assert typerExecutor(Context([CExistsSolved(TGlob("K"))]), EAbs(EAnno(ELoc(1), TGlob("A")))) == (TForall(TFun(TProd(Type_[TGlob("A")]), TGlob("A"))), ContextElem[CExistsSolved(TGlob("K"))])
 @assert typerExecutor(Context([]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TGlob("G")]))))) == (TForall(TFun(TProd([TLoc(1)]), TProd([TLoc(1), TGlob("G")]))), ContextElem[])
-@assert typerExecutor(Context([CVar(TGlob("K"))]), EAbs(ELoc(1))) == (TForall(TFun(TProd(Type_[TLoc(1)]), TLoc(1))), ContextElem[CVar(TGlob("K"))])
+@assert typerExecutor(Context([CExistsSolved(TGlob("K"))]), EAbs(ELoc(1))) == (TForall(TFun(TProd(Type_[TLoc(1)]), TLoc(1))), ContextElem[CExistsSolved(TGlob("K"))])
 @assert typerExecutor(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f"))) |> (x->apply(x[2], x[1])) == TProd([TGlob("F"), TGlob("G")])
 @assert typerExecutor(Context([CExists()]), EAppAuto(EAbs(EProd([EAnno(ELoc(1), TExists(1)), EGlobAuto("g")])), EGlobAuto("f"))) == (TProd(Type_[TGlob("F"), TGlob("G")]), ContextElem[CExistsSolved(TGlob("F"))])
 c, e = Context([CExists()]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TExists(1)]))))
 @assert typerExecutor(c, e) == (TForall(TFun(TProd(Array{Type_}([TLoc(1)])), TProd(Array{Type_}([TLoc(1), TExists(1)])))), ContextElem[CExistsSolved(TGlob("G"))])
 
-typerExecutor(Context([CExists(), CVar(TExists(1))]), EAppAuto(ELoc(2), EGlobAuto("f"))) == Context([CExistsSolved()])# "breaks" 
-typerExecutor(Context([CExists(), CVar(TExists(1))]), EAnno(EAppAuto(ELoc(2), EGlobAuto("f")), TGlob("G")))# actually breaks
+typerExecutor(Context([CExists(), CExistsSolved(TExists(1))]), EAppAuto(ELoc(2), EGlobAuto("f"))) == Context([CExistsSolved()])# "breaks" 
+typerExecutor(Context([CExists(), CExistsSolved(TExists(1))]), EAnno(EAppAuto(ELoc(2), EGlobAuto("f")), TGlob("G")))# actually breaks
 
 
 
@@ -1026,24 +1024,24 @@ println("Type of $(S |> pr) is generated $(tres |> pr) in context $(cres .|> pr)
 
 
 # Other more broken things:
-gamma = Context([CVar(TGlob("K")), CExists()])
+gamma = Context([CExistsSolved(TGlob("K")), CExists()])
 expr = EAbs(EGlobAuto("g"))
 tc = typerExecutor(gamma, expr.body, TExists(2))
 
-gamma = Context([CVar(TGlob("K")), CExists(), CExists(), CVar(TExists(2))])
+gamma = Context([CExistsSolved(TGlob("K")), CExists(), CExists(), CExistsSolved(TExists(2))])
 tc = typerExecutor(gamma, ELoc(4), TExists(3))
 # ^ buuh :(
 
-typerExecutor(Context([CVar(TGlob("G"))]), EGlobAuto("f"))
-typerExecutor(Context([CVar(TGlob("G"))]), ELoc(1))
+typerExecutor(Context([CExistsSolved(TGlob("G"))]), EGlobAuto("f"))
+typerExecutor(Context([CExistsSolved(TGlob("G"))]), ELoc(1))
 typerExecutor(Context([CExists()]), ELoc(1))
 typerExecutor(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f")))
 typerExecutor(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f")))
 typerExecutor(Context([]), EProd([EGlobAuto("f"), EGlobAuto("g")]), TForall(TProd([TLoc(1), TLoc(2)])))
-c, e, t = Context([CExists(), CVar(TExists(1))]), EProd([ELoc(2)]), TForall(TProd([TLoc(1)]))
+c, e, t = Context([CExists(), CExistsSolved(TExists(1))]), EProd([ELoc(2)]), TForall(TProd([TLoc(1)]))
 typerExecutor(c, e, t)
-typerExecutor(Context([CVar(TGlob("K"))]), EAbs(EGlobAuto("g")))
-# gamma = Context([CVar(TGlob("K"))])
+typerExecutor(Context([CExistsSolved(TGlob("K"))]), EAbs(EGlobAuto("g")))
+# gamma = Context([CExistsSolved(TGlob("K"))])
 # expr = EAbs(ELoc(1))
 c = Context([CExists()])
 e = EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TExists(1)]))))
