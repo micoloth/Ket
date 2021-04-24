@@ -249,6 +249,13 @@ end
 # QUESTION: i COULD rework this^ into a thing that REMOVES the solved ones from the context too, PROPERLY taking care of all he following TExists, BUT:
 # Is this what i want? And if yes, always?   # -> What if the solved type is long and complex? We like references, don't we?
 
+flattenContext(cc::Context, c::CVar) = c
+flattenContext(cc::Context, c::CExists) = c
+flattenContext(cc::Context, c::CExistsSolved) = CExistsSolved(apply(cc, c.type))
+flattenContext(cc::Context)::Context = cc .|> (x->flattenContext(cc,x))
+flattenContext(Context([CExists(), CExistsSolved(TExists(3)), CExistsSolved(TExists(4)), CExistsSolved(TGlob("T")), CExistsSolved(TExists(1))]))
+
+
 apply(Context([CExistsSolved(TGlob("G"))]), TExists(1))
 
 monotype(t::TUnit)::Bool = true # so yes, in its weird way
@@ -379,6 +386,7 @@ err(alpha, alpha2) = Error("subtype, isn't subtypable: $(repr(alpha)), $(repr(al
 
 subtype(gamma::Context, alpha::TLoc, alpha2::TLoc)::Union{Context, Error} = ((alpha == alpha2) ? gamma : err(alpha, alpha2))
 subtype(gamma::Context, alpha::TGlob, alpha2::TGlob)::Union{Context, Error} = ((alpha == alpha2) ? gamma : err(alpha, alpha2))
+subtype(gamma::Context, alpha::TGlob, alpha2::TGlob)::Union{Context, Error} = ((alpha == alpha2) ? gamma : err(alpha, alpha2))
 subtype(gamma::Context, alpha::TUnit, alpha2::TUnit)::Union{Context, Error} = gamma
 subtype(gamma::Context, fa::TFun, fb::TFun)::Union{Context, Error} = (c=subtype(gamma, fb.inputs, fa.inputs); (c isa Error) ? c : subtype(c, apply(c, fa.t2), apply(c, fb.t2)))
 function subtype(gamma::Context, t1::TProd, t2::TProd)::Union{Context, Error}
@@ -426,21 +434,30 @@ end
 
 function subtype(gamma::Context, a, t::TForall) # R: more subtle, contxt is EXTENDED with the loc?
     lgamma, ltyp = length(gamma), t.body |> arity # we DON'T want this to exist :(
-    gamma2 = vcat(gamma, [CForall() for i in 1:ltyp])
-    sbody = subst(Array{Type_}([TLoc(lgamma + i) for i in 1:ltyp]), t.body)
+    gamma2 = vcat(gamma, [CExists() for i in 1:ltyp]) ##################################### it WAS CForall
+    sbody = subst(Array{Type_}([TExists(lgamma + i) for i in 1:ltyp]), t.body) ##################################### it WAS TLoc
     gamma_res = subtype(gamma2, a, sbody)
     # dropMarker(vc, gamma_res)  # i don't know how to drop U_U
     gamma_res
 end
 function subtype(gamma::Context, a::TForall, t::TForall) # the same PREVIOUS case
     lgamma, ltyp = length(gamma), t.body |> arity # we DON'T want this to exist :(
-    gamma2 = vcat(gamma, [CForall() for i in 1:ltyp])
-    sbody = subst(Array{Type_}([TLoc(lgamma + i) for i in 1:ltyp]), t.body)
+    gamma2 = vcat(gamma, [CExists() for i in 1:ltyp]) ##################################### it WAS CForall
+    sbody = subst(Array{Type_}([TExists(lgamma + i) for i in 1:ltyp]), t.body) ##################################### it WAS TLoc
     gamma_res = subtype(gamma2, a, sbody)
     # dropMarker(vc, gamma_res)  # i don't know how to drop U_U
     gamma_res
 end
 function subtype(gamma::Context, t::TForall, b) # L: Turn Forall loc's into Exists, then solve
+    lgamma, ltyp = length(gamma), t.body |> arity # we DON'T want this to exist :(
+    gamma2 = vcat(gamma, [CExists() for i in 1:ltyp])
+    sbody = subst(Array{Type_}([TExists(lgamma + i) for i in 1:ltyp]), t.body)
+    gamma_res = subtype(gamma2, sbody, b)
+    # dropMarker(vc, gamma_res)  # i don't know how to drop U_U
+    println("Getting to context: ", gamma_res)
+    (gamma_res isa Error) ? gamma_res : gamma_res[1:lgamma]
+end
+function subtype(gamma::Context, t::TForall, b::TExists) # the TForall case, to disambiguate
     lgamma, ltyp = length(gamma), t.body |> arity # we DON'T want this to exist :(
     gamma2 = vcat(gamma, [CExists() for i in 1:ltyp])
     sbody = subst(Array{Type_}([TExists(lgamma + i) for i in 1:ltyp]), t.body)
@@ -481,157 +498,131 @@ substEx(new::Type_, var::Index, expr::TExists)::Type_ = (expr.var == var ? new :
 # --   typer Γ e A = Δ <=> Γ |- e <= A -| Δ
 
 
-TypecheckRes = Union{Error, Context}
-TypesynthRes = Union{Error, Tuple{Type_, Context}}
-TypingRes = Union{TypecheckRes, TypesynthRes}
 
 ###############################################################################
 
 abstract type Typable end
 abstract type Typed end
+abstract type T2Container end
 
 struct TypeCheckable <: Typable
-    gamma::Context
     expr::Expr
     typ::Type_
 end
-get_gamma(t::TypeCheckable) = t.gamma
-set_gamma(t::TypeCheckable, newgamma::Context)::TypeCheckable = TypeCheckable(newgamma, t.expr, t.typ)
 struct TypeSynthable <: Typable
-    gamma::Context
     expr::Expr
 end
-get_gamma(t::TypeSynthable) = t.gamma
-set_gamma(t::TypeSynthable, newgamma::Context)::TypeSynthable = TypeSynthable(newgamma, t.expr)
 struct TypeAppSynthable <: Typable
-    gamma::Context
     typ::Type_
     expr::Expr
 end
-get_gamma(t::TypeAppSynthable) = t.gamma
-set_gamma(t::TypeAppSynthable, newgamma::Context)::TypeAppSynthable = TypeAppSynthable(newgamma, t.typ, t.expr)
+struct TypeChecked <: Typed
+end
+struct TypeSynthed <: Typed
+    typ::Type_
+end
+# struct TypeAppSynthed <: Typed  # i THINK it's just TypeSynthed
+#     typ::Type_
+#     expr::Expr
+# end
 
-
-struct TypeCheckableToClip <: Typable  # First secret Feature
-    tcable::TypeCheckable
+struct TypeCheckContainerBase <: T2Container
+    t::Union{TypeCheckable, TypeChecked}
+end
+struct TypeSynthContainerBase <: T2Container
+    t::Union{TypeSynthable, TypeSynthed}
+end
+struct TypeAppSynthContainerBase <: T2Container
+    t::Union{TypeAppSynthable, TypeSynthed}
+end
+struct TypeCheckToClip <: T2Container  # First secret Feature
+    t::Union{TypeCheckable, TypeChecked}
     lgamma::Index
 end
-get_gamma(t::TypeCheckableToClip) = t.tcable.gamma
-set_gamma(t::TypeCheckableToClip, newgamma::Context)::TypeCheckableToClip = TypeCheckableToClip(TypeCheckable(newgamma, t.tcable.expr, t.tcable.typ), t.lgamma)
-struct TypeCheckableToMakeSynth <: Typable  # Second secret Feature
+struct TypeCheckToMakeSynth <: T2Container  # Second secret Feature
     type::Type_
-    tcable::TypeCheckable
+    t::Union{TypeCheckable, TypeChecked}
 end
-get_gamma(t::TypeCheckableToMakeSynth) = t.tcable.gamma
-set_gamma(t::TypeCheckableToMakeSynth, newgamma::Context)::TypeCheckableToMakeSynth = TypeCheckableToMakeSynth(t.type, TypeCheckable(newgamma, t.tcable.expr, t.tcable.typ))
-struct TypeSynthableToMakeCheck <: Typable  # Third secret Feature
+struct TypeCheckToMakeSynthANDApply <: T2Container  # Second secret Feature
     type::Type_
-    tsable::TypeSynthable
+    t::Union{TypeCheckable, TypeChecked}
 end
-get_gamma(t::TypeSynthableToMakeCheck) = t.tsable.gamma
-set_gamma(t::TypeSynthableToMakeCheck, newgamma::Context)::TypeSynthableToMakeCheck = TypeSynthableToMakeCheck(t.type, TypeSynthable(newgamma, t.tsable.expr))
+struct TypeSynthToMakeCheck <: T2Container  # Third secret Feature
+    type::Type_
+    t::Union{TypeSynthable, TypeSynthed}
+end
 
 struct ReturnTFunFlag
     lexpr::Index
     lgamma::Index
 end
-struct TypeCheckableToFunc <: Typable  # Fourth secret Feature
-    tcable::TypeCheckable
+struct TypeChecToFunc <: T2Container  # Fourth secret Feature
+    t::Union{TypeCheckable, TypeChecked}
     f::ReturnTFunFlag
 end
-get_gamma(t::TypeCheckableToFunc) = t.tcable.gamma
-set_gamma(t::TypeCheckableToFunc, newgamma::Context)::TypeCheckableToFunc = TypeCheckableToFunc(TypeCheckable(newgamma, t.tcable.expr, t.tcable.typ), t.f)
-
-mutable struct TypeSynthableToMakeProd <: Typable  # Fifth secret Feature
-    c::Context
+mutable struct TypeSynthToMakeProd <: T2Container  # Fifth secret Feature
     i::Int # where you at (what's the NEXT TO DO, so starts at 1)
     types::Array{Union{TypeSynthable, Type_}}
 end
-get_gamma(t::TypeSynthableToMakeProd) = t.c
-set_gamma(t::TypeSynthableToMakeProd, newgamma::Context)::TypeSynthableToMakeProd = TypeSynthableToMakeProd(newgamma, t.i, t.types)
-mutable struct TypeSynthableToMakeApp <: Typable  # Sixth secret Feature
-    func::TypeSynthable
+struct TypeSynthToMakeApp <: T2Container  # Sixth secret Feature
+    func::Union{TypeSynthable, TypeSynthed}
     argToDoLater::Expr
 end
-get_gamma(t::TypeSynthableToMakeApp) = t.func.gamma
-set_gamma(t::TypeSynthableToMakeApp, newgamma::Context)::TypeSynthableToMakeApp = TypeSynthableToMakeApp(set_gamma(t.func, newgamma), t.argToDoLater)
-
-set_gamma(e::Expr, g::Context) = e
-get_gamma(t::TypecheckRes) = t
-set_gamma(t::TypecheckRes, newgamma::Context)::TypecheckRes = t isa Error ? t : newgamma
-get_gamma(t::TypesynthRes) = t[2]
-set_gamma(t::TypesynthRes, newgamma::Context)::TypesynthRes = t isa Error ? t : (t[1], newgamma)
-
-struct TypeSynthableToJustDereference <: Typable
+struct TypeSynthToJustDereference <: T2Container
     var::Index
+    goBack::Bool
+end
+
+struct T2ContainerWC
     gamma::Context
-end
-get_gamma(t::TypeSynthableToJustDereference) = t.gamma
-set_gamma(t::TypeSynthableToJustDereference, newgamma::Context)::TypeSynthableToJustDereference = TypeSynthableToJustDereference(t.var, newgamma)
+    t::T2Container
 
-# struct TypeCheckedToClip <: Typed  # First secret Feature
-#     tcheckRes::Context
-#     lgamma::Index
-# end
-# struct TypeCheckedToMakeSynth <: Typed  # Second secret Feature
-#     type::Type_
-#     tcheckRes::Context
-# end
-# struct TypeSynthedToMakeCheck <: Typed  # Third secret Feature
-#     type::Type_
-#     tsynthResC::Context
-#     tsynthResT::Type_
-# end
-# struct TypeCheckedToFunc <: Typed  # Fourth secret Feature
-#     tcheckRes::Context
-#     f::ReturnTFunFlag
-# end
-# struct TypeSynthedToMakeProd <: Typed  # Fifth secret feature: PARALLEL BRANCHING, PRODS
-#     tsynthResC::Context
-#     tsynthResTs::Array{Type_}
-# end
-# struct TypeSynthedToMakeApp <: Typed  # Sixth secret feature: SEQUENTIAL BRANCHING, or APP
-#     typedFunc::Type_
-#     theta::Context
-#     typedArg::Type_
-# end
+end
+TypecheckRes = Union{Error, T2ContainerWC}
+TypesynthRes = Union{Error, T2ContainerWC}
 
+##############################################
 
-function typer(lgamma::Index, t::TypeCheckable)
-    typer(lgamma, t.expr, t.typ)
-end
-function typer(lgamma::Index, t::TypeSynthable)
-    typer(lgamma, t.expr)
-end
-function typer(lgamma::Index, t::TypeAppSynthable)
-    typer(lgamma, t.typ, t.expr)
-end
 
 function typer(gamma::Context, expr::EUnit, typ::TUnit)::TypecheckRes
-    gamma
+    T2ContainerWC(gamma, TypeChecked(), )
 end
 
+typer2(gamma::Context, t::TypeCheckContainerBase) = gamma  
+# ^ assumed to be ted'ed  # Do nothing
+typer2(gamma::Context, t::TypeSynthContainerBase) = typer2(gamma, t.t.typ)  
+# ^ assumed to be ted'ed  # do nothing
+
 # First Secret Feature: if lgamma is present, Clip Away context if not Error!!
-function typer2(tcheckRes::Context, lgamma::Index)::TypecheckRes  # FROM: TypeCheckedToClip
-    tcheckRes[1:lgamma]
+function typer2(gamma::Context, t::TypeCheckToClip)::TypecheckRes  # FROM: TypeCheckedToClip
+    # ^ assumed to be ted'ed #OK  # First Secret Feature
+    T2ContainerWC(gamma[1:t.lgamma], TypeCheckContainerBase(TypeChecked()), )
 end
 
 
 # Second Secret Feature: if typ is present, Decorate context if not Error!!
-# Also note how decorator is passed FIRST to distinguish from something you typecheck
 # this Secret Feature turns a checked type into a "synthed" one.
-# Yes, in real use type always == tcable.typ. I don't care now.
-function typer2(type::Type_, tcheckRes::Context)::TypesynthRes  # TypeCheckedToMakeSynth
-    (type, tcheckRes) 
+function typer2(gamma::Context, t::TypeCheckToMakeSynth)::TypesynthRes  # TypeCheckedToMakeSynth
+    # ^ assumed to be ted'ed #OK  # Second Secret Feature
+    T2ContainerWC(gamma, TypeSynthContainerBase(TypeSynthed(t.type)), ) 
 end
 
+# EIGHT Secret Feature: if typ is present, Decorate context if not Error!! AND APPLY <<<<<<<<<<<<<
+# This is to solve out the context from synthApp's .......  >>> PROBLEMS THAT I CURRENTLY SEE: What if by BRUTALLY APPLYING i am LOSING some info of the kind, " a tforall shoul be instantiated ONCE and mantain that equality(refrerence) contraint" ?? > Very vague i know
+# this Secret Feature turns a checked type into a "synthed" one.
+function typer2(gamma::Context, t::TypeCheckToMakeSynthANDApply)::TypesynthRes  # TypeCheckedToMakeSynth
+    # ^ assumed to be ted'ed #OK  # Second Secret Feature
+    gamma = flattenContext(gamma)
+    T2ContainerWC(gamma, TypeSynthContainerBase(TypeSynthed(apply(gamma, t.type))), ) 
+end
 
 #Third Secret Feature: Apply a Subtyping check to the result of a typeSynth.
 # this Secret Feature turns a synthed type into a checked one, if subtypes.
-function typer2(type::Type_, tsynthResC::Context, tsynthResT::Type_)::TypecheckRes  # TypeSynthedToMakeCheck
-    (a, theta) = tsynthResT, tsynthResC
+function typer2(gamma::Context, t::TypeSynthToMakeCheck)::TypecheckRes  # TypeSynthedToMakeCheck
+    # ^ assumed to be ted'ed  # Third Secret Feature
+    (a, theta) = t.t.typ, gamma
     # subtype(theta, apply(theta, a), apply(theta, typ)) # <------------ THING
-    a2, typ2 = apply(theta, a), apply(theta, type)
+    a2, typ2 = apply(theta, a), apply(theta, t.type)
     # println("after applying $(theta) to $(a) you get: $(a2)")
     # println("after applying $(theta) to $(typ) you get: $(typ2)")
     theta2 = subtype(theta, a2, typ2)
@@ -640,14 +631,15 @@ function typer2(type::Type_, tsynthResC::Context, tsynthResT::Type_)::TypecheckR
     elseif theta2 isa Error
         Error("Doesn't typer with message: $(theta2)")
     else
-        theta2
+        T2ContainerWC(theta2, TypeCheckContainerBase(TypeChecked()), )
     end
 end
 
 
 # Fourth Secret Feature: takes a context TO CHECK IN ABS MODE and returns THE CORRESPONDING TFORALL(TFUN).
-function typer2(tcheckRes::Context, f::ReturnTFunFlag)::TypesynthRes  # TypeCheckedToFunc
-    res = tcheckRes
+function typer2(gamma::Context, t::TypeChecToFunc)::TypesynthRes  # TypeCheckedToFunc
+    # ^ assumed to be ted'ed  # Fourth secret Feature
+    res = gamma
     # res is the TYPECHECKED CONTEXT
 
     # SIMPLER/ ORIGINAL
@@ -658,142 +650,145 @@ function typer2(tcheckRes::Context, f::ReturnTFunFlag)::TypesynthRes  # TypeChec
     # are we just assuming it's never an error?
     @assert (! (res isa Error)) res
 
-    lgamma = f.lgamma
-    lexpr = f.lexpr
+    lgamma = t.f.lgamma
+    lexpr = t.f.lexpr
     # IDEA: first 1. you APPPLY all (TExists pointing to) CExistsSolved's directly into return type, second 2. you Turn all REMAINING (TExists pointing to) CExist's into TLoc's !!!
 
     #1.
+    beta = TExists(lexpr + lgamma + 1) # this SHOULD BE EQUIVALENT to what you get from >>> t.t <<< !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     # idea: rn left-to-right dependencies are BROKEN, but EVEN IN THE WORST CASE, i'm NEVER doing the thing of 
     # CHANGING WHAT COMES BEFORE...
     # SO, lgamma is a GOOD INFORMATION about where to split!!!
+    (delta, delta2) = res[1:lgamma], res[lgamma+1:end]
     texists = [TExists(i + lgamma) for i in 1:lexpr] # pointing to alphas IN delta2 
-    beta = TExists(lexpr + lgamma + 1)
     #^ yes right, the equivalent ones above are superfluous // OK no problem at all w/ texists, but beta ????
     tau = apply(res, TFun(TProd(texists), beta), lgamma+1)
     
-    (delta, delta2) = res[1:lgamma], res[lgamma+1:end]
     #2.
     evars = [i + lgamma for (i, c) in enumerate(delta2) if c isa CExists]
     for (i_newloc, i_exists) in enumerate(evars)
         tau = substEx(TLoc(i_newloc), i_exists, tau)
     end
-    return (TForall(tau), delta)# or res? Don't think gamma...
+    return T2ContainerWC(delta, TypeSynthContainerBase(TypeSynthed(TForall(tau))) )# or res? Don't think gamma...
 end
 
-# function typer2(c::TypesynthRes)::TypesynthRes c end # do literally nothing howbouthat
-typer2(t_::Type_, c::Context)::TypesynthRes = (t_, c) # do literally nothing howbouthat
-function typer2(c::Context)::TypecheckRes c end # do literally nothing howbouthat
-
-tED_2_bigGamma(newgamma::Context, tcheckRes::Context, lgamma::Index) = (newgamma, lgamma)
-tED_2_bigGamma(newgamma::Context, type::Type_, tcheckRes::Context) = (type, newgamma)
-tED_2_bigGamma(newgamma::Context, type::Type_, tsynthResC::Context, tsynthResT::Type_) = (type, newgamma, tsynthResT)
-tED_2_bigGamma(newgamma::Context, tcheckRes::Context, f::ReturnTFunFlag) = (newgamma, f)
-tED_2_bigGamma(newgamma::Context, c::TypesynthRes) = (c[1], newgamma)
-tED_2_bigGamma(newgamma::Context, c::Context) = newgamma
-tED_2_bigGamma(newgamma::Context, gamma::Context, var::Index) = (newgamma, var)
-tED_2_bigGamma(newgamma::Context, var::Index, gamma::Context) = (var, newgamma)
-tED_2_bigGamma(newgamma::Context, gamma::Context, arr::Array{Type_}) = (newgamma, arr)
-
-tED_getGamma(tcheckRes::Context, lgamma::Index) = tcheckRes
-tED_getGamma(type::Type_, tcheckRes::Context) = tcheckRes
-tED_getGamma(type::Type_, tsynthResC::Context, tsynthResT::Type_) = tsynthResC
-tED_getGamma(tcheckRes::Context, f::ReturnTFunFlag) = tcheckRes
-tED_getGamma(c::TypesynthRes) = c[2]
-tED_getGamma(c::Context) = c
-tED_getGamma(gamma::Context, var::Index) = gamma
+function typer2(c::Context, t::TypeSynthed)::TypesynthRes T2ContainerWC(c, TypeSynthContainerBase(TypeSynthed(t))) end # do literally nothing howbouthat
+typer2(c::Context, t::Type_, )::TypesynthRes = T2ContainerWC(c, TypeSynthContainerBase(TypeSynthed(t))) # do literally nothing howbouthat
+typer2(c::Context)::TypecheckRes = T2ContainerWC(c, TypeCheckContainerBase(TypeChecked()))  # do literally nothing howbouthat
 
 
 ###########################################
-function typer(lgamma::Index, expr::EProd)::TypeSynthableToMakeProd 
-    arr = Array{Union{TypeSynthable, Type_}}([TypeSynthable(Context([]), d) for d in expr.data])
-    TypeSynthableToMakeProd(Context([]), 1, arr)
+function typer(lgamma::Index, expr::EProd)::T2ContainerWC 
+    arr = Array{Union{TypeSynthable, Type_}}([TypeSynthable(d) for d in expr.data])
+    T2ContainerWC(Context([]), TypeSynthToMakeProd(1, arr))# Do you need a context here ???????????????????????????????????????????????
 end
 # This is kind of a secret feature too:
-function typer2(tsynthResC::Context, tsynthResTs::Array{Type_})::TypesynthRes   # TypeSynthedToMakeProd
-    (TProd(tsynthResTs), tsynthResC)
+function typer2(gamma::Context, t::TypeSynthToMakeProd)::TypesynthRes   # TypeSynthedToMakeProd
+    # ^ assumed to be ted'ed  # <----- it will AUTOMATICALLY BREAK if not  # Fifth Secret Feature
+    T2ContainerWC(gamma , TypeSynthContainerBase(TypeSynthed(TProd(Array{Type_}(t.types)))) )
 end
 
 ###########################################
 ##################################################################
-function typer(lgamma::Index, expr::EApp)::TypeSynthableToMakeApp
-    TypeSynthableToMakeApp(TypeSynthable(Context([]), expr.func), expr.arg)
+function typer(lgamma::Index, expr::EApp)::T2ContainerWC
+    funcTerm = TypeSynthable(expr.func)
+    println("Warning-adding sneaky context here")
+    T2ContainerWC(Context([]), TypeSynthToMakeApp(funcTerm, expr.arg)) # Do you need a context here ???????????????????????????????????????????????
 end
 # This is kind of a secret feature too:
-function typer2(theta::Context, typedFunc::Type_, typedRes::Type_)::TypeSynthable
-    print("Is this needed? Couldn't this be, like, not needed? :(")
-    throw(DomainError(string(theta)*" "*string(typedFunc)*" "*string(typedRes)))
+function typer2(gamma::Context, t::TypeSynthToMakeApp)::TypesynthRes
+    # ^ assumed to be ted'ed  # Sixth Secret Feature
+    # print("Is this needed? Couldn't this be, like, not needed? :(")
+    # throw(DomainError(string(theta)*" "*string(typedFunc)*" "*string(typedRes)))
+    T2ContainerWC(gamma, TypeAppSynthContainerBase(TypeAppSynthable(t.func.typ, t.argToDoLater)))
 end
+typer2(gamma::Context, t::TypeAppSynthContainerBase) = (gamma=flattenContext(gamma); typer2(gamma, apply(gamma, t.t.typ)))
+# ^ assumed to be ted'ed  # do THIS VERY SPECIFIC THING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 ##################################################################
+
+# THIS IS ALSO A SECRET FEATURE- the SEVENTH (don't tell anybody):
+function typer2(gamma::Context, t::TypeSynthToJustDereference)::TypesynthRes 
+    # ^ assumed to be ted'ed  # Seventh seventh Secret Feature
+    if t.var > length(gamma)
+        throw(DomainError("Undefined local var $(t.var), n args given = $(length(gamma))"))
+    elseif !(gamma[t.var] isa CVar)
+        Error("typer: ELoc not pointing to CVar: var $(expr), in $(gamma)")
+    else
+        T2ContainerWC(gamma, TypeSynthContainerBase(TypeSynthed(gamma[t.var].type)), )
+    end    
+end  
 
 
 # Base cases: # Are not a problem are they?---   # HA.
 
+
+
+typer(lgamma::Index, t::TypeChecToFunc) = typer(lgamma, t.t.expr, t.t.typ)
+typer(lgamma::Index, t::TypeCheckToClip) = typer(lgamma, t.t.expr, t.t.typ)
+typer(lgamma::Index, t::TypeCheckToMakeSynth) = typer(lgamma, t.t.expr, t.t.typ)
+typer(lgamma::Index, t::TypeCheckToMakeSynthANDApply) = typer(lgamma, t.t.expr, t.t.typ)
+typer(lgamma::Index, t::TypeCheckContainerBase) = typer(lgamma, t.t.expr, t.t.typ)
+typer(lgamma::Index, t::TypeSynthToMakeCheck) = typer(lgamma, t.t.expr)
+typer(lgamma::Index, t::TypeSynthToJustDereference) = nothing
+typer(lgamma::Index, t::TypeSynthToMakeProd) = typer(lgamma, t.types[t.i].expr)
+typer(lgamma::Index, t::TypeSynthToMakeApp) = typer(lgamma, t.func.expr)
+typer(lgamma::Index, t::TypeSynthContainerBase) = typer(lgamma, t.t.expr)
+typer(lgamma::Index, t::TypeAppSynthContainerBase) = typer(lgamma, t.t.typ, t.t.expr)
+
+
 function typer(lgamma::Index, expr::EGlob)::TypesynthRes 
-    (expr.type, Context([]))
+    T2ContainerWC(Context([]), TypeSynthContainerBase(TypeSynthed(expr.type)))
 end    
 
-function typer(lgamma::Index, expr::ELoc)::TypeSynthableToJustDereference
-    TypeSynthableToJustDereference(expr.n, Context([]))
+function typer(lgamma::Index, expr::ELoc)::T2ContainerWC
+    T2ContainerWC(Context([]), TypeSynthToJustDereference(expr.n, false))
 end
-# THIS IS ALSO A SECRET FEATURE- the SEVENTH (don't tell anybody):
-function typer2(var::Index, gamma::Context, )::TypesynthRes 
-    if var > length(gamma)
-        throw(DomainError("Undefined local var $(var), n args given = $(length(gamma))"))
-    elseif !(gamma[var] isa CVar)
-        Error("typer: ELoc not pointing to CVar: var $(expr), in $(gamma)")
-    else
-        (gamma[var].type, gamma)
-    end    
-end    
-
+  
 function typer(lgamma::Index, expr::EUnit)::TypesynthRes 
-    (TUnit(), Context([]))
+    T2ContainerWC(Context([]), TypeSynthContainerBase(TypeSynthed(TUnit())), )
 end    
 
 function typer(lgamma::Index, typ, expr::Expr)::TypesynthRes
     Error("typer: don't know what to do with: $(gamma), $(typ), $(expr)")
 end    
 
-
-
-
 # typecheck forall
-function typer(lgamma::Index, expr, typ::TForall)::Typable
+function typer(lgamma::Index, expr, typ::TForall)::T2ContainerWC
     ltyp = typ.body |> arity # we DON'T want this to exist :(
-    tcable = TypeCheckable(
-        [CForall() for i in 1:ltyp], 
-        expr,
-        subst(Array{Type_}([TLoc(i + lgamma) for i in 1:ltyp]), typ.body)
-    )
-    # # # ress = typer(TypeCheckableToClip(tcable, lgamma))#first secret feat
-    TypeCheckableToClip(tcable, lgamma)
+    tcable = T2ContainerWC(Context([CExists() for i in 1:ltyp]), 
+        TypeCheckToClip(
+            TypeCheckable(expr,
+                subst(Array{Type_}([TExists(i + lgamma) for i in 1:ltyp]), typ.body)),
+            lgamma
+    ))
+    tcable
 end
 
-function typer(lgamma::Index, expr::EAbs, typ::TFun)::Typable
+function typer(lgamma::Index, expr::EAbs, typ::TFun)::Union{T2ContainerWC, Error}
     lexpr = expr.body |> arity # we DON'T want this to exist
     if lexpr > length(typ.inputs.data) return Error("$(expr |> pr) has too many vars to be of type $(typ |> pr) (the first has $(lexpr) vars, the second $(length(typ.inputs.data)))") end
-    tcable = TypeCheckable(
-        [CVar(t) for t in typ.inputs.data], 
-        subst(Array{Expr}([ELoc(i + lgamma) for i in 1:lexpr]), expr.body),
-        typ.t2)
-    # # # ress = typer(TypeCheckableToClip(tcable, lgamma)) #first secret feat
-    TypeCheckableToClip(tcable, lgamma)
+    tcable = T2ContainerWC(Context([CVar(t) for t in typ.inputs.data]),
+        TypeCheckToClip(
+            TypeCheckable(subst(Array{Expr}([ELoc(i + lgamma) for i in 1:lexpr]), expr.body),
+            typ.t2),
+            lgamma))
+    tcable
 end
 # IMPORTANT NOTE: it DOES NOT return the ASSUMPTION WITHIN THE body    
 
-function typer(lgamma::Index, expr::EAnno)::Typable 
-    tcable = TypeCheckable(
-        Context([]), expr.expr, expr.type)
-    # # # ress = typer(TypeCheckableToMakeSynth(expr.type, tcable)) # this Second Secret Feature turns a checked type into a "synthed" one
-    TypeCheckableToMakeSynth(expr.type, tcable)
+function typer(lgamma::Index, expr::EAnno)::T2ContainerWC 
+    tcable = T2ContainerWC(Context([]), 
+        TypeCheckToMakeSynth(
+            expr.type, TypeCheckable(expr.expr, expr.type)
+    ))
+    tcable
 end
 
-function typer(lgamma::Index, expr, typ::Type_)::Typable # check
+function typer(lgamma::Index, expr, typ::Type_)::T2ContainerWC # check
     # this is good
-    tsable = TypeSynthable(Context([]), expr)
-    # # # ress = typer(TypeSynthableToMakeCheck(typ, tsable))
-    TypeSynthableToMakeCheck(typ, tsable)
+    tsable = T2ContainerWC(Context([]), TypeSynthToMakeCheck(typ, TypeSynthable(expr)))
+    tsable
 end
 
 
@@ -808,7 +803,7 @@ end
 # typer(Context([CVar(TGlob("G"))]), EAnno(EGlobAuto("g"), TExists(1))) # SHOULD raise error
 # ^ note that it WORKS, it just returns TExists(1) again
 
-function typer(lgamma::Index, expr::EAbs)::Typable 
+function typer(lgamma::Index, expr::EAbs)::T2ContainerWC 
     lexpr = expr.body |> arity
     alphas = [CExists() for i in 1:lexpr] 
     x2s = [CVar(TExists(lgamma + i)) for i in 1:lexpr] # x2:alpha
@@ -820,178 +815,120 @@ function typer(lgamma::Index, expr::EAbs)::Typable
     delta = vcat(alphas, [CExists()], x2s) # alphaS, beta, vars
     a2 = subst(Array{Expr}(newlocs), expr.body) # var of type alpha   
     # but isn't just alpha enough????????? -> I'm going with NO, now!! (because you would lose EQUALITY, i dunno if it's a thing)
-    tcable = TypeCheckable(delta, a2, beta)
-    # # # ress = typer(TypeCheckableToFunc(tcable, ReturnTFunFlag(lexpr, lgamma)))
-    TypeCheckableToFunc(tcable, ReturnTFunFlag(lexpr, lgamma))
+    T2ContainerWC(delta, TypeChecToFunc(TypeCheckable(a2, beta), ReturnTFunFlag(lexpr, lgamma)))
 end
 
 # -- | Type application synthesising
 # --   typer Γ A e = (C, Δ) <=> Γ |- A . e =>> C -| Δ
 
-function typer(lgamma::Index, typ::TForall, expr::Expr)::Typable
+function typer(lgamma::Index, typ::TForall, expr::Expr)::T2ContainerWC # type is the FUNC and expr the ARG
     ltyp = typ.body |> arity # we DON'T want this to exist :(
-    tcable = TypeAppSynthable(
-        [CExists() for i in 1:ltyp], 
-        subst(Array{Type_}([TExists(i + lgamma) for i in 1:ltyp]), typ.body),
-        expr,
-    )
-    # # # ress = typer(tcable)
+    println("yep.. This is the place")
+    tcable = T2ContainerWC(Context([CExists() for i in 1:ltyp]),
+        TypeAppSynthContainerBase(TypeAppSynthable(
+            subst(Array{Type_}([TExists(i + lgamma) for i in 1:ltyp]), typ.body),
+            expr,
+    )))
     tcable
 end
 
-function typer(lgamma::Index, typ::TExists, expr::Expr)::Typable
+function typer(lgamma::Index, typ::TExists, expr::Expr)::T2ContainerWC # type is the FUNC and expr the ARG
     println("yep.. Definitely happing")
-    #                   alpha2, alpha1
-    tcable = TypeCheckable(
-        [CExists(), CExists(), CExistsSolved(TFun(TExists(lgamma + 2), TExists(lgamma + 1)))],
-        expr, TExists(lgamma + 2))
-    # # # ress = typer(TypeCheckableToMakeSynth(TExists(lgamma + 1), tcable)) # This is the Second Secret Feature
-    TypeCheckableToMakeSynth(TExists(lgamma + 1), tcable)
+    tcable = T2ContainerWC(
+        #           alpha2, alpha1
+        Context([CExists(), CExists(), CExistsSolved(TFun(TExists(lgamma + 2), TExists(lgamma + 1)))]),
+        TypeCheckToMakeSynthANDApply(TExists(lgamma + 1), TypeCheckable(expr, TExists(lgamma + 2))))
+    tcable
 end
 
-function typer(lgamma::Index, typ::TFun, expr::Expr)::Typable
-    tcable = TypeCheckable(Context([]), expr, typ.inputs)
-    # # # ress = typer(TypeCheckableToMakeSynth(typ.t2, tcable)) # This is the Second Secret Feature
-    TypeCheckableToMakeSynth(typ.t2, tcable)
+function typer(lgamma::Index, typ::TFun, expr::Expr)::T2ContainerWC # type is the FUNC and expr the ARG
+    tcable = T2ContainerWC(Context([]), TypeCheckToMakeSynth(typ.t2, TypeCheckable(expr, typ.inputs)))
+    tcable
 end
 
-
-table_2_ted(t::TypeSynthableToMakeCheck, res::TypesynthRes) = ((type, ctx) = res; (t.type, ctx, type))
-table_2_ted(t::TypeCheckableToClip, res::TypecheckRes) = (res, t.lgamma)
-function table_2_ted(t::TypeCheckableToFunc, res::TypecheckRes) 
-    @assert (!(res isa Error)) && (length(res) == 0) (res) # god i hope this makes sense...
-    (t.tcable.gamma, t.f)
-end
-table_2_ted(t::TypeCheckableToMakeSynth, res::TypecheckRes) = (t.type, res)
-table_2_ted(t::TypeCheckable, res::TypecheckRes) = res
-table_2_ted(t::TypeSynthable, res::TypesynthRes) = res
-function table_2_ted(t::TypeAppSynthable, res::TypesynthRes) 
-    #@assert (!(res isa Error)) && (length(res[2]) == 0) (res) # god i hope this makes sense...
-    #(res[1], t.gamma)
-    res
-end
-function table_2_ted(t::TypeSynthableToMakeProd, res::TypesynthRes) 
-    (type, ctx) = res
-    t.c=ctx
-    t.types[t.i] = type
-    t.i = t.i+1
-    (t.i > t.types |> length) ? (t.c, Array{Type_}(t.types)) : t
-end
-function table_2_ted(t::TypeSynthableToMakeApp, res::TypesynthRes) # NOT a ted at all, you'll notice
-    (tfunc, newgamma) = res
-    TypeAppSynthable(newgamma, apply(newgamma, tfunc), t.argToDoLater) # REMBER: returns the type of the RESULT of the app!!
-end
-# tsable = TypeSynthable(gamma, expr.func)
-# res = typer(tsable)
-# if (typeof(res) === Error) return res end
-# (a, theta) = res
-# # # # ress = typer(theta, apply(theta, a), expr.arg)
-# (theta, apply(theta, a), expr.arg)
 
 typer(lgamma::Index, c::Nothing) = c ## This is a BASE CASE USED FOR JustDereference
 
-# what now ???
-get_tcable(t::TypeCheckableToFunc) = t.tcable
-get_tcable(t::TypeCheckableToClip) = t.tcable
-get_tcable(t::TypeCheckableToMakeSynth) = t.tcable
-get_tcable(t::TypeCheckable) = t
-get_tcable(t::TypeSynthableToMakeCheck) = t.tsable
-get_tcable(t::TypeSynthableToJustDereference) = nothing
-get_tcable(t::TypeSynthableToMakeProd) = t.types[t.i]
-get_tcable(t::TypeSynthableToMakeApp) = t.func
-get_tcable(t::TypeSynthable) = t
-get_tcable(t::TypeAppSynthable) = t
 
 
-TypeSynthedToMakeCheck = Tuple{Type_, Context}
-TypeCheckedToMakeSynth = Tuple{Type_, Context, Type_}
-TypeCheckedToFunc = Tuple{Context, ReturnTFunFlag}
-# TypesynthRes = TypesynthRes #kinda
-# TypecheckRes = TypecheckRes #kinda
-TypeSynthedToMakeProd = Tuple{Context, Array{Type_}}
-TypeSynthedToMakeApp = Tuple{Context, Type_, Type_}
-TypeCheckedToClip = Tuple{Context, Index}
-TypeSynthedToJustDereference = Tuple{Index, Context}
+table_2_ted(t::TypeSynthToMakeCheck, res::TypeSynthed)::TypeSynthToMakeCheck = TypeSynthToMakeCheck(t.type, res)  
+table_2_ted(t::TypeCheckToClip, res::TypeChecked)::TypeCheckToClip = TypeCheckToClip(res, t.lgamma)
+table_2_ted(t::TypeChecToFunc, res::TypeChecked)::TypeChecToFunc = TypeChecToFunc(res, t.f) 
+table_2_ted(t::TypeCheckToMakeSynth, res::TypeChecked)::TypeCheckToMakeSynth = TypeCheckToMakeSynth(t.type, res) 
+table_2_ted(t::TypeCheckToMakeSynthANDApply, res::TypeChecked)::TypeCheckToMakeSynthANDApply = TypeCheckToMakeSynthANDApply(t.type, res) 
+table_2_ted(t::TypeCheckContainerBase, res::TypeChecked)::TypeCheckContainerBase = TypeCheckContainerBase(res) 
+table_2_ted(t::TypeSynthContainerBase, res::TypeSynthed)::TypeSynthContainerBase = TypeSynthContainerBase(res) 
+table_2_ted(t::TypeAppSynthContainerBase, res::TypeSynthed)::TypeAppSynthContainerBase = TypeAppSynthContainerBase(res) # ?????????????????????????????????????
+    #@assert (!(res isa Error)) && (length(res[2]) == 0) (res) # god i hope this makes sense...
+function table_2_ted(t::TypeSynthToMakeProd, res::TypeSynthed)::TypeSynthToMakeProd 
+    t.types[t.i] = res.typ
+    t.i = t.i+1
+    # (t.i > t.types |> length) ? TypeSynthToMakeProd(t.i, Array{Type_}(t.types)) : t
+    t
+end
+function table_2_ted(t::TypeSynthToMakeApp, res::TypeSynthed)::TypeSynthToMakeApp  # NOT a ted at all, you'll notice
+    TypeSynthToMakeApp(res, t.argToDoLater) # REMBER: the idea is to return the type of the RESULT of the app!!
+end
+function table_2_ted(t::TypeSynthContainerBase, res::TypeAppSynthable)::TypeAppSynthContainerBase 
+    # This is for the TRICK where the APP routine does NOT return a TypED after typer2. :check:
+    # to be fair this is UGLY, but hey if it works it works
+    println(res)
+    TypeAppSynthContainerBase(res)
+end
 
-get_gamma(t::TypeSynthedToMakeCheck) = t[2]
-get_gamma(t::TypeCheckedToMakeSynth) = t[2]
-get_gamma(t::TypeCheckedToFunc) = t[1]
-get_gamma(t::TypesynthRes) = t[2]
-get_gamma(t::TypecheckRes) = t
-get_gamma(t::TypeSynthedToMakeProd) = t[1]
-get_gamma(t::TypeSynthedToMakeApp) = t[1]
-get_gamma(t::TypeCheckedToClip) = t[1]
-get_gamma(t::TypeSynthedToJustDereference) = t[2]
+is_typable(obj::T2ContainerWC) = is_typable(obj.t)
+is_typable(obj::T2Container) = obj.t isa Typable
+is_typable(obj::TypeSynthToMakeApp) = obj.func isa Typable 
+is_typable(obj::TypeSynthToMakeProd) = (obj.i <= obj.types |> length)
+is_typable(obj::TypeSynthToJustDereference) = obj.goBack === false
 
-set_gamma(t::TypeSynthedToMakeCheck, newgamma::Context)::TypeSynthedToMakeCheck = (t[1], newgamma)
-set_gamma(t::TypeCheckedToMakeSynth, newgamma::Context)::TypeCheckedToMakeSynth = (t[1], newgamma, t[3])
-set_gamma(t::TypeCheckedToFunc, newgamma::Context)::TypeCheckedToFunc = (newgamma, t[2])
-set_gamma(t::TypesynthRes, newgamma::Context)::TypesynthRes = (t[1],newgamma)
-set_gamma(t::TypecheckRes, newgamma::Context)::TypecheckRes = newgamma
-set_gamma(t::TypeSynthedToMakeProd, newgamma::Context)::TypeSynthedToMakeProd = (newgamma, t[2])
-set_gamma(t::TypeSynthedToMakeApp, newgamma::Context)::TypeSynthedToMakeApp = (newgamma, t[2], t[3])
-set_gamma(t::TypeCheckedToClip, newgamma::Context)::TypeCheckedToClip = (newgamma, t[2])
-set_gamma(t::TypeSynthedToJustDereference, newgamma::Context)::TypeSynthedToJustDereference = (t[1], newgamma)
 
-TED = Union{
-    TypeSynthedToMakeCheck,
-    TypeCheckedToMakeSynth,
-    TypeCheckedToFunc,
-    TypesynthRes,
-    TypecheckRes,
-    TypeSynthedToMakeProd,
-    TypeSynthedToMakeApp,
-    TypeCheckedToClip,
-    TypeSynthedToJustDereference}
-
-TAble = Union{Typable, TED}
-
-# min(3,4)
-# [3 for i in 1:10 if i<4][end+1:end]
-# [1,2,3,4][5:5]
-makeBigStack(s::Array{TAble}) = (pieces = s .|> get_gamma; vcat(pieces...))
-function splitBigStack(s::Array{TAble}, bigstack)::Array{TAble}
-    indices = s .|> get_gamma .|> length |> (x->vcat([1], x)) |> cumsum
+makeBigStack(s::Array{T2ContainerWC}) = s .|> (x->x.gamma) |> (x->vcat(x...))
+function splitBigStack(s::Array{T2ContainerWC}, bigstack)::Array{T2ContainerWC}
+    indices = s .|> (x->x.gamma) .|> length |> (x->vcat([1], x)) |> cumsum
     newgammas = [bigstack[
         min(indices[i], length(bigstack) + 1):min(indices[i+1]-1, length(bigstack))] 
         for i in 1:length(indices)-1]
     @assert (length(newgammas) == length(s)) string(length(newgammas))*" "*string(length(s))
-    Array{TAble}([set_gamma(s[i], newgammas[i]) for i in 1:length(newgammas)])
+    Array{T2ContainerWC}([T2ContainerWC(newgammas[i], s[i].t) for i in 1:length(newgammas)])
 end
 # s = [3,2,3,6,7]  #|> cumsum
 # bs = [40,40,40,50,50,60,60,60,70,70,70,70,70,70,80,80,80,80,80,80,80,] 
 
-function typerExecutor(c::Context, typable::Typable)
-    stack = Array{TAble}([c, typable])
+function typerExecutor(c::Context, typable::T2Container)
+    stack = Array{T2ContainerWC}([T2ContainerWC(c, TypeCheckContainerBase(TypeChecked())), T2ContainerWC(Context([]), typable)])
     # IMPORTANT: PLEASE remember this: KEEP A COMPOUND of all the VARIOUS GAMMA's in Stack and VCAT THEM!
-    push!(stack, typer(stack .|> get_gamma .|> length |> sum, stack[end] |> get_tcable))
-    while stack |> length > 2
+    push!(stack, typer(stack .|> (x->x.gamma) .|> length |> sum, stack[end].t))
+    while stack |> length > 2 || stack[end] |> is_typable
         # ^ his can be: a Typable, or a TypeSynthRes or TypeCheckRes directly (which means can be an error, too.)
         if stack[end] isa Error print("FIRST fail"); return stack[end]
-        elseif stack[end] isa Typable
-            WHAT = stack[end] |> get_tcable
-            youGot = typer(stack .|> get_gamma .|> length |> sum, WHAT)
+        elseif stack[end] |> is_typable
+            youGot = typer(stack .|> (x->x.gamma) .|> length |> sum, stack[end].t)
             if youGot isa Error print("SECOND fail"); return youGot end
             if youGot === nothing # Yes, there's a base case. For dereference. Deal with it. 
-                stack[end] = (stack[end].var, stack[end].gamma) # TypeSynthedToJustDereference
+                stack[end] = T2ContainerWC(stack[end].gamma, TypeSynthToJustDereference(stack[end].t.var, true)) # TypeSynthedToJustDereference
             else
                 push!(stack, youGot)
             end
         else
             biggamma = makeBigStack(stack)
-            what = stack[end] |> (x->tED_2_bigGamma(biggamma, x...)) 
-            res = what|> (x->typer2(x...))  # secret feature!!!
+            res = typer2(biggamma, stack[end].t)  # secret feature!!!
             if res isa Error print("THIRD fail"); return res end
-            stack = splitBigStack(Array{TAble}(vcat(stack)), tED_getGamma(res))
-            res = set_gamma(res, get_gamma(pop!(stack)))
-            stack[end] = table_2_ted(stack[end], res) # NOT atcually necessairly to ted every time, and this is RIGHT (cuz DFT, yes :check::check:)
+            stack = splitBigStack(stack, res.gamma)
+            pop!(stack)
+            WHAT = table_2_ted(stack[end].t, res.t.t) # NOT atcually necessairly to ted every time, and this is RIGHT (cuz DFT, yes :check::check:)
+            stack[end] = T2ContainerWC(stack[end].gamma, WHAT)
         end
         #println(stack)
     end
-    set_gamma(stack[end], makeBigStack(stack))
+    if stack[end].t.t isa TypeChecked
+        makeBigStack(stack)
+    else
+        (stack[end].t.t.typ, makeBigStack(stack))
+    end
 end
-typerExecutor(c::Context, e::Expr) = typerExecutor(c, TypeSynthable(Context([]), e))
-typerExecutor(c::Context, e::Expr, t::Type_) = typerExecutor(c, TypeCheckable(Context([]), e, t))
+typerExecutor(c::Context, e::Expr) = typerExecutor(c, TypeSynthContainerBase(TypeSynthable(e)))
+typerExecutor(c::Context, e::Expr, t::Type_) = typerExecutor(c, TypeCheckContainerBase(TypeCheckable(e, t)))
 
 
 
@@ -1015,13 +952,15 @@ gstack = []
 @assert subtype(Context([]), TForall(TFunAuto(TLoc(1), TLoc(2))), TFunAuto(TGlob("A"), TGlob("B"))) == Context([])
 @assert subtype(Context([CExists()]), TForall(TExists(1)), TGlob("A")) == Context([CExistsSolved(TGlob("A"))])
 @assert subtype(Context([CExists()]), TForall(TFunAuto(TLoc(1), TExists(1))), TFunAuto(TGlob("A"), TGlob("B"))) == Context([CExistsSolved(TGlob("B"))])
+@assert subst(Array{Expr}([ELoc(4)]), EAbs(ELoc(1)).body) == ELoc(4)
 
-@assert typerExecutor(Context([CForall()]), EUnit(), TUnit()) == Context([CForall()])
+@assert typerExecutor(Context([CExists()]), EUnit(), TUnit()) == Context([CExists()])
 @assert typerExecutor(Context([]), EUnit(), TForall(TForall(TUnit()))) == Context([])
 @assert typerExecutor(Context([]), EAbs(EUnit()), TFunAuto(TForall(TUnit()), TUnit())) == Context([])
 @assert typerExecutor(Context([]), EGlobAuto("g"), TGlob("F")) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"G\"), TGlob(\"F\")"
-@assert subst(Array{Expr}([ELoc(4)]), EAbs(ELoc(1)).body) == ELoc(4)
 @assert typerExecutor(Context([CVar(TGlob("F"))]), ELoc(1), TGlob("F")) == Context([CVar(TGlob("F"))])
+@assert typerExecutor(Context([]), EGlobAuto("f"),  TForall(TLoc(1))) == Context([])
+@assert typerExecutor(Context([]), EProd([EGlobAuto("g"), EGlobAuto("f")]),  TForall(TProd([TLoc(1), TGlob("F")]))) == Context([])
 @assert typerExecutor(Context([CExistsSolved(TGlob("G"))]), EGlobAuto("g"), TExists(1)) == Context([CExistsSolved(TGlob("G"))])
 @assert typerExecutor(Context([CExistsSolved(TGlob("G"))]), EGlobAuto("f"), TExists(1)) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"F\"), TGlob(\"G\")"
 @assert typerExecutor(Context([CExists()]), EGlobAuto("g"), TExists(1)) == Context([CExistsSolved(TGlob("G"))])
@@ -1035,26 +974,20 @@ gstack = []
 @assert typerExecutor(Context([CVar(TGlob("K"))]), EAnno(EGlobAuto("g"), TGlob("G"))) == (TGlob("G"), ContextElem[CVar(TGlob("K"))])
 @assert typerExecutor(Context([CVar(TGlob("K"))]), EAnno(EGlobAuto("f"), TGlob("G"))) == "Doesn't typer with message: subtype, isn't subtypable: TGlob(\"F\"), TGlob(\"G\")" # shouldn't typerExecutor
 @assert typerExecutor(Context([CExistsSolved(TGlob("G"))]), EAnno(EGlobAuto("g"), TExists(1))) == (TExists(1), ContextElem[CExistsSolved(TGlob("G"))])
+@assert typerExecutor(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TLoc(1)), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TExists(1))])
 @assert typerExecutor(Context([CVar(TGlob("K"))]), EAbs(EAnno(ELoc(1), TGlob("A")))) == (TForall(TFun(TProd(Type_[TGlob("A")]), TGlob("A"))), ContextElem[CVar(TGlob("K"))])
 @assert typerExecutor(Context([]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TGlob("G")]))))) == (TForall(TFun(TProd([TLoc(1)]), TProd([TLoc(1), TGlob("G")]))), ContextElem[])
-@assert typerExecutor(Context([CExists(), CVar(TExists(1))]), EAnno(ELoc(2), TLoc(1)), TExists(1)) == Context([CExistsSolved(TLoc(1)), CVar(TExists(1))])
-
+@assert typerExecutor(Context([CVar(TGlob("K"))]), EAbs(ELoc(1))) == (TForall(TFun(TProd(Type_[TLoc(1)]), TLoc(1))), ContextElem[CVar(TGlob("K"))])
 @assert typerExecutor(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f"))) |> (x->apply(x[2], x[1])) == TProd([TGlob("F"), TGlob("G")])
-@assert typerExecutor(Context([]), EAppAuto(EAbs(EProd([ELoc(1), EGlobAuto("g")])), EGlobAuto("f"))) |> (x->apply(x[2], x[1])) == TProd([TGlob("F"), TGlob("G")])
-
-gamma, expr = Context([CVar(TGlob("K"))]), EAbs(ELoc(1))
-# r1 = typer(gamma, expr) #:: TypeCheckableToFunc
-# r2 = typer(r1.tcable) # :: TypeSynthableToMakeCheck
-# r3 = typer(r2.tsable) # :: TypesynthRes
-# # r4 = typer(r3) # :: TypesynthRes
-# r3 isa Typed
-
-typerExecutor(gamma, expr)
-
-
-@assert typerExecutor(gamma, expr) == (TForall(TFun(TProd(Type_[TLoc(1)]), TLoc(1))), ContextElem[CVar(TGlob("K"))]) 
+@assert typerExecutor(Context([CExists()]), EAppAuto(EAbs(EProd([EAnno(ELoc(1), TExists(1)), EGlobAuto("g")])), EGlobAuto("f"))) == (TProd(Type_[TGlob("F"), TGlob("G")]), ContextElem[CExistsSolved(TGlob("F"))])
 c, e = Context([CExists()]), EAnno(EAbs(EProd([ELoc(1), EGlobAuto("g")])), TForall(TFunAuto(TLoc(1), TProd([TLoc(1), TExists(1)]))))
 @assert typerExecutor(c, e) == (TForall(TFun(TProd(Array{Type_}([TLoc(1)])), TProd(Array{Type_}([TLoc(1), TExists(1)])))), ContextElem[CExistsSolved(TGlob("G"))])
+
+typerExecutor(Context([CExists(), CVar(TExists(1))]), EAppAuto(ELoc(2), EGlobAuto("f"))) == Context([CExistsSolved()])# "breaks" 
+typerExecutor(Context([CExists(), CVar(TExists(1))]), EAnno(EAppAuto(ELoc(2), EGlobAuto("f")), TGlob("G")))# actually breaks
+
+
+
 
 
 
