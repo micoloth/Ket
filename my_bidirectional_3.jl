@@ -47,13 +47,10 @@ struct TLoc <: Type_
     var::Index 
 end
 struct TUnit <: Type_ end
-struct TExists <: Type_
-    var::Index # this is ACTUALLY A METAVARIABLE, I'm fairly sure now...
-end
 struct TForall <: Type_
     body::Type_ # idea: this CAN contain (type level) local variables
 end
-struct TFun <: Type_
+struct TFun <: Type_ # 2 or many, but this is the nbvccvnnbvcvcn nvbcnbvc cvnb
     typs_dot_ordered::Array{Type_} # Moslty should compute to PRODS (they are the INTERMEDIATE results)
 end
 struct TProd <: Type_
@@ -108,8 +105,7 @@ function reduc(ops::Array{Expr})
     return length(ops) >= 2 ? EApp(ops) : ops[1]
 end
 
-
-# ##########################Base.getindex(a::A, i::Index) = a.a[i]
+# ############################## Base.getindex(a::A, i::Index) = a.a[i]
 
 # small helper funcs
 EAppSwitch(func, args) = EApp([args, func])
@@ -211,11 +207,6 @@ STypeP |> pr
 
 
 ########## Context elements:
-
-struct CExists <: ContextElem end # difference w/ CForall ??? # the difference is: this is WAITING to be solved, i think
-struct CExistsSolved <: ContextElem
-    type::Type_ # type (meaning) of the Tvar referring to this position.
-end
 
 # i REALLY wish i didn't need these :(
 # what these do is: they DEREFERENCE ALL TExists IN THE GAMMA, returning the RESULTING Type_ IF solved, or TExist again if unsolved
