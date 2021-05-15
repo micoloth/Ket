@@ -58,13 +58,18 @@ struct TypeOperator<:Type_
     name::String
     types::Array{Type_}
 end
+struct Function<:Type_
+    from_type::Type_ 
+    to_type::Type_
+end
+# Function(from_type, to_type)::TypeOperator = TypeOperator("->", [from_type, to_type])
 
-Function(from_type, to_type)::TypeOperator = TypeOperator("->", [from_type, to_type])
 Integer_() = TypeOperator("int", [])  # Basic integer
 Bool_() = TypeOperator("bool", [])  # Basic bool
 
 pr(t::TypeVariable)::String = t.instance===nothing ? "T"*t.name : "T"*t.name*":"*(t.instance |> pr)
 pr(t::TypeOperator)::String = isempty(t.types) ? t.name : "($(join(t.types .|> pr, t.name)))"
+pr(t::Function)::String = "($(t.from_type |> pr)->$(t.to_type |> pr))"
 
 # =======================================================#
 # Type inference machinery
@@ -167,6 +172,8 @@ function fresh(t, non_generic)
             end
         elseif p isa TypeOperator
             return TypeOperator(p.name, [freshrec(x) for x in p.types])
+        elseif p isa Function
+            return Function(freshrec(p.from_type), freshrec(p.to_type))
         end
     end
     
@@ -178,8 +185,7 @@ end
 # Makes the types t1 and t2 the same.
 # a = prune(t1)
 # b = prune(t2)
-
-function unify(a::TypeVariable, b)
+function unify(a::TypeVariable, b::Type_,)
     if a != b
         if occurs_in_type(a, b)
             throw(InferenceError("recursive unification"))
@@ -187,7 +193,15 @@ function unify(a::TypeVariable, b)
         a.instance = b
     end
 end
-function unify(a::TypeOperator, b::TypeVariable) 
+function unify(a::TypeVariable, b::TypeVariable) # SAME as above
+    if a != b
+        if occurs_in_type(a, b)
+            throw(InferenceError("recursive unification"))
+        end
+        a.instance = b
+    end
+end
+function unify(a::Type_, b::TypeVariable) 
     unify(prune(b), prune(a))
 end
 function unify(a::TypeOperator, b::TypeOperator) 
@@ -195,6 +209,11 @@ function unify(a::TypeOperator, b::TypeOperator)
         throw(InferenceError("Type mismatch: $(a) != $(b)"))
     end
     for (p, q) in zip(a.types, b.types)
+        unify(prune(p), prune(q))
+    end
+end
+function unify(a::Function, b::Function) 
+    for (p, q) in zip([a.from_type, a.to_type], [b.from_type, b.to_type])
         unify(prune(p), prune(q))
     end
 end
@@ -218,8 +237,8 @@ function prune(t::Type_)
 end
 
 # """Checks whether a given variable occurs in a list of non-generic variables.
-# This means: that a given variable is used somewhere AS A FINAL VALUE (is an instance) , INSTEAD OF AS A variable
-# (actually, it can ONLY be a FINAL value if it is NOT a TypeVariable.. So, IT CHECKS IF IT HAS EVER BEEN INSTANTIATED ?)
+# This means: that a given type-VARIABLE v either IS, or IS USED BY (is THE INSTANCE OF A VARIABLE IN) type type2 in non_generic ...
+# OR, that a given variable is used somewhere AS A FINAL VALUE (is EITHER tha var itself OR an instance) , INSTEAD OF AS A variable
 
 # [[recursively in nested contexts]]
 # Note: Must be called with v pre-pruned
@@ -236,6 +255,8 @@ function occurs_in_type(v, type2)
         return true
     elseif pruned_type2 isa TypeOperator
         return occurs_in(v, pruned_type2.types)
+    elseif pruned_type2 isa Function
+        return occurs_in(v, [pruned_type2.from_type, pruned_type2.to_type])
     end
     return false
 end
