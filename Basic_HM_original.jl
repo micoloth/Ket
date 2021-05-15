@@ -104,7 +104,7 @@ function analyse(node::Apply, env, non_generic::Array{Type_}=Array{Type_}([]))
     fun_type = analyse(node.fn, env, non_generic)
     arg_type = analyse(node.arg, env, non_generic)
     result_type = TypeVariable()
-    unify(Function(arg_type, result_type), fun_type)
+    unify(prune(Function(arg_type, result_type)), prune(fun_type))
     return result_type
 end
 function analyse(node::Lambda, env, non_generic::Array{Type_}=Array{Type_}([]))
@@ -135,7 +135,7 @@ function analyse(node::Letrec, env, non_generic::Array{Type_}=Array{Type_}([]))
     new_non_generic = copy(non_generic)
     push!(new_non_generic, new_type)
     defn_type = analyse(node.defn, new_env, new_non_generic)
-    unify(new_type, defn_type)
+    unify(prune(new_type), prune(defn_type))
     return analyse(node.body, new_env, non_generic)
 end
 
@@ -329,7 +329,7 @@ e = Lambda("x",
             Apply(Identifier("pair"),
                     Apply(Identifier("x"), Identifier("3"))),
             Apply(Identifier("x"), Identifier("5"))))
-analyse(e, my_env) |> pr == "(T1:(int->T6:T2)->T9:(T2*T3:T2))"
+analyse(e, my_env) |> pr == "(T1:(int->T6:T2:T3)->T9:(T2:T3*T3))"
 
 # fn x => (pair((y=>pair(y y))(3) (x(5)))
 TOPFREE=0
@@ -338,7 +338,7 @@ e = Lambda("x",
             Apply(Identifier("pair"),
                     Apply(Lambda("y", Apply(Apply(Identifier("pair"), Identifier("y")), Identifier("y"))), Identifier("3"))),
             Apply(Identifier("x"), Identifier("5"))))
-analyse(e, my_env) |> pr == "(T1:(int->T15)->T16:(T2:(T7:int*T8:int)*T3:T15))"
+analyse(e, my_env) |> pr == "(T1:(int->T15:T3)->T16:(T2:(T7:int*T8:int)*T3))"
 
 # fn x => (pair((y=>pair(y y))(x(3)) (x(5)))
 TOPFREE=0
@@ -347,7 +347,7 @@ e = Lambda("x",
             Apply(Identifier("pair"),
                     Apply(Lambda("y", Apply(Apply(Identifier("pair"), Identifier("y")), Identifier("y"))), Apply(Identifier("x"), Identifier("3")))),
             Apply(Identifier("x"), Identifier("5"))))
-analyse(e, my_env) |> pr == "(T1:(int->T13:T7)->T17:(T2:(T7*T8:T7)*T3:T7))"
+analyse(e, my_env) |> pr == "(T1:(int->T13:T8:T3)->T17:(T2:(T7:T3*T8:T3)*T3))"
 
 
 # fn x => (pair(x(5), x(x(3)))
@@ -360,14 +360,14 @@ e = Lambda("x",
 analyse(e, my_env) |> pr == "(T1:(int->T6:T2:int)->T10:(T2:int*T3:int))"
 
 
-# fn x => (fn y => pair(x, y(x))) (3)
+# fn x => (fn y => pair(x, y(x))) (3) #[3 is applied to x]
 TOPFREE=0
 e = Apply(Lambda("x", Lambda("y",
         Apply(
             Apply(Identifier("pair"), Identifier("x")),
                                       Apply(Identifier("y"), Identifier("x"))
         ))), Identifier("3"))
-analyse(e, my_env) |> pr == "T10:(T2:(T3:int->T8)->T9:(T3:int*T4:T8))"
+analyse(e, my_env) |> pr == "T10:(T2:(T3:int->T8:T4)->T9:(T3:int*T4))"
 
 
 
