@@ -6,6 +6,9 @@ struct Lambda <: Expr
     v::String
     body::Expr
 end
+struct Prod <: Expr
+    elems::Array{Expr}
+end
 struct Identifier <: Expr
     name::String
 end
@@ -64,6 +67,9 @@ struct Function<:Type_
     from_type::Type_ 
     to_type::Type_
 end
+struct Product<:Type_
+    types::Array{Type_}
+end
 # Function(from_type, to_type)::TypeOperator = TypeOperator("->", [from_type, to_type])
 Function(from_type, to_type)::Function = Function(Dict{Index, Type_}(), from_type, to_type)
 
@@ -72,6 +78,7 @@ Bool_() = TypeOperator("bool", [])  # Basic bool
 
 pr(t::TypeVariable)::String = "T"*t.name # t.instance===nothing ? "T"*t.name : "T"*t.name*":"*(t.instance |> pr)
 pr(t::TypeOperator)::String = isempty(t.types) ? t.name : "($(join(t.types .|> pr, t.name)))"
+pr(t::Product)::String = "("*join(t.types .|> pr, "*")*")"
 pr(t::Function)::String = "($(t.from_type |> pr)->$(t.to_type |> pr))" * (t.instances |> length == 0 ? "" : " where "*join(["T"*k*":"*pr(v) for (k,v) in t.instances], ", "))
 
 # =======================================================#
@@ -120,6 +127,11 @@ function analyse(node::Lambda, env::Dict{String, Type_}, non_generic::Array{Type
     push!(new_non_generic, arg_type)
     result_type = analyse(node.body, new_env, new_non_generic)
     return Function(new_env, arg_type, result_type)
+end
+function analyse(node::Prod, env::Dict{String, Type_}, non_generic::Array{Type_}=Array{Type_}([]))
+    # println("env: ", [k*":"*pr(v) for (k, v) in env])
+    # println("non_generic: ", non_generic .|> pr)
+    return Product(node.elems .|> (x->analyse(x, env, non_generic)))
 end
 function analyse(node::Let, env::Dict{String, Type_}, non_generic::Array{Type_}=Array{Type_}([])) #dc
     # println("env: ", [k*":"*pr(v) for (k, v) in env])
@@ -177,6 +189,8 @@ function fresh(t, non_generic, ctxout::Dict{String, Type_})
             return TypeOperator(p.name, [freshrec(x, ctx) for x in p.types])
         elseif p isa Function
             return Function(freshrec(p.from_type, ctx), freshrec(p.to_type, ctx))
+        elseif p isa Product
+            return Product([freshrec(t, ctx) for t in p.types])
         end
     end
     
@@ -220,6 +234,11 @@ function unify(a::Function, b::Function, ctx::Dict{String, Type_})
         unify(prune(p, a.instances), prune(q, b.instances), ctx) ################ THIS is there i think it should have a SECOND (TYPE) LEVEL APPLY.......
     end
 end
+function unify(a::Product, b::Product, ctx::Dict{String, Type_}) 
+    for (p, q) in zip(a.types, b.types)
+        unify(prune(p, ctx), prune(q, ctx), ctx) ################ THIS is there i think it should have a SECOND (TYPE) LEVEL APPLY.......
+    end
+end
 function unify(a, b, ctx::Dict{String, Type_}) 
     throw(DomainError("There are other cases?? ($(a)  <- and -> $(b))"))
 end
@@ -239,6 +258,7 @@ function prune(t::Type_, context::Dict{String, Type_})
     end
 end
         
+findfirst([false, false,false])
 # function prune(t::Type_)
 #     if ((t isa TypeVariable) && (t.instance !== nothing))
 #         t.instance = prune(t.instance)
@@ -268,6 +288,8 @@ function occurs_in_type(v, type2, ctx::Dict{String, Type_})
         return occurs_in(v, pruned_type2.types, ctx)
     elseif pruned_type2 isa Function
         return occurs_in(v, [pruned_type2.from_type, pruned_type2.to_type], pruned_type2.instances)
+    elseif pruned_type2 isa Function
+        return occurs_in(v, pruned_type2.types, ctx)
     end
     return false
 end
@@ -301,19 +323,17 @@ pair_type = TypeOperator("*", [var1, var2])
 
 var3 = TypeVariable()
 
-my_env = Dict{String, Type_}("pair"=> Function(var1, Function(var2, pair_type)),
+my_env = Dict{String, Type_}("pair"=> Product([var1, var2]),
             "true"=> Bool_(),
             "cond"=> Function(Bool_(), Function(var3, Function(var3, var3))),
             "zero"=> Function(Integer_(), Bool_()),
             "pred"=> Function(Integer_(), Integer_()),
             "times"=> Function(Integer_(), Function(Integer_(), Integer_())))
-my_env = Dict{String, Type_}("pair"=> Function(var1, Function(var2, pair_type)))
+            # my_env = Dict{String, Type_}("pair"=> Function(var1, Function(var2, pair_type)))
+my_env = Dict{String, Type_}("true"=> Bool_())
 
-pair = Apply(Apply(Identifier("pair"),
-                    Apply(Identifier("f"),
-                            Identifier("4"))),
-                Apply(Identifier("f"),
-                    Identifier("true")))
+pair = Prod([Apply(Identifier("f"),Identifier("4")),
+            Apply(Identifier("f"),Identifier("true"))])
 
 # factorial
 e = Letrec("factorial",  # letrec factorial =
@@ -337,38 +357,30 @@ analyse(e, my_env) |> pr
 # fn x => (pair(x(3) (x(5)))
 TOPFREE=0
 e = Lambda("x",
-        Apply(
-            Apply(Identifier("pair"),
-                    Apply(Identifier("x"), Identifier("3"))),
-            Apply(Identifier("x"), Identifier("5"))))
+        Prod([Apply(Identifier("x"), Identifier("3")),
+                 Apply(Identifier("x"), Identifier("5"))]))
 analyse(e, my_env) |> pr == "(T1:(int->T6:T2:T3)->T9:(T2:T3*T3))"
 
 # fn x => (pair((y=>pair(y y))(3) (x(5)))
 TOPFREE=0
 e = Lambda("x",
-        Apply(
-            Apply(Identifier("pair"),
-                    Apply(Lambda("y", Apply(Apply(Identifier("pair"), Identifier("y")), Identifier("y"))), Identifier("3"))),
-            Apply(Identifier("x"), Identifier("5"))))
+        Prod([Apply(Lambda("y", Prod([Identifier("y"), Identifier("y")])), Identifier("3")),
+              Apply(Identifier("x"), Identifier("5"))]))
 analyse(e, my_env) |> pr == "(T1:(int->T15:T3)->T16:(T2:(T7:int*T8:int)*T3))"
 
 # fn x => (pair((y=>pair(y y))(x(3)) (x(5)))
 TOPFREE=0
 e = Lambda("x",
-        Apply(
-            Apply(Identifier("pair"),
-                    Apply(Lambda("y", Apply(Apply(Identifier("pair"), Identifier("y")), Identifier("y"))), Apply(Identifier("x"), Identifier("3")))),
-            Apply(Identifier("x"), Identifier("5"))))
+        Prod([Apply(Lambda("y", Prod([Identifier("y"), Identifier("y")])), Apply(Identifier("x"), Identifier("3"))),
+              Apply(Identifier("x"), Identifier("5"))]))
 analyse(e, my_env) |> pr == "(T1:(int->T13:T8:T3)->T17:(T2:(T7:T3*T8:T3)*T3))"
 
 
 # fn x => (pair(x(5), x(x(3)))
 TOPFREE=0
 e = Lambda("x",
-        Apply(
-            Apply(Identifier("pair"), Apply(Identifier("x"), Identifier("3"))),
-                                      Apply(Identifier("x"), Apply(Identifier("x"), Identifier("3")))
-            ))
+        Prod([Apply(Identifier("x"), Identifier("3")),
+              Apply(Identifier("x"), Apply(Identifier("x"), Identifier("3")))]))
 analyse(e, my_env) |> pr == "(T1:(int->T6:T2:int)->T10:(T2:int*T3:int))"
 
 
@@ -387,10 +399,8 @@ analyse(e, my_env) |> pr == "T10:(T2:(T3:int->T8:T4)->T9:(T3:int*T4))"
 # fn x => (pair(x(3) (x(true)))
 TOPFREE=0
 e = Lambda("x",
-        Apply(
-            Apply(Identifier("pair"),
-                    Apply(Identifier("x"), Identifier("3"))),
-            Apply(Identifier("x"), Identifier("true"))))
+        Prod([Apply(Identifier("x"), Identifier("3")),
+            Apply(Identifier("x"), Identifier("true"))]))
 analyse(e, my_env) |> pr
 
 # pair(f(3), f(true))
