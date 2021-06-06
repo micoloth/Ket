@@ -51,12 +51,12 @@ newvar() = (global TOPFREE = TOPFREE + 1; TOPFREE)
 
 mutable struct TypeVariable<:Type_
     id::Index
-    # instance::Union{Nothing, Type_}
+    instance::Union{Nothing, Type_}
     name::String
 end
 
-TypeVariable() = (v = newvar(); TypeVariable(v, string(v)))
-# TypeVariable() = (v = newvar(); TypeVariable(v, nothing, string(v)))
+# TypeVariable() = (v = newvar(); TypeVariable(v, string(v)))
+TypeVariable() = (v = newvar(); TypeVariable(v, nothing, string(v)))
 
 struct TypeOperator<:Type_
     name::String
@@ -76,7 +76,7 @@ Function(from_type, to_type)::Function = Function(Dict{Index, Type_}(), from_typ
 Integer_() = TypeOperator("int", [])  # Basic integer
 Bool_() = TypeOperator("bool", [])  # Basic bool
 
-pr(t::TypeVariable)::String = "T"*t.name # t.instance===nothing ? "T"*t.name : "T"*t.name*":"*(t.instance |> pr)
+pr(t::TypeVariable)::String = t.instance===nothing ? "T"*t.name : "T"*t.name*":"*(t.instance |> pr)  # "T"*t.name # 
 pr(t::TypeOperator)::String = isempty(t.types) ? t.name : "($(join(t.types .|> pr, t.name)))"
 pr(t::Product)::String = "("*join(t.types .|> pr, "*")*")"
 pr(t::Function)::String = "($(t.from_type |> pr)->$(t.to_type |> pr))" * (t.instances |> length == 0 ? "" : " where "*join(["T"*k*":"*pr(v) for (k,v) in t.instances], ", "))
@@ -117,6 +117,11 @@ function analyse(node::Apply, env, non_generic::Array{Type_}=Array{Type_}([]))
     unify(prune(Function(arg_type, result_type), env), prune(fun_type, env), env)
     return result_type
 end
+function analyse(node::Prod, env::Dict{String, Type_}, non_generic::Array{Type_}=Array{Type_}([]))
+    # println("env: ", [k*":"*pr(v) for (k, v) in env])
+    # println("non_generic: ", non_generic .|> pr)
+    return Product(node.elems .|> (x->analyse(x, env, non_generic)))
+end
 function analyse(node::Lambda, env::Dict{String, Type_}, non_generic::Array{Type_}=Array{Type_}([]))
     # println("env: ", [k*":"*pr(v) for (k, v) in env])
     # println("non_generic: ", non_generic .|> pr)
@@ -127,11 +132,6 @@ function analyse(node::Lambda, env::Dict{String, Type_}, non_generic::Array{Type
     push!(new_non_generic, arg_type)
     result_type = analyse(node.body, new_env, new_non_generic)
     return Function(new_env, arg_type, result_type)
-end
-function analyse(node::Prod, env::Dict{String, Type_}, non_generic::Array{Type_}=Array{Type_}([]))
-    # println("env: ", [k*":"*pr(v) for (k, v) in env])
-    # println("non_generic: ", non_generic .|> pr)
-    return Product(node.elems .|> (x->analyse(x, env, non_generic)))
 end
 function analyse(node::Let, env::Dict{String, Type_}, non_generic::Array{Type_}=Array{Type_}([])) #dc
     # println("env: ", [k*":"*pr(v) for (k, v) in env])
@@ -208,6 +208,7 @@ function unify(a::TypeVariable, b::Type_, ctx::Dict{String, Type_})
             throw(InferenceError("recursive unification"))
         end
         ctx[a.name] = b
+        a.instance = b
     end
 end
 function unify(a::TypeVariable, b::TypeVariable, ctx::Dict{String, Type_}) # SAME as above
@@ -216,6 +217,7 @@ function unify(a::TypeVariable, b::TypeVariable, ctx::Dict{String, Type_}) # SAM
             throw(InferenceError("recursive unification"))
         end
         ctx[a.name] = b
+        a.instance = b
     end
 end
 function unify(a::Type_, b::TypeVariable, ctx::Dict{String, Type_}) 
@@ -252,10 +254,17 @@ end
 # variables.
 
 # Here, pruning is NOT pruning tho: this is because you DONT have the FULL context stack :(
+# function prune(t::Type_, context::Dict{String, Type_})
+#     if (t isa TypeVariable) get(context, t.name, t)
+#     else t
+#     end
+# end
 function prune(t::Type_, context::Dict{String, Type_})
-    if (t isa TypeVariable) get(context, t.name, t)
-    else t
+    if ((t isa TypeVariable) && (t.instance !== nothing))
+        t.instance = prune(t.instance, context)
+        return t.instance
     end
+    return t
 end
         
 findfirst([false, false,false])
@@ -332,48 +341,28 @@ my_env = Dict{String, Type_}("pair"=> Product([var1, var2]),
             # my_env = Dict{String, Type_}("pair"=> Function(var1, Function(var2, pair_type)))
 my_env = Dict{String, Type_}("true"=> Bool_())
 
-pair = Prod([Apply(Identifier("f"),Identifier("4")),
-            Apply(Identifier("f"),Identifier("true"))])
 
-# factorial
-e = Letrec("factorial",  # letrec factorial =
-        Lambda("n",  # fn n =>
-                Apply(
-                    Apply(  # cond (zero n) 1
-                        Apply(Identifier("cond"),  # cond (zero n)
-                            Apply(Identifier("zero"), Identifier("n"))),
-                        Identifier("1")),
-                    Apply(  # times n
-                        Apply(Identifier("times"), Identifier("n")),
-                        Apply(Identifier("factorial"),
-                            Apply(Identifier("pred"), Identifier("n")))
-                    )
-                )
-                ),  # in
-        Apply(Identifier("factorial"), Identifier("5"))
-        )
-analyse(e, my_env) |> pr
 
 # fn x => (pair(x(3) (x(5)))
 TOPFREE=0
 e = Lambda("x",
         Prod([Apply(Identifier("x"), Identifier("3")),
                  Apply(Identifier("x"), Identifier("5"))]))
-analyse(e, my_env) |> pr == "(T1:(int->T6:T2:T3)->T9:(T2:T3*T3))"
+analyse(e, my_env) |> pr == "(T1:(int->T2)->(T2*T3:T2))"
 
 # fn x => (pair((y=>pair(y y))(3) (x(5)))
 TOPFREE=0
 e = Lambda("x",
         Prod([Apply(Lambda("y", Prod([Identifier("y"), Identifier("y")])), Identifier("3")),
               Apply(Identifier("x"), Identifier("5"))]))
-analyse(e, my_env) |> pr == "(T1:(int->T15:T3)->T16:(T2:(T7:int*T8:int)*T3))"
+analyse(e, my_env) |> pr == "(T1:(int->T4)->(T3:(T2:int*T2:int)*T4))"
 
 # fn x => (pair((y=>pair(y y))(x(3)) (x(5)))
 TOPFREE=0
 e = Lambda("x",
         Prod([Apply(Lambda("y", Prod([Identifier("y"), Identifier("y")])), Apply(Identifier("x"), Identifier("3"))),
               Apply(Identifier("x"), Identifier("5"))]))
-analyse(e, my_env) |> pr == "(T1:(int->T13:T8:T3)->T17:(T2:(T7:T3*T8:T3)*T3))"
+analyse(e, my_env) |> pr == "(T1:(int->T3:T2)->(T4:(T2*T2)*T5:T2))"
 
 
 # fn x => (pair(x(5), x(x(3)))
@@ -381,19 +370,22 @@ TOPFREE=0
 e = Lambda("x",
         Prod([Apply(Identifier("x"), Identifier("3")),
               Apply(Identifier("x"), Apply(Identifier("x"), Identifier("3")))]))
-analyse(e, my_env) |> pr == "(T1:(int->T6:T2:int)->T10:(T2:int*T3:int))"
+analyse(e, my_env) |> pr == "(T1:(int->T2:int)->(T2:int*T4:int))"
 
 
-# fn x => (fn y => pair(x, y(x))) (3) #[3 is applied to x]
+# [fn x => (fn y => pair(x, y(x)))] (3)  # [3 is applied to x]
 TOPFREE=0
 e = Apply(Lambda("x", Lambda("y",
-        Apply(
-            Apply(Identifier("pair"), Identifier("x")),
-                                      Apply(Identifier("y"), Identifier("x"))
-        ))), Identifier("3"))
-analyse(e, my_env) |> pr == "T10:(T2:(T3:int->T8:T4)->T9:(T3:int*T4))"
+        Prod([Identifier("x"), Apply(Identifier("y"), Identifier("x"))]))), Identifier("3"))
+analyse(e, my_env) |> pr == "T4:(T2:(T1:int->T3)->(T1:int*T3))"
 
 
+# The CORRECT way of writing the above: # No jk i cant, i don't have prods AS multiarg now
+# [fn x => (fn y => pair(x, y(x)))] (3)  # [3 is applied to x]
+TOPFREE=0
+e = Apply(Lambda("x", Lambda("y",
+        Prod([Identifier("x"), Apply(Identifier("y"), Identifier("x"))]))), Identifier("3"))
+analyse(e, my_env) |> pr == "T4:(T2:(T1:int->T3)->(T1:int*T3))"
 
 
 # fn x => (pair(x(3) (x(true)))
@@ -402,6 +394,9 @@ e = Lambda("x",
         Prod([Apply(Identifier("x"), Identifier("3")),
             Apply(Identifier("x"), Identifier("true"))]))
 analyse(e, my_env) |> pr
+
+
+
 
 # pair(f(3), f(true))
 TOPFREE=0
@@ -445,3 +440,24 @@ e = Lambda("f", Lambda("g", Lambda("arg", Apply(Identifier("g"), Apply(Identifie
 analyse(e, my_env) |> pr
 
 
+pair = Prod([Apply(Identifier("f"),Identifier("4")),
+            Apply(Identifier("f"),Identifier("true"))])
+
+# factorial
+e = Letrec("factorial",  # letrec factorial =
+        Lambda("n",  # fn n =>
+                Apply(
+                    Apply(  # cond (zero n) 1
+                        Apply(Identifier("cond"),  # cond (zero n)
+                            Apply(Identifier("zero"), Identifier("n"))),
+                        Identifier("1")),
+                    Apply(  # times n
+                        Apply(Identifier("times"), Identifier("n")),
+                        Apply(Identifier("factorial"),
+                            Apply(Identifier("pred"), Identifier("n")))
+                    )
+                )
+                ),  # in
+        Apply(Identifier("factorial"), Identifier("5"))
+        )
+analyse(e, my_env) |> pr
