@@ -247,8 +247,8 @@ simplify(c::Constraint)::SimpRes = simplify(c.t1, c.t2)
 # FreeVar 0 `Ap` E === FreeVar 0 `Ap` E' 
 # TO  E === E'
 t1 = Ap(FreeVar(0), MetaVar(50))
-t2 = Ap(FreeVar(0), MetaVar(51))
-simplify(t1, t2)
+t2 = Ap(FreeVar(0), FreeVar(99))
+c = simplify(t1, t2)
 
 
 t1 = Ap(Lam(LocalVar(0)), MetaVar(50))
@@ -304,10 +304,11 @@ UnifRes = Union{UnifRes_Attempts, UnifRes_Result}
 
 
 #M = λ x1. ... λ xn. xi (M1 x1 ... xn) ... (Mr x1 ... xn)  
-# for ALL the xi ...
-# M = λ x1. ... λ xn. A (M1 x1 ... xn) ... (Mr x1 ... xn) (if A is closed)
+# ... for ALL the xi from x1 to xn where the number n IS bvar ...  <-- Note that it's ALSO the number of params !!!
+# PLUS, finally, (BUT ONLY if "fnew" is closed,)
+# M = λ x1. ... λ xn. "fnew" (M1 x1 ... xn) ... (Mr x1 ... xn)
+# ^ NOTE that there is a RANDOM number of these applied terms Mr here, and this is >nargs< (nargs is r).
 function generateSubst(bvars::Int, mv::Id, fnew::Term, nargs::Int)::Array{Subst}
-    println("bvars", bvars)
     args = [newvar() for i in 1:nargs] .|> MetaVar .|> (tm->saturateMV(tm, bvars)) # .|> pr
     chances = (0:(bvars-1)) .|> LocalVar |> (l-> isclosed(fnew) ? vcat(l, fnew) : l) .|> (l->applyApTelescope(l, args))  .|> (l-> mkLam(l, bvars)) #  .|> pr
     # [0.. bvars) .| LocalVar . {isclosed(fnew) ? cat(x, fnew)} .| applyApTelescope<args> .| mkLam<bvars>
@@ -322,7 +323,26 @@ nargs =2
 generateSubst(bvars, 50, MetaVar(999), nargs)
 bvars = 0
 nargs = 0
-generateSubst(bvars, 50, MetaVar(999), nargs)
+generateSubst(bvars, 50, MetaVar(999), nargs)  # [Dict(50 => MetaVar(999))]
+bvars = 0
+nargs = 1
+generateSubst(bvars, 50, MetaVar(999), nargs)  # [Dict(50 => Ap(MetaVar(999), MetaVar(102)))]
+bvars = 0
+nargs = 2
+generateSubst(bvars, 50, MetaVar(999), nargs)  # [ Dict(50 => Ap(Ap(MetaVar(999), MetaVar(103)), MetaVar(104)))]
+bvars = 1
+nargs = 0
+generateSubst(bvars, 50, MetaVar(999), nargs)  # [ Dict(50 => Lam(LocalVar(0)))
+                                               # Dict(50 => Lam(MetaVar(999)))]
+bvars = 1
+nargs = 1
+generateSubst(bvars, 50, MetaVar(999), nargs)  # [  Dict(50 => Lam(Ap(LocalVar(0), Ap(MetaVar(109), LocalVar(0)))))
+                                               #    Dict(50 => Lam(Ap(MetaVar(999), Ap(MetaVar(109), LocalVar(0)))))]
+                    # Here it's where it gets SUPER real!!! (all terms are there)
+
+
+
+
 
 su = generateSubst(0, 50, MetaVar(999), 0)[1]
 t=Ap(FreeVar(55), MetaVar(50))
