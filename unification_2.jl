@@ -257,41 +257,45 @@ end
 usedReferences() = UsedReferences([], [], [], [])
 newval(preferred::Index, usedReferences) = (preferred in keys(usedReferences)) ? (length(usedReferences) + 1) : preferred
 
+
+function unify_pass_(tloc::TLoc, tt::Type_, stloc, stt, shared_locs, is_tloc_t1::Bool)
+    tloc_assigned = get(stloc, tloc.var, nothing)
+    if tt isa TLoc
+        tt_assigned = get(stt, tt.var, nothing)
+        if (tloc_assigned === nothing) && (tt_assigned === nothing)
+            new_shared = newval(tloc.var, shared_locs)
+            shared_locs[new_shared] = UsedReferences([tloc.var], [tt.var], [], [])
+            stloc[tloc.var] = TLoc(new_shared)
+            stt[tt.var] = TLoc(new_shared)
+        elseif (tloc_assigned === nothing) && (tt_assigned !== nothing)
+            stloc[tloc.var] = tt_assigned
+            # K Prob not.. --  STILL, Check usedLocs(tt_assigned) I'm afraid ... ?
+        elseif (tloc_assigned !== nothing) && (tt_assigned === nothing)
+            stt[tt.var] = tloc_assigned
+            # K Prob not.. --  STILL, Check usedLocs(tloc_assigned) I'm afraid ... ?
+        elseif (tloc_assigned !== nothing) && (tt_assigned !== nothing)
+            cs_inside = simplify(tloc_assigned, tt_assigned)
+            # Recursive call from here
+            # ATTENTION: these are SHARED level TLocs now!!!
+        end
+    else
+        t2 = turn_in_shared(tt, stt, shared_locs)
+        if (tloc_assigned === nothing)
+            stloc[tloc.var] = t2
+            # STILL, Check usedLocs(tt_assigned) I'm afraid ...
+        elseif (tloc_assigned !== nothing) # "Transitive" case: constr(1, A) AND constr(1, B) ends here
+            cs_inside = simplify(tloc_assigned, t2)
+            # Note that tloc_assigned has SHARED-level TLocs, and has Precedence !!
+            # do smthgmnbvc
+        end
+end
 function unify(t1::TForall, t2::TForall)::Union{Tuple{Subst, Subst}, Error}
     cs = simplify(t1.body, t2.body)
     s1, s2, = Subst(), Subst()  # The TLoc on the VALUES of the Dicts are the SHARED ones !!!
     shared_locs = Dict{Index, UsedReferences}() # KEYS are shared ctx here (even if, by default you DON'T change tlocs!!), using this as Sparse vector
     for c in cs if c isa Error return c end end
     for c in cs
-        if c.t1 isa TLoc && c.t2 isa TLoc
-            t1_assigned, t2_assigned = get(s1, c.t1.var, nothing), get(s2, c.t2.var, nothing)
-            if (t1_assigned === nothing) && (t2_assigned === nothing)
-                new_shared = newval(c.t1.var, shared_locs)
-                shared_locs[new_shared] = UsedReferences([c.t1.var], [c.t2.var], [], [])
-                s1[c.t1.var] = TLoc(new_shared)
-                s2[c.t2.var] = TLoc(new_shared)
-            elseif (t1_assigned === nothing) && (t2_assigned !== nothing)
-                s1[c.t1.var] = t2_assigned
-                # K Prob not.. --  STILL, Check usedLocs(t2_assigned) I'm afraid ... ?
-            elseif (t1_assigned !== nothing) && (t2_assigned === nothing)
-                s2[c.t2.var] = t1_assigned
-                # K Prob not.. --  STILL, Check usedLocs(t1_assigned) I'm afraid ... ?
-            elseif (t1_assigned !== nothing) && (t2_assigned !== nothing)
-                cs_inside = simplify(t1_assigned, t2_assigned)
-                # Recursive call from here
-                # ATTENTION: these are SHARED level TLocs now!!!
-            end
-        elseif c.t1 isa TLoc && !(c.t2 isa TLoc)
-            t1_assigned = get(s1, c.t1.var, nothing)
-            t2 = turn_in_shared(c.t2, s2, shared_locs)
-            if (t1_assigned === nothing)
-                s1[c.t1.var] = t2
-                # STILL, Check usedLocs(t2_assigned) I'm afraid ...
-            elseif (t1_assigned !== nothing) # "Transitive" case: constr(1, A) AND constr(1, B) ends here
-                cs_inside = simplify(t1_assigned, t2)
-                # Note that t1_assigned has SHARED-level TLocs, and has Precedence !!
-                # do smthgmnbvc
-            end
+        
         elseif !(c.t1 isa TLoc) && c.t2 isa TLoc
             t2_assigned = get(s2, c.t2.var, nothing)
             if (t2_assigned === nothing)
