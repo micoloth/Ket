@@ -60,7 +60,7 @@ struct TProd <: Type_
     data::Array{Type_}
 end
 Base.:(==)(a::TProd, b::TProd) = Base.:(==)(a.data, b.data)
-Base.:(==)(a::TTerm, b::TTerm) = a.typs_dot_ordered == b.typs_dot_ordered
+Base.:(==)(a::TTerm, b::TTerm) = (a.t_in == b.t_in) && (a.t_out == b.t_out)
 Base.:(==)(a::TForall, b::TForall) = Base.:(==)(a.body, b.body)
 Base.:(==)(a::TApp, b::TApp) = a.ops_dot_ordered == b.ops_dot_ordered
 
@@ -190,7 +190,7 @@ function pr(x::TTerm)::String
     ([ins, x.t_out|> pr]  |> x->join(x, "->")) 
 end
 pr(x::TApp)::String = x |>reduc |>just_pr  # Will i regret this? Yes!
-just_pr(x::TApp) = x.ops_dot_ordered .|> pr .|>(x->"($(x))") |> (x->join(x, ".")) |> (x->"[Just $(x)]")
+just_pr(x::TApp) = x.ops_dot_ordered .|> pr .|>(x->"($(x))") |> (x->join(x, " .")) |> (x->"[Ap $(x)]")
 just_pr(x::Type_) = pr(x)
 pr(xs::Array{Type_}) = xs .|> pr
 
