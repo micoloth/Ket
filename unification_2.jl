@@ -9,14 +9,6 @@ newvar() = global TOPFREE = TOPFREE + 1
 
 include("mylambda1.jl")
 
-isclosed(t::TGlob)::Bool = false
-isclosed(t::TLoc)::Bool = true
-isclosed(t::TTop)::Bool = true
-isclosed(t::TApp)::Bool = t.ops_dot_ordered .|> isclosed |> all
-isclosed(t::TForall)::Bool = true
-isclosed(t::TTerm)::Bool = isclosed(t.t_in) && isclosed(t.t_out)
-
-
 usesLocs(t::TGlob)::Array{Index} = Array{Index}([])
 usesLocs(t::TLoc)::Array{Index} = Array{Index}([t.var])
 usesLocs(t::TTop)::Array{Index} = Array{Index}([])
@@ -158,9 +150,32 @@ function robinson_check_not_recursive(tloc::TLoc, tt::Type_, subst::Subst)::Bool
             end
         end
     end
+    # for v in usesLocs(tt)
+    #     if tloc.var == v return false end
+    # end
     return true
 end
-        
+
+
+get_reduc_subst(t::Array{TProd}) = TApp(vcat([t[end]], t[end-1:-1:1] .|> (x->TForall(x))))
+get_reduc_subst(t::Array{Type_}) = TApp(vcat([t[end]], t[end-1:-1:1] .|> (x->TForall(x))))
+# IMPORTANT: ALL EXCEPT (potentially) the >FIRST< should be TPRODS !!!!!
+sr(t...) = get_reduc_subst(collect(t)) |> reduc
+
+
+function get_subst_prod(tloc::TLoc, tt::Type_, current_arity::Int)::TProd
+    # resulting_arity = current_arity - 1
+    # you have ALREADY TESTED that tt does not contain tloc, that's the whole point !!!!
+    prod = vcat(
+        Array{Type_}([TLoc(i) for i in 1:(tloc.var-1)]),
+        Array{Type_}([TLoc(0)]), # Placeholder, complete nonsense, it's getting replaced
+        Array{Type_}([TLoc(i) for i in (tloc.var:current_arity-1)])        
+    )
+    prod[tloc.var] = get_reduc_subst(Array{Type_}([tt, TProd(prod)])) |> reduc
+    TProd(prod)
+end
+
+     
 function robinsonUnify(t1::TForall, t2::TForall)::Union{Tuple{TProd, TProd}, Error}
     # Dumb, i promise i'll make this better:
 
@@ -198,63 +213,39 @@ function robinsonUnify(t1::TForall, t2::TForall)::Union{Tuple{TProd, TProd}, Err
         end
     end
 
-    println(middle_subst)
-
-    subst1 = [get(middle_subst, i, TLoc(i)) for i in 1:t1arity]
-    subst2 = [get(middle_subst, i, TLoc(i)) for i in (t1arity+1):(t1arity+t2arity)]
+    current_arity = t1arity + t2arity
+    current_total_subst = TProd([]) # PLACEHOLDER
+    subst_prods = Array{TProd}([]) # To pass into get_reduc_subst IN THIS ORDER:
+    for (i, tt) in middle_subst
+        if length(subst_prods) > 0
+            tt_updated = get_reduc_subst(Array{Type_}([tt, current_total_subst])) |> reduc
+            i_updated = get_reduc_subst(Array{Type_}([TLoc(i), current_total_subst])) |> reduc
+        else
+            i_updated, tt_updated = TLoc(i), tt
+        end
+        new_subst = get_subst_prod(i_updated, tt_updated, current_arity)
+        push!(subst_prods, new_subst)
+        current_arity = arity(subst_prods[end]) # The beauty of this is this is Enough... I HOPE LOL
+        if length(subst_prods) > 1
+            current_total_subst = get_reduc_subst(Array{Type_}([current_total_subst, new_subst])) |> reduc
+        else
+            current_total_subst = new_subst
+        end
+    end
+    if length(subst_prods) == 0
+        @assert (t1arity == t2arity) "$(t1arity) != $(t2arity), HOW tho ..."
+        # TODO: remove this dumb shit, replace with LITERALLY NOTHING
+        return TProd([TLoc(i) for i in 1:t1arity]), TProd([TLoc(i) for i in 1:t1arity])
+    end
     
-
-    
-
-    return TProd(subst1), TProd(subst2)
+    subst1 = TProd(current_total_subst.data[1:t1arity])
+    subst2 = TProd(current_total_subst.data[(t1arity+1):(t1arity+t2arity)])
+    return subst1, subst2
 end
     
 
-TApp([TForall()])
-
-
-
-get_subst_args(tloc::TLoc, tt::Type_, )
-
-get_reduc_subst(t::Array{TProd}) = TApp(vcat([t[end]], t[end-1:-1:1] .|> (x->TForall(x))))
-sr(t...) = get_reduc_subst(collect(t)) |> reduc
-
-
-t1 = TProd([TTerm([TLoc(1)], TLoc(2)), TLoc(3)])
-t2 = TProd([TLoc(1), TLoc(2), TLoc(2)])
-t3 = TProd([TGlob("G"), TLoc(1)])
-t4 = TProd([TTerm([TGlob("A")], TGlob("B"))])
-get_reduc_subst([t1, t2, t3, t4]) |> reduc |> pr == "[G->A->B x A->B]"
-
-sr(sr(t1, t2), sr(t3, t4)) |> pr
-sr(sr(t1, t2, t3), t4) |> pr
-sr(t1, sr(t2, t3, t4)) |> pr
-
-
-
-t1 = TProd([TLoc(1), TLoc(2), TLoc(3), TLoc(4), TLoc(5)])
-t2 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(3), TLoc(4)])
-t3 = TProd([TLoc(1), TLoc(2), TLoc(3), TLoc(3)])
-t4 = TProd([TLoc(1), TLoc(2), TLoc(2)])
-t5 = TProd([TLoc(4), TGlob("A")])
-get_reduc_subst([t1, t2, t3, t4, t5]) |> reduc |> pr == "[T4 x T4 x A x A x A]"
-
-sr(sr(t1, t2), sr(t3, t4, t5)) |> pr
-sr(sr(t1, t2, t3, t4), t5) |> pr
-sr(t1, sr(t2, t3), sr(t4, t5)) |> pr
-
-
-
-t1 = TProd([TLoc(1), TGlob("F"), TLoc(3), TTerm([TLoc(4)], TLoc(5))])
-t2 = TProd([TLoc(1), TGlob("SKIPPED"), TTerm([TLoc(2)], TLoc(3)), TLoc(1), TLoc(1)])
-t3 = TProd([TLoc(2), TLoc(1), TLoc(2)])
-t4 = TProd([TLoc(1), TTerm([TLoc(2)], TLoc(3))])
-t5 = TProd([TLoc(2), TGlob("Z"), TGlob("Z")])
-get_reduc_subst([t1, t2, t3, t4, t5]) |> reduc |> pr == "[Z->Z x F x T2->Z->Z x Z->Z->Z->Z]"
-
-sr(sr(t1, t2), sr(t3, t4, t5)) |> pr
-sr(sr(t1, t2, t3, t4), t5) |> pr
-sr(t1, sr(t2, t3), sr(t4, t5)) |> pr
+# TProd([TLoc(1), TTerm([TLoc(2)], TLoc(3))])
+# get_subst_prod(TLoc(1), TTermAuto(TLoc(2), TLoc(3)), 3)
 
 
 # TESTS:
@@ -397,7 +388,7 @@ t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C"))), TLoc(2), TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))])
 repr(simplify(t1, t2)) == repr(Constraint[Constraint(TLoc(2), TLoc(2)), Constraint(TLoc(1), TTerm(Type_[TGlob("A")], TTerm(Type_[TGlob("B")], TGlob("C")))), Constraint(TLoc(2), TTerm(Type_[TGlob("A")], TTerm(Type_[TGlob("B")], TLoc(1)))), Constraint(TLoc(1), TLoc(2))])
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)   #####  HERE, PROBLEM
+test_unify(t1, t2)   #####  YESSSSS
 
 t1 = TProd([TLoc(1), TLoc(2)])
 t2 = TProd([TLoc(2), TTermAuto(TGlob("A"), TLoc(1))])
@@ -420,10 +411,59 @@ function prepTransEx(l, g1, g2)
     v2=vcat([[TLoc(i), TLoc(i)] for i in 1:l-1]...)
     TProd(v1), TProd(vcat([TGlob(g1)], v2, [TGlob(g2)]))
 end
-t1, t2 = prepTransEx(4, "F", "F")
+t1, t2 = prepTransEx(50, "F", "F")
 robinsonUnify(TForall(t1), TForall(t2))
 test_unify(t1, t2)
 
 t1, t2 = prepTransEx(10, "F", "G")
 robinsonUnify(TForall(t1), TForall(t2))
 
+
+
+
+
+
+
+
+
+
+
+
+# Each TLoc refers to position in the row BELOW:
+t1 = TProd([TTerm([TLoc(1)], TLoc(2)), TLoc(3)])
+t2 = TProd([TLoc(1), TLoc(2), TLoc(2)])
+t3 = TProd([TGlob("G"), TLoc(1)])
+t4 = TProd([TTerm([TGlob("A")], TGlob("B"))])
+get_reduc_subst([t1, t2, t3, t4]) |> reduc |> pr == "[G->A->B x A->B]"
+
+sr(sr(t1, t2), sr(t3, t4)) |> pr
+sr(sr(t1, t2, t3), t4) |> pr
+sr(t1, sr(t2, t3, t4)) |> pr
+
+
+
+# Each TLoc refers to position in the row BELOW:
+t1 = TProd([TLoc(1), TLoc(2), TLoc(3), TLoc(4), TLoc(5)])
+t2 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(3), TLoc(4)])
+t3 = TProd([TLoc(1), TLoc(2), TLoc(3), TLoc(3)])
+t4 = TProd([TLoc(1), TLoc(2), TLoc(2)])
+t5 = TProd([TLoc(4), TGlob("A")])
+get_reduc_subst([t1, t2, t3, t4, t5]) |> reduc |> pr == "[T4 x T4 x A x A x A]"
+
+sr(sr(t1, t2), sr(t3, t4, t5)) |> pr
+sr(sr(t1, t2, t3, t4), t5) |> pr
+sr(t1, sr(t2, t3), sr(t4, t5)) |> pr
+
+
+
+# Each TLoc refers to position in the row BELOW:
+t1 = TProd([TLoc(1), TGlob("F"), TLoc(3), TTerm([TLoc(4)], TLoc(5))])
+t2 = TProd([TLoc(1), TGlob("SKIPPED"), TTerm([TLoc(2)], TLoc(3)), TLoc(1), TLoc(1)])
+t3 = TProd([TLoc(2), TLoc(1), TLoc(2)])
+t4 = TProd([TLoc(1), TTerm([TLoc(2)], TLoc(3))])
+t5 = TProd([TLoc(2), TGlob("Z"), TGlob("Z")])
+get_reduc_subst([t1, t2, t3, t4, t5]) |> reduc |> pr == "[Z->Z x F x T2->Z->Z x Z->Z->Z->Z]"
+
+sr(sr(t1, t2), sr(t3, t4, t5)) |> pr
+sr(sr(t1, t2, t3, t4), t5) |> pr
+sr(t1, sr(t2, t3), sr(t4, t5)) |> pr
