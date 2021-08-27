@@ -85,6 +85,14 @@ function simplify_(t1::TLoc, t2::TLoc)::SimpRes
     Array{Constraint}([Constraint(t1, t2)])
 end
 
+function simplify_(t1::TSum, t2::TSum)::SimpRes
+    if length(t1.data) != length(t2.data)
+        Error("Different lengths: $(length(t1.data)) != $(length(t2.data))")
+    else
+        Array{Constraint}([Constraint(s1, s2) for (s1, s2) in zip(t1.data, t2.data)])  
+    end 
+end
+
 function simplify_(t1::Type_, t2::Type_)::SimpRes # base case
     if t1 == t2 Array{Constraint}([])
     elseif typeof(t1) === TLoc || typeof(t2) === TLoc Array{Constraint}([Constraint(t1, t2)]) 
