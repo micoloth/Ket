@@ -111,7 +111,8 @@ struct TApp <: Type_ # idk why they woudn't have this
     # Each lambda must RETURN a TPROD, but really WE WILL BE EXTREMELY GENEROUS WITH THE "TYPECHECKING"
 end
 struct TTerm <: Type_
-    t_in::Array{Type_}  # Type of input, should be a TProd.  
+    t_in::Type_  # Type of input, should be a TProd.  
+    # NOTE: This^ Only breaks if it is a TGlob, OR a TSum i guess (unless it's a TSum of TProds, that's actually the reduced form?)
     t_out::Type_  # type of the output
 end
 struct TProd <: Type_
@@ -232,7 +233,7 @@ arity(base::Index, t::ELoc)::Index = max(base, t.n)
 arity(base::Index, t::EUnit)::Index = base 
 arity(base::Index, t::EApp)::Index = t.ops_dot_ordered .|> arity |> maximum
 arity(base::Index, t::EAbs)::Index = base # Lam(arity(base, t.body)) 
-arity(base::Index, t::EProd)::Index = t.data .|> (x->arity(base, x)) |> maximum
+arity(base::Index, t::EProd)::Index = t.data .|> (x->arity(base, x)) |> (x->maximum(x, init=0))
 arity(base::Index, t::EAnno)::Index = arity(base, t.expr)
 arity(base::Index, t::EBranches)::Index = t.ops_chances .|> (x->arity(base, x)) |> maximum
 arity(base::Index, t::ESumTerm)::Index = arity(base, t.data)
@@ -242,15 +243,15 @@ arity(t::Expr)::Index = arity(0, t)
 # Type functions 
 
 
-TFunAuto(tin, tout) = TTerm([tin], tout)
-TTermAuto(tin, tout) = TTerm([tin], tout)
+TFunAuto(tin, tout) = TTerm(tin, tout)
+TTermAuto(tin, tout) = TTerm(tin, tout)
 TAppAuto(tfun, targ) = TApp([TProd([targ]), tfun])
 
 
 subst(news::Array{Type_}, t::TGlob)::Type_= t 
 subst(news::Array{Type_}, t::TLoc)::Type_ = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
 subst(news::Array{Type_}, t::TTop)::Type_ = t 
-subst(news::Array{Type_}, t::TTerm)::Type_ = TTerm(t.t_in .|> (x->subst(news, x)), subst(news, t.t_out)) 
+subst(news::Array{Type_}, t::TTerm)::Type_ = TTerm(subst(news, t.t_in), subst(news, t.t_out)) 
 subst(news::Array{Type_}, t::TForall)::Type_ = t # TForall(subst(news, t.body)) 
 subst(news::Array{Type_}, t::TProd)::Type_ = TProd(t.data .|> (x->subst(news, x))) 
 subst(news::Array{Type_}, t::TApp)::Type_ = TApp(t.ops_dot_ordered .|> x->subst(news, x)) 
@@ -286,9 +287,7 @@ function pr(x::TProd)::String
     end
 end
 function pr(x::TTerm)::String
-    ins =  x.t_in .|> pr |> (x->join(x, ", "))
-    ins = (length(x.t_in) ==1) ? ins : ("(" * ins * ")")
-    ([ins, x.t_out|> pr]  |> x->join(x, "->")) 
+    ([x.t_in |> pr, x.t_out|> pr]  |> x->join(x, "->")) 
 end
 pr(x::TApp)::String = x |>reduc |>just_pr  # Will i regret this? Yes!
 just_pr(x::TApp) = x.ops_dot_ordered .|> pr .|>(x->"($(x))") |> (x->join(x, " .")) |> (x->"[Ap $(x)]")
@@ -301,10 +300,11 @@ arity(base::Index, t::TGlob)::Index= base
 arity(base::Index, t::TLoc)::Index = max(base, t.var)
 arity(base::Index, t::TTop)::Index = base 
 arity(base::Index, t::TApp)::Index = t.ops_dot_ordered .|> (x->arity(base, x)) |> maximum
-arity(base::Index, t::TTerm)::Index = vcat(t.t_in, [t.t_out]) .|> (x->arity(base, x)) |> maximum
+arity(base::Index, t::TTerm)::Index = [t.t_in, t.t_out] .|> (x->arity(base, x)) |> maximum
 arity(base::Index, t::TForall)::Index = base # Lam(arity(base, t.body)) 
-arity(base::Index, t::TProd)::Index = t.data .|> (x->arity(base, x)) |> maximum
+arity(base::Index, t::TProd)::Index = t.data .|> (x->arity(base, x)) |> (x->maximum(x, init=0))
 arity(t::Type_)::Index = arity(0, t)
+
 
 EGlob("x", TGlob("A"))
 EAnno(ELoc(1), TFunAuto(TGlob("A"), TGlob("B")))
@@ -313,7 +313,7 @@ EAnno(ELoc(2), TForall(TLoc(1)))
 SType1 = TFunAuto(TGlob("X"), TGlob("A"))
 SType2 = TFunAuto(TGlob("X"), TFunAuto(TGlob("A"), TGlob("B")))
 SType = TFunAuto(TProd([SType2, SType1, TGlob("X")]), TGlob("B"))
-
+SType |> pr
 
 EGlob("S", TFunAuto(TGlob("A"), TGlob("B"))) |> pr
 TFunAuto(TGlob("A"), TGlob("B")) |> pr
@@ -321,7 +321,7 @@ TFunAuto(TGlob("A"), TGlob("B")) |> pr
 # Now polymorphicly:
 SType1P = TFunAuto(TLoc(3), TLoc(2))
 SType2P = TFunAuto(TLoc(3), TFunAuto(TLoc(2), TLoc(1)))
-STypeP = TForall(TTerm([SType2P, SType1P, TLoc(3)], TLoc(1)))
+STypeP = TForall(TTerm(TProd([SType2P, SType1P, TLoc(3)]), TLoc(1)))
 STypeP |> pr
 
 

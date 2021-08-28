@@ -12,10 +12,10 @@ include("mylambda1.jl")
 usesLocs(t::TGlob)::Array{Index} = Array{Index}([])
 usesLocs(t::TLoc)::Array{Index} = Array{Index}([t.var])
 usesLocs(t::TTop)::Array{Index} = Array{Index}([])
-usesLocs(t::TApp)::Array{Index} = vcat((t.ops_dot_ordered .|> usesLocs)...)
-usesLocs(t::TProd)::Array{Index} = vcat((t.data .|> usesLocs)...)
+usesLocs(t::TApp)::Array{Index} = unique(vcat((t.ops_dot_ordered .|> usesLocs)...))
+usesLocs(t::TProd)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
 usesLocs(t::TForall)::Array{Index} = Array{Index}([])
-usesLocs(t::TTerm)::Array{Index} = vcat(vcat((t.t_in .|> usesLocs)...), t.t_out |> usesLocs)
+usesLocs(t::TTerm)::Array{Index} = unique(vcat(t.t_in |> usesLocs, t.t_out |> usesLocs))
 
 
 ########################################## SIMPLIFY
@@ -75,10 +75,7 @@ function simplify_(t1::TForall, t2::TForall)::SimpRes
 end
 
 function simplify_(t1::TTerm, t2::TTerm)::SimpRes
-    vcat(
-        Array{Constraint}([Constraint(t1.t_out, t2.t_out)]),
-        # looking at tout's WITHOUT their tin's, IS what it does since it substitutes a Newvar into them..
-        [Constraint(t, u) for (t, u) in zip(t1.t_in, t2.t_in)])
+    Array{Constraint}([Constraint(t1.t_out, t2.t_out), Constraint(t1.t_in, t2.t_in)])
 end
 
 function simplify_(t1::TLoc, t2::TLoc)::SimpRes
@@ -188,6 +185,7 @@ function get_subst_prod(tloc::TLoc, tt::Type_, current_arity::Int)::TProd
     TProd(prod)
 end
 
+
 function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index)::Union{Tuple{TProd, TProd}, Error}
     # Dumb, i promise i'll make this better:
 
@@ -195,9 +193,13 @@ function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index)
     # new_shared = newval(c.t1.var, shared_locs)
     # shared_locs[new_shared] = UsedReferences([c.t1.var], [c.t2.var], [], [])
     # s1[c.t1.var] = TLoc(new_shared)
-
-    t1 = TApp([TProd([TLoc(i) for i in 1:t1arity]), t1])
-    t2 = TApp([TProd([TLoc(i) for i in (t1arity+1):(t1arity+t2arity)]), t2])
+    
+    # IDEA: The following s1 and s2 are ALSO used in a case where t1 and t2 contain EMPTY PROD, in which case they are returned (see below) but EVERYTHING works. 
+    # >>STILL, you might want to create a different function..
+    s1 = TProd([TLoc(i) for i in 1:t1arity])
+    t1 = TApp([s1, t1])
+    s2 = TProd([TLoc(i) for i in (t1arity+1):(t1arity+t2arity)])
+    t2 = TApp([s2, t2])
     middle_subst = Subst()
     # Now everything is Shared # Note that the below Reduces:
     cs = simplify(t1, t2) # they are Already bodies, at this point
@@ -236,9 +238,10 @@ function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index)
         current_arity = arity(current_total_subst[end]) # The beauty of this is this is Enough... I HOPE LOL
     end
     if length(current_total_subst) == 0
-        @assert (t1arity == t2arity) "$(t1arity) != $(t2arity), HOW tho ..."
+        # @assert (t1arity == t2arity) "$(t1arity) != $(t2arity), HOW tho ..."
+        # ^ This assert makes sense EVERY TIME THERE'S NO PASSED ARITIES
         # TODO: remove this dumb shit, replace with LITERALLY NOTHING
-        return TProd([TLoc(i) for i in 1:t1arity]), TProd([TLoc(i) for i in 1:t1arity])
+        return s1, s2
     end
     
     final_subst = ass_reduc(current_total_subst...)
@@ -251,7 +254,7 @@ end
 robinsonUnify(t1::TForall, t2::Type_, t1arity::Index, t2arity::Index) = robinsonUnify(t1, TForall(t2), t1arity, t2arity)
 robinsonUnify(t1::Type_, t2::TForall, t1arity::Index, t2arity::Index) = robinsonUnify(TForall(t1), t2, t1arity, t2arity)
 function robinsonUnify(t1::Type_, t2::Type_, t1arity::Index, t2arity::Index)
-    if (t1 |> arity == 0) && ((t2 |> arity == 0)) 
+    if (t1arity == 0) && (t2arity == 0)
         return (t1 == t2) ? (TProd([]), TProd([])) : Error(" Not unifiable: $(t1) != $(t2)")
     else 
         return robinsonUnify(TForall(t1), TForall(t2), t1arity, t2arity)
@@ -371,7 +374,7 @@ test_unify(t1, t2)
 
 t1 = TAppAuto(TLoc(4), TGlob("X"))
 t2 = TAppAuto(TTermAuto(TLoc(1), TLoc(2)), TLoc(3)) 
-repr(simplify(t1, t2)) == repr([Constraint(TGlob("X"), TLoc(3)), Constraint(TLoc(4), TTerm(Type_[TLoc(1)], TLoc(2)))])
+repr(simplify(t1, t2)) == repr([Constraint(TLoc(4), TTerm(TLoc(1), TLoc(2))), Constraint(TGlob("X"), TLoc(3))])
 # ^ Go fuck yourself, then die 
 robinsonUnify(TForall(t1), TForall(t2))
 test_unify(t1, t2)
@@ -395,23 +398,23 @@ test_unify(t1, t2)
 
 t1 = TProd([TLoc(1), TLoc(1)])
 t2 = TProd([TLoc(1), TTermAuto(TGlob("A"), TLoc(1))])
-repr(simplify(t1, t2)) == repr([Constraint(TLoc(1), TLoc(1)), Constraint(TLoc(1), TTerm(Type_[TGlob("A")], TLoc(1)))])
+repr(simplify(t1, t2)) == repr([Constraint(TLoc(1), TLoc(1)), Constraint(TLoc(1), TTerm(TGlob("A"), TLoc(1)))])
 robinsonUnify(TForall(t1), TForall(t2)) # Recursive Error, nice!
 
 t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TLoc(1), TLoc(2), TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))])
-repr(simplify(t1, t2)) == repr([Constraint(TLoc(2), TTerm(Type_[TGlob("A")], TTerm(Type_[TGlob("B")], TLoc(1)))), Constraint(TLoc(1), TLoc(1)), Constraint(TLoc(2), TLoc(2)), Constraint(TLoc(1), TLoc(2))])
+repr(simplify(t1, t2)) == repr([Constraint(TLoc(2), TTerm(TGlob("A"), TTerm(TGlob("B"), TLoc(1)))), Constraint(TLoc(1), TLoc(1)), Constraint(TLoc(2), TLoc(2)), Constraint(TLoc(1), TLoc(2))])
 robinsonUnify(TForall(t1), TForall(t2)) # Recursive Error, nice!
 
 t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C"))), TLoc(2), TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))])
-repr(simplify(t1, t2)) == repr(Constraint[Constraint(TLoc(2), TLoc(2)), Constraint(TLoc(1), TTerm(Type_[TGlob("A")], TTerm(Type_[TGlob("B")], TGlob("C")))), Constraint(TLoc(2), TTerm(Type_[TGlob("A")], TTerm(Type_[TGlob("B")], TLoc(1)))), Constraint(TLoc(1), TLoc(2))])
-robinsonUnify(TForall(t1), TForall(t2))
+repr(Set(simplify(t1, t2))) == repr(Set(Constraint[Constraint(TLoc(2), TLoc(2)), Constraint(TLoc(1), TTerm(TGlob("A"), TTerm(TGlob("B"), TGlob("C")))), Constraint(TLoc(2), TTerm(TGlob("A"), TTerm(TGlob("B"), TLoc(1)))), Constraint(TLoc(1), TLoc(2))]))
+robinsonUnify(TForall(t1), TForall(t2)) .|> pr
 test_unify(t1, t2)   #####  YESSSSS
 
 t1 = TProd([TLoc(1), TLoc(2)])
 t2 = TProd([TLoc(2), TTermAuto(TGlob("A"), TLoc(1))])
-repr(simplify(t1, t2)) == "Constraint[Constraint(TLoc(2), TTerm(Type_[TGlob(\"A\")], TLoc(1))), Constraint(TLoc(1), TLoc(2))]"
+repr(simplify(t1, t2)) == "Constraint[Constraint(TLoc(2), TTerm(TGlob(\"A\"), TLoc(1))), Constraint(TLoc(1), TLoc(2))]"
 robinsonUnify(TForall(t1), TForall(t2))
 test_unify(t1, t2)
 
@@ -430,17 +433,30 @@ t2 = TProd([TGlob("F"), TLoc(1), TLoc(1), TGlob("G")])
 simplify(t1, t2) == [Constraint(TLoc(2), TLoc(1)), Constraint(TLoc(1), TLoc(1)), Constraint(TLoc(2), TGlob("G")), Constraint(TLoc(1), TGlob("F")), ]
 robinsonUnify(TForall(t1), TForall(t2)) # Error, nice
 
-function prepTransEx(l, g1, g2)
-    v1=vcat([[TLoc(i), TLoc(i)] for i in 1:l]...)
-    v2=vcat([[TLoc(i), TLoc(i)] for i in 1:l-1]...)
-    TProd(v1), TProd(vcat([TGlob(g1)], v2, [TGlob(g2)]))
-end
-t1, t2 = prepTransEx(505, "F", "F")
-robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+t1, t2 = TLoc(3), TForall(TTermAuto(TGlob("A"), TLoc(2)))
+test_unify(t1, t2.body)
 
-t1, t2 = prepTransEx(10, "F", "G")
-robinsonUnify(TForall(t1), TForall(t2))
+t1 = TForall(TTermAuto(TLoc(1), TProd([TGlob("A"), TLoc(2)])))
+t2 = TForall(TTermAuto(TLoc(1), TLoc(2)))
+s1, s2 = robinsonUnify(t1, t2)
+test_unify(t1.body, t2.body)
+
+t1 = TForall(TLoc(3))
+t2 = TForall(TTermAuto(TLoc(1), TLoc(2)))
+s1, s2 = robinsonUnify(t1, t2)
+test_unify(t1.body, t2.body)
+
+# function prepTransEx(l, g1, g2)
+#     v1=vcat([[TLoc(i), TLoc(i)] for i in 1:l]...)
+#     v2=vcat([[TLoc(i), TLoc(i)] for i in 1:l-1]...)
+#     TProd(v1), TProd(vcat([TGlob(g1)], v2, [TGlob(g2)]))
+# end
+# t1, t2 = prepTransEx(505, "F", "F")
+# robinsonUnify(TForall(t1), TForall(t2))
+# test_unify(t1, t2)
+
+# t1, t2 = prepTransEx(10, "F", "G")
+# robinsonUnify(TForall(t1), TForall(t2))
 
 
 
@@ -451,13 +467,13 @@ robinsonUnify(TForall(t1), TForall(t2))
 
 
 
-sr = ass_smart_reduc
+sr = ass_reduc
 
 # Each TLoc refers to position in the row BELOW:
-t1 = TProd([TTerm([TLoc(1)], TLoc(2)), TLoc(3)])
+t1 = TProd([TTerm(TLoc(1), TLoc(2)), TLoc(3)])
 t2 = TProd([TLoc(1), TLoc(2), TLoc(2)])
 t3 = TProd([TGlob("G"), TLoc(1)])
-t4 = TProd([TTerm([TGlob("A")], TGlob("B"))])
+t4 = TProd([TTerm(TGlob("A"), TGlob("B"))])
 get_reduc_subst([t1, t2, t3, t4]) |> reduc |> pr == "[G->A->B x A->B]"
 
 sr(sr(t1, t2), sr(t3, t4)) |> pr
@@ -481,10 +497,10 @@ sr(t1, sr(t2, t3), sr(t4, t5)) |> pr
 
 
 # Each TLoc refers to position in the row BELOW:
-t1 = TProd([TLoc(1), TGlob("F"), TLoc(3), TTerm([TLoc(4)], TLoc(5))])
-t2 = TProd([TLoc(1), TGlob("SKIPPED"), TTerm([TLoc(2)], TLoc(3)), TLoc(1), TLoc(1)])
+t1 = TProd([TLoc(1), TGlob("F"), TLoc(3), TTerm(TProd([TLoc(4)]), TLoc(5))])
+t2 = TProd([TLoc(1), TGlob("SKIPPED"), TTerm(TLoc(2), TLoc(3)), TLoc(1), TLoc(1)])
 t3 = TProd([TLoc(2), TLoc(1), TLoc(2)])
-t4 = TProd([TLoc(1), TTerm([TLoc(2)], TLoc(3))])
+t4 = TProd([TLoc(1), TTerm(TProd([TLoc(2)]), TLoc(3))])
 t5 = TProd([TLoc(2), TGlob("Z"), TGlob("Z")])
 get_reduc_subst([t1, t2, t3, t4, t5]) |> reduc |> pr == "[Z->Z x F x T2->Z->Z x Z->Z->Z->Z]"
 
@@ -494,13 +510,15 @@ sr(t1, sr(t2, t3), sr(t4, t5)) |> pr
 
 
 
+
 struct Inf_res
-    # IDEA: you can always turn this into a TTerm !
+    # IDEA: you can ALWAYS turn this into a TTerm !
     # Other idea: this is always BARE, ie with NO Forall around. This is because it should be around BOTHthe args and the res!
     arg_types::Array{Type_} # IDEA: you can always turn this into a TProd
     res_type::Type_
 end
 Inf_res(res_type::Type_) = Inf_res([], res_type)
+Base.:(==)(a::Inf_res, b::Inf_res) = Base.:(==)(a.arg_types, b.arg_types) && Base.:(==)(a.res_type, b.res_type)
 ass_reduc(ir::Inf_res, t::TProd ...) = Inf_res(ass_reduc(TProd(ir.arg_types), t...).data, ass_reduc(ir.res_type, t...))
 arity(ir::Inf_res) = max(
     (length(ir.arg_types)> 0) ? (ir.arg_types .|> arity |> maximum) : 0, # Yee! Dynamic typing!!
@@ -514,9 +532,12 @@ function infer_type_(term::ELoc)::Union{Inf_res, Error}
         TLoc(term.n)
     )
 end
-Base.:(==)(a::Inf_res, b::Inf_res) = Base.:(==)(a.arg_types, b.arg_types) && Base.:(==)(a.res_type, b.res_type)
 
-function infer_type_(term::EGlob)::Union{Inf_res, Error} return Inf_res(term.type) end
+function infer_type_(term::EGlob)::Union{Inf_res, Error} 
+    if term.type isa TForall return Inf_res(term.type.body) 
+    # ^ This is because Inf_res's are Naked (no Forall) for some reason- BOY will this become a mess
+    else return Inf_res(term.type) end
+end
 function infer_type_(term::EUnit)::Union{Inf_res, Error} return Inf_res(TTop()) end
 function infer_type_(term::EAnno, t_computed::Inf_res)::Union{Inf_res, Error} 
     substs = robinsonUnify(t_computed.res_type, term.type)
@@ -544,13 +565,14 @@ function infer_type_(term::EProd, ts_computed::Array{Inf_res})::Union{Inf_res, E
         ls = padded_args .|> length
         @assert ls[2:end] .|> (x->x==ls[1]) |> all # CHECK that pad_elocs worked
         ts_computed = [Inf_res(newarg, ir.res_type) for (newarg, ir) in zip(padded_args, ts_computed)]
-    else
-        return Inf_res(TProd(ts_computed .|> (x->x.res_type))) 
+        #     return Inf_res(TProd(ts_computed .|> (x->x.res_type))) 
     end
     # ^ Here, contravariance appears to imply that the subtyping you want is
     # the COMPILE-TIME SOLVABLE (universal) one, ie IF YOU HAVE MANY YOU CAN ALSO HAVE FEW- 
     # as Opoosed to the MONO one (padding w/ dumb terms).
-
+    
+    # IDEA: if max_eargs_length == 0, you STILL have to UNIFY the TLocs, which is currenty done by
+    # JUST RUNNING robinsonUnify on the Empty prods, and using that behaviour.    
     unified_RES_types = Array{Type_}([])
     last_one = pop!(ts_computed)
     for ir in ts_computed
@@ -571,7 +593,7 @@ function infer_type_(term::EProd, ts_computed::Array{Inf_res})::Union{Inf_res, E
 end
 
 function infer_type_(term::EAbs, t_computed::Inf_res)::Union{Inf_res, Error} 
-    return Inf_res(Array{Type_}([]), TTerm(t_computed.arg_types, t_computed.res_type))
+    return Inf_res(Array{Type_}([]), TTerm(TProd(t_computed.arg_types), t_computed.res_type))
 end
 function infer_type_(term::ESumTerm, t_computed::Inf_res)::Union{Inf_res, Error} 
     arT, tag, tot = t_computed |> arity, term.tag, term.total_branches
@@ -607,30 +629,30 @@ function infer_type_rec(term::EApp)::Union{Inf_res, Error}
 end
 
 e = ELoc(2)
-infer_type_rec(e)
+infer_type_rec(e) == Inf_res(Type_[TLoc(1), TLoc(2)], TLoc(2))
 
 e = EGlob("f", TTermAuto(TGlob("A"), TGlob("B")))
-infer_type_rec(e)
+infer_type_rec(e) == Inf_res(Type_[], TTerm(TGlob("A"), TGlob("B")))
 
 e = EAnno(ELoc(1), TGlob("A"))
-infer_type_rec(e)
+infer_type_rec(e) == Inf_res(Type_[TGlob("A")], TGlob("A"))
 
 e = EAnno(ELoc(2), TGlob("A"))
-infer_type_rec(e)
+infer_type_rec(e) == Inf_res(Type_[TLoc(1), TGlob("A")], TGlob("A"))
 
 tglob = TForall(TTermAuto(TGlob("A"), TLoc(2)))
 tanno = TForall(TTermAuto(TLoc(1), TGlob("B")))
 # tanno = TForall(TTermAuto(TGlob("A"), TGlob("B")))
 # tanno = TTermAuto(TGlob("A"), TGlob("B"))
 e = EAnno(EGlob("f", tglob), tanno)
-infer_type_rec(e)
+infer_type_rec(e) == Inf_res(Type_[], TTerm(TGlob("A"), TGlob("B")))
 
 
 tt = TTermAuto(TGlob("A"), TGlob("B"))
 e = EProd([EGlob("f", tt), EGlob("g", tt)])
-infer_type_rec(e)
+infer_type_rec(e) == Inf_res(Type_[], TProd(Type_[TTerm(TGlob("A"), TGlob("B")), TTerm(TGlob("A"), TGlob("B"))]))
 
-tt = TTermAuto(TLoc(1), TGlob("B"))
+tt = TForall(TTermAuto(TLoc(1), TGlob("B")))
 e = EProd([EGlob("f", tt), EGlob("g", tt)])
 infer_type_rec(e).res_type |> pr == "[T1->B x T2->B]" # T2, important! GOOD
 
@@ -646,36 +668,33 @@ infer_type_rec(e) == Inf_res(Type_[TLoc(6)], TProd(Type_[TLoc(6), TLoc(6)]))
 
 
 e = EProd([EAnno(ELoc(1), TLoc(3)), EAnno(ELoc(1), TLoc(4)), EAnno(ELoc(2), TLoc(5))])
-infer_type_rec(e) == Inf_res(Type_[TLoc(6), TLoc(11)], TProd(Type_[TLoc(3), TLoc(6), TLoc(11)]))
+infer_type_rec(e) == Inf_res(Type_[TLoc(6), TLoc(11)], TProd(Type_[TLoc(6), TLoc(6), TLoc(11)]))
 
 e = EAbs(EProd([ELoc(2), EAnno(ELoc(1), TGlob("T"))]))
-infer_type_rec(e)
+infer_type_rec(e) == Inf_res(Type_[], TTerm(TProd(Type_[TGlob("T"), TLoc(1)]), TProd(Type_[TLoc(1), TGlob("T")])))
 
 e = EProd([EAnno(ELoc(1), TLoc(2)), EAnno(ELoc(1), TLoc(3)), EAnno(ELoc(1), TLoc(4))])
 infer_type_rec(e) == Inf_res(Type_[TLoc(7)], TProd(Type_[TLoc(7), TLoc(7), TLoc(7)]))
 
-t1, t2 = TLoc(3), TForall(TTermAuto(TGlob("A"), TLoc(2)))
-s1, s2 = robinsonUnify(t1, t2, 5, 4)
-ass_reduc(t1, s1), ass_reduc(t2.body, s2)
 
-
-t1 = TForall(TTermAuto(TLoc(1), TProd([TGlob("A"), TLoc(2)])))
-t2 = TForall(TTermAuto(TLoc(1), TLoc(2)))
-s1, s2 = robinsonUnify(t1, t2)
-ass_reduc(t1.body, s1)
-
-t1 = TForall(TLoc(3))
-t2 = TForall(TTermAuto(TLoc(1), TLoc(2)))
-s1, s2 = robinsonUnify(t1, t2)
-ass_reduc(t1.body, s1)
 
 
 function infer_type_(term::EApp, ts_computed::Array{Inf_res})::Union{Inf_res, Error} 
     # First, fix TLoc's by SQUASHING THEM TO BE TTERMS. 
     # Idea: - EAbs come as TTErms (Inf_res with NO dependencies)  - ELocs come as InfRes WITH the dependency  - NONE of the inf_res have a Forall around cuz it's how it is in this mess
     ts_computed_2 = Array{Inf_res}([ts_computed[1]])
+    # Again, I'm BRUTALLY FAKING contravariance & saying that if you have a TProd in output, you need AS MANY FIELDS IN INPUT:
     for t in ts_computed[2:end]
-        tterm_subst = robinsonUnify(TForall(t.res_type), TForall(TTermAuto(TLoc(1), TLoc(2))), t|>arity, 2)
+        if ts_computed_2[end] isa TProd # Can happen the FISRT iteration
+            ar = ts_computed_2[end].data |> length
+            fake_tterm = TForall(TTerm(TProd([TLoc(i) for i in 1:ar]), TLoc(ar+1)))
+        elseif ts_computed_2[end] isa TTerm && ts_computed_2[end].t_out isa TProd
+            ar = ts_computed_2[end].t_out.data |> length
+            fake_tterm = TForall(TTerm(TProd([TLoc(i) for i in 1:ar]), TLoc(ar+1)))
+        else
+            fake_tterm = TForall(TTerm(TLoc(1), TLoc(2)))
+        end
+        tterm_subst = robinsonUnify(TForall(t.res_type), fake_tterm, t|>arity, fake_tterm|> arity)
         if tterm_subst isa Error return Error("Calling a non-function: $(t)")
         else push!(ts_computed_2, ass_reduc(t, tterm_subst[1]))
         end
@@ -692,7 +711,7 @@ function infer_type_(term::EApp, ts_computed::Array{Inf_res})::Union{Inf_res, Er
     for op in ts_computed_res[2:end]
         next_in = op.t_in # YES this always exists now
         substs =  robinsonUnify(
-            prev_out, TProd(next_in), prev_out_arity, op |> arity)
+            prev_out, next_in, prev_out_arity, op |> arity)
         if substs isa Error 
             return Error("Mismatched app: get out type $(prev_out |> pr) but required type $(next_in .|> pr), with error '$(substs)'")
         end
@@ -711,9 +730,14 @@ end
 
 tf = EAnno(EAbs(EGlob("b", TGlob("B"))), TTermAuto(TGlob("A"),  TGlob("B")))
 targ = EAnno(ELoc(1), TGlob("A"))
+
+infer_type_rec(tf)
+
+
+
+infer_type_rec(targ)
 e = EAppAuto(tf, targ)
 infer_type_rec(e)
-
 
 e = EAbs(EApp([EProd([ELoc(1), ELoc(1)]), ELoc(2)]))
 infer_type_rec(e)
