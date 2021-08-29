@@ -277,8 +277,8 @@ pr(x::TLoc)::String = "T$(x.var)"
 pr(x::TTop)::String = "⊥"
 # pr(x::TExists)::String = "∃$(x.var)"
 pr(x::TForall)::String = (arity(x.body) > 0) ? ("∀($(x.body |> pr))") : (x.body |> pr)
-function pr(x::TProd)::String
-    if length(x.data) == 1
+function pr(x::TProd; is_an_arg::Bool = false)::String
+    if length(x.data) == 1 && is_an_arg
         x.data[1] |> pr
     elseif length(x.data) == 0 
         "1"
@@ -287,8 +287,12 @@ function pr(x::TProd)::String
     end
 end
 function pr(x::TTerm)::String
-    if x.t_in isa TTerm || (x.t_in isa TProd && x.t_in.data |> length == 1 && x.t_in.data[1] isa TTerm)
+    if x.t_in isa TTerm 
         return "(" * (x.t_in |> pr) * ")->" * (x.t_out|> pr )
+    elseif (x.t_in isa TProd && x.t_in.data |> length == 1 && x.t_in.data[1] isa TTerm)
+        return "(" * (pr(x.t_in; is_an_arg=true)) * ")->" * (x.t_out|> pr )
+    elseif (x.t_in isa TProd && x.t_in.data |> length == 1)
+        return (pr(x.t_in; is_an_arg=true)) * "->" * (x.t_out|> pr )
     else return (x.t_in |> pr) * "->" *( x.t_out|> pr)
     end
 end
