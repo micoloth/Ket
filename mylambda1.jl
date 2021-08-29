@@ -244,7 +244,7 @@ arity(t::Expr)::Index = arity(0, t)
 
 
 TFunAuto(tin, tout) = TTerm(tin, tout)
-TTermAuto(tin, tout) = TTerm(tin, tout)
+TTermAuto(tin, tout) = TTerm(TProd([tin]), tout)
 TAppAuto(tfun, targ) = TApp([TProd([targ]), tfun])
 
 
@@ -287,7 +287,10 @@ function pr(x::TProd)::String
     end
 end
 function pr(x::TTerm)::String
-    ([x.t_in |> pr, x.t_out|> pr]  |> x->join(x, "->")) 
+    if x.t_in isa TTerm || (x.t_in isa TProd && x.t_in.data |> length == 1 && x.t_in.data[1] isa TTerm)
+        return "(" * (x.t_in |> pr) * ")->" * (x.t_out|> pr )
+    else return (x.t_in |> pr) * "->" *( x.t_out|> pr)
+    end
 end
 pr(x::TApp)::String = x |>reduc |>just_pr  # Will i regret this? Yes!
 just_pr(x::TApp) = x.ops_dot_ordered .|> pr .|>(x->"($(x))") |> (x->join(x, " .")) |> (x->"[Ap $(x)]")

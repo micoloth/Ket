@@ -20,15 +20,63 @@ usesLocs(t::TTerm)::Array{Index} = unique(vcat(t.t_in |> usesLocs, t.t_out |> us
 
 ########################################## SIMPLIFY
 
-# (Each of these means: Simplify the constraint "t1 must be == t2")
+# ((question is: RECURSIVE(call simplify_) OR MANAGED (return constrains)?
+# you HAVE TO CHOSE BECAUSE YOU DON'T HAVE A MONAD.......            (i think) ))
 
-# question is: RECURSIVE(call simplify_) OR MANAGED (return constrains)?
-    # you HAVE TO CHOSE BECAUSE YOU DON'T HAVE A MONAD.......            (i think)
 
-# simplify :: Constraint -> TunifyM (S.Set Constraint)
-# type TunifyM = LogicT (Gen Id)
+# (Each of these means: Simplify the constraint "t1 must be == t2").
+    
+# Here, I'm Shamelessly faking having DIRECTIONAL unification 
+# (Ie, if i have types A and B, CAN A become B via a function that turns A into B?)
+# using this rationale: if Both A and B can become T via suitable funcs a and b,
+# then T (the UNIFIED one) is the good one, and YES A can become T via a.
+# Furthermore: if A and B are TTerms, remember that in order to work, the B ARG(S) have to become the A arg(s).
+# Furthermore: Suppose A is the INFERENCED one, B is the ANNOTATED one. 
+# THIS is the order you want, the INFERENCED one must become the ANNOTATED one.
+# NOTE, that THIS IS GOOD because if the annotated one has lots of args and the inferenced one has few, you can DROP them.
+# ALSO NOTE, that if you have a shared T, it will have LOTS of params as the Annotated one,
+# and YES, A Can become T via (reverse) dropping.
 
-struct Constraint
+# Also, the idea is this: If you are trying to make A->C become B->D, 
+# there are TWO things you can do to find a SHARED T->V :
+# You can PREAPPLY substs, X->Y->A->C or W->Z->B->D,
+# or you can POST apply stuff, eg DROPPING operations, A->C->1->2 or B->D->3->4.
+# I'm collecting ALL the PREAPPLICATIONS as substs/constraints/ass_reduc terms, 
+# but i'm IMPLICITELY DROPPING ALL THE POST APPLIED STUFF.
+
+# Also: when i need to, in the post way, I'm only applying SIMPLE DROP/PROJECTION OPERATIONS,
+# and ONLY TO the FIRST one, A->C. Otherwise, too easy, you can always drop everything to [].
+# BUT, for the twisted/asymmetric ass way Constructors/contexts are encoded here,
+# those projections operations can immediatly get NESTED, and be very hard to recover ...
+
+# What i am doing is: i have this Directional simplification, 
+# where you can collect Substs Actions on the LEFT (first) side of A->B,
+# but NOT Dropping Actions on the RIGHT(second) side, 
+
+# which means you CANNOT recover T by APPLYING the b to B ? Maybe ?
+# Prob not, because what about when you covariantly switch?
+
+# ->> The reason y i have these ReverseContraint and Swap()'s like this, is:
+# that EVERYTHING IN THE 1ST POSITION ALWAYS REFER TO THE 1ST CONTEXT, 
+# AND EVERYTHING IN THE 2ND POSITION ALWAYS REFER TO THE 2ND CONTEXT.
+# It's a matter of stupid contexts, like this.
+
+#>> I mean how does
+# t1 = TProd([TTerm(TProd([TLoc(1)]), TGlob("Z")), TGlob("T")])
+# becomes
+# t2 = TProd([TTerm(TProd([TGlob("A"), TLoc(2)]), TGlob("Z")), TGlob("T")])
+# :
+# Sure, Constraint(TLoc(1), TGlob("A")) which can become the nice ass_reduc application
+# tt1 = ass_reduc(t1, TProd([TGlob("A")]))
+# But then, you have to POST apply a DROPPING operation on T2, which WONT HAPPEN rn .....
+
+
+abstract type Constraint end
+struct DirectConstraint <: Constraint # (->)
+    t1::Type_
+    t2::Type_
+end
+struct ReverseConstraint <: Constraint# (Meaning <-)
     t1::Type_
     t2::Type_
 end
@@ -43,24 +91,24 @@ function simplify_(t1::TApp, t2::TApp)::SimpRes
     if length(t1.ops_dot_ordered) != length(t2.ops_dot_ordered)
         Error("Different lambdas: $(length(t1.ops_dot_ordered)) != $(length(t2.ops_dot_ordered))")
     else
-        Array{Constraint}([Constraint(s1, s2) for (s1, s2) in zip(t1.ops_dot_ordered, t2.ops_dot_ordered)])  
+        Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(t1.ops_dot_ordered, t2.ops_dot_ordered)])  
     end    
 end
 
 function simplify_(t1::TProd, t2::TProd)::SimpRes
-    if length(t1.data) != length(t2.data)
-        Error("Different lengths: $(length(t1.data)) != $(length(t2.data))")
+    if length(t1.data) < length(t2.data)
+        Error("Different lengths: $(length(t1.data)) < $(length(t2.data)), so you cannot even drop.")
     else
-        Array{Constraint}([Constraint(s1, s2) for (s1, s2) in zip(t1.data, t2.data)])  
+        Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(t1.data, t2.data)])  
     end    
     # union([simplify_(s1, s2) for (s1, s2) in zip(args1, args2)]...)
     # union((zip(args1, args2) .|> ((a1, a2),)->simplify_(a1, a2))...)
-    # Array{Constraint}([Constraint(s1, s2) for (s1, s2) in zip(args1.data, args2.data)])  
+    # Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(args1.data, args2.data)])  
 end
 
 function simplify_(t1::TForall, t2::TForall)::SimpRes
     println("Simplyfing two Foralls:")
-    cons = Constraint(t1.body, t2.body)
+    cons = DirectConstraint(t1.body, t2.body)
     # FOR NOW, these will be REALLY PICKY
     cons = simplify(cons)
     # Only accepted case: All constraints are about TLoc only and THE SAME
@@ -75,29 +123,37 @@ function simplify_(t1::TForall, t2::TForall)::SimpRes
 end
 
 function simplify_(t1::TTerm, t2::TTerm)::SimpRes
-    Array{Constraint}([Constraint(t1.t_out, t2.t_out), Constraint(t1.t_in, t2.t_in)])
+    Array{Constraint}([
+        DirectConstraint(t1.t_out, t2.t_out), 
+        ReverseConstraint(t1.t_in, t2.t_in)])
 end
 
 function simplify_(t1::TLoc, t2::TLoc)::SimpRes
-    Array{Constraint}([Constraint(t1, t2)])
+    Array{Constraint}([DirectConstraint(t1, t2)])
 end
 
 function simplify_(t1::TSum, t2::TSum)::SimpRes
-    if length(t1.data) != length(t2.data)
-        Error("Different lengths: $(length(t1.data)) != $(length(t2.data))")
+    if length(t1.data) > length(t2.data)
+        Error("Different lengths: $(length(t1.data)) > $(length(t2.data)), so if you are in the last case you are screwed..")
     else
-        Array{Constraint}([Constraint(s1, s2) for (s1, s2) in zip(t1.data, t2.data)])  
+        Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(t1.data, t2.data)])  
     end 
 end
 
 function simplify_(t1::Type_, t2::Type_)::SimpRes # base case
     if t1 == t2 Array{Constraint}([])
-    elseif typeof(t1) === TLoc || typeof(t2) === TLoc Array{Constraint}([Constraint(t1, t2)]) 
+    elseif typeof(t1) === TLoc || typeof(t2) === TLoc Array{Constraint}([DirectConstraint(t1, t2)]) 
     else Error("Different: $(pr(t1)) is really different from $(pr(t2))")
     end
 end
 
-simplify_(c::Constraint)::SimpRes = simplify_(c.t1, c.t2)
+swap(c::DirectConstraint) = ReverseConstraint(c.t2, c.t1)
+swap(c::ReverseConstraint) = DirectConstraint(c.t2, c.t1)
+simplify_(c::DirectConstraint)::SimpRes = simplify_(c.t1, c.t2)
+function simplify_(c::ReverseConstraint)::SimpRes 
+    res = simplify_(c.t2, c.t1)
+    (res isa Error) ? res : (Array{Constraint}(res .|> swap))
+end
 
 
 function backtrack(array::SimpRes)::SimpRes
@@ -121,7 +177,7 @@ end
 function simplify(t1::Type_, t2::Type_)::SimpRes  # simply the toplevel interface
     t1=reduc(t1)
     t2 = reduc(t2)
-    return backtrack(Array{Constraint}([Constraint(t1, t2)]))
+    return backtrack(Array{Constraint}([DirectConstraint(t1, t2)]))
     # array=[Constraint(t1, t2)]
 end
 
@@ -129,18 +185,11 @@ simplify(c::Constraint)::SimpRes = simplify(c.t1, c.t2)
 
 
 
-# Unify: solve f(x) = g(y) in the sense of finding x AND y 
+# Unify: solve f(x) = g(y) in the sense of finding x AND y,
+# EXCEPT it WONT fail if post-applying some DROPPINGs here and there will help.
+# It WONT RETURN THEM, either. See above.
 
 Subst = Dict{Index, Type_}  # I'm using this as a SPARSE VECTOR
-# struct UsedReferences
-#     tloc1::Array{Index}
-#     tloc2::Array{Index}
-#     tlocUsed1::Array{Index}
-#     tlocUsed2::Array{Index}
-# end
-# usedReferences() = UsedReferences([], [], [], [])
-# newval(preferred::Index, usedReferences) = (preferred in keys(usedReferences)) ? (length(usedReferences) + 1) : preferred
-
 
 # idea: in NO CASE x=f(x) can be solved, (if types_ are REDUCED), because we handle RecursiveTypes Differently!!
 function robinson_check_not_recursive(tloc::TLoc, tt::Type_, subst::Subst)::Bool
@@ -273,178 +322,192 @@ robinsonUnify(t1::Type_, t2::Type_) = robinsonUnify(TForall(t1), TForall(t2), t1
 
 
 function test_unify(t1, t2)
+    println("Unify ", t1|> pr, "  and  ", t2|> pr, ":")
     (s1, s2) = robinsonUnify(TForall(t1), TForall(t2))
     red1 = reduc(TApp([s1, TForall(t1)])) 
     println("reduced term: ", red1 |> pr)
-    red1 == reduc(TApp([s2, TForall(t2)]))
+    res = (red1 == reduc(TApp([s2, TForall(t2)])))
+    println(res)
+    return res
 end
 
 t1 = TAppAuto(TGlob("G0"), TLoc(1))
 t2 = TAppAuto(TGlob("G0"), TLoc(2))
-simplify(t1, t2) == [Constraint(TLoc(1), TLoc(2))]
+simplify(t1, t2) == [DirectConstraint(TLoc(1), TLoc(2))]
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TAppAuto(TGlob("G0"), TLoc(1))
 t2 = TAppAuto(TGlob("G0"), TGlob("G99"))
-c = simplify(t1, t2) == [Constraint(TLoc(1), TGlob("G99"))]
+c = simplify(t1, t2) == [DirectConstraint(TLoc(1), TGlob("G99"))]
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TAppAuto(TForall(TLoc(1)), TLoc(1))
 t2 = TLoc(2)
-simplify(t1, t2) == [Constraint(TLoc(1), TLoc(2))]
+simplify(t1, t2) == [DirectConstraint(TLoc(1), TLoc(2))]
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TForall(TLoc(1))
 t2 = TForall(TLoc(1))
 simplify(t1, t2) == []
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TForall(TLoc(1))
 t2 = TForall(TLoc(2))
 simplify(t1, t2) isa Error
 robinsonUnify(TForall(t1), TForall(t2))
+@assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TForall(TLoc(1))
 t2 = TLoc(3)
-simplify(t1, t2) == [Constraint(TForall(TLoc(1)), TLoc(3))]
+simplify(t1, t2) == [DirectConstraint(TForall(TLoc(1)), TLoc(3))]
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TForall(TLoc(1))
 t2 = TGlob("G")
 simplify(t1, t2) == Error("Different: ∀(T1) is really different from G")
 robinsonUnify(TForall(t1), TForall(t2))
+@assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TForall(TLoc(1))
 t2 = TForall(TLoc(1))
 simplify(t1, t2)
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t = TAppAuto(TForall(TLoc(1)), TGlob("G1"))
 t1 = TAppAuto(TLoc(3), t)
 t2 = TAppAuto(TLoc(4), t)
-simplify(t1, t2) == [Constraint(TLoc(3), TLoc(4))]
+simplify(t1, t2) == [DirectConstraint(TLoc(3), TLoc(4))]
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TAppAuto(TGlob("G2"), TLoc(3))
 t2 = TAppAuto(TGlob("G2"), TForall(TAppAuto(TLoc(1), TGlob("G3"))))
-repr(simplify(t1, t2)) == repr([Constraint(TLoc(3), TForall(TApp([TProd([TGlob("G3")]), TLoc(1)])))])
+repr(simplify(t1, t2)) == repr([DirectConstraint(TLoc(3), TForall(TApp([TProd([TGlob("G3")]), TLoc(1)])))])
 # ^ Go fuck yourself, then die 
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TAppAuto(TGlob("G2"), TGlob("G3"))
 t2 = TAppAuto(TGlob("G2"), TForall(TAppAuto(TLoc(1), TGlob("G3"))))
 simplify(t1, t2)  == Error("Different: T3 is really different from ∀([Just (T3).(T1)])")  # Globals cannot be "solved", and that's ok
 robinsonUnify(TForall(t1), TForall(t2))
+@assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TForall(TAppAuto(TGlob("F"), TLoc(1)))   
 t2 = TForall(TAppAuto(TGlob("F"), TLoc(2)))   
 simplify(t1, t2) isa Error  # LAMBDAS CANNOT BE UNIFIED (below, they are preapplied, which is a whole different discussion!!!)
 robinsonUnify(TForall(t1), TForall(t2))
+@assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TApp([TProd([TGlob("X"), TGlob("Y")]), TForall(TAppAuto(TGlob("F"), TLoc(1)))])
 t2 = TApp([TProd([TGlob("Y"), TGlob("X")]), TForall(TAppAuto(TGlob("F"), TLoc(2)))])
-simplify(t1, t2) == Constraint[]
+simplify(t1, t2) == DirectConstraint[]
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TApp([TProd([TGlob("X"), TGlob("Y")]), TForall(TAppAuto(TGlob("F"), TLoc(1)))])
 t2 = TApp([TProd([TGlob("X"), TGlob("Y")]), TForall(TAppAuto(TGlob("F"), TLoc(2)))])
 simplify(t1, t2) == Error("Different: X is really different from Y")
 robinsonUnify(TForall(t1), TForall(t2))
+@assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TApp([TProd([TLoc(3), TLoc(2)]), TForall(TAppAuto(TGlob("F"), TLoc(1)))])
 t2 = TApp([TProd([TLoc(1), TLoc(4)]), TForall(TAppAuto(TGlob("F"), TLoc(2)))])
-simplify(t1, t2) == [Constraint(TLoc(3), TLoc(4))]
+simplify(t1, t2) == [DirectConstraint(TLoc(3), TLoc(4))]
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TApp([TProd([TGlob("X"), TLoc(2)]), TForall(TAppAuto(TLoc(2), TLoc(1)))])
 t2 = TApp([TProd([TLoc(1), TLoc(4)]), TForall(TAppAuto(TGlob("F"), TLoc(2)))])
-simplify(t1, t2)  == [Constraint(TGlob("X"), TLoc(4)), Constraint(TLoc(2), TGlob("F"))]
+simplify(t1, t2)  == [DirectConstraint(TGlob("X"), TLoc(4)), DirectConstraint(TLoc(2), TGlob("F"))]
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TAppAuto(TLoc(4), TGlob("X"))
 t2 = TAppAuto(TTermAuto(TLoc(1), TLoc(2)), TLoc(3)) 
-repr(simplify(t1, t2)) == repr([Constraint(TLoc(4), TTerm(TLoc(1), TLoc(2))), Constraint(TGlob("X"), TLoc(3))])
+repr(simplify(t1, t2)) == repr([DirectConstraint(TLoc(4), TTerm(TLoc(1), TLoc(2))), DirectConstraint(TGlob("X"), TLoc(3))])
 # ^ Go fuck yourself, then die 
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TProd([TLoc(1), TLoc(2)])
 t2 = TProd([TLoc(3), TLoc(3)])
 simplify(t1, t2)
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TProd([TLoc(1), TLoc(1)])
 t2 = TProd([TGlob("F"), TGlob("G")]) #OUCHHHH
-simplify(t1, t2) == [Constraint(TLoc(1), TGlob("G")), Constraint(TLoc(1), TGlob("F"))]
+simplify(t1, t2) == [DirectConstraint(TLoc(1), TGlob("G")), DirectConstraint(TLoc(1), TGlob("F"))]
 robinsonUnify(TForall(t1), TForall(t2)) # Error, nice
+@assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TProd([TLoc(1), TGlob("F")])
 t2 = TProd([TGlob("G"), TLoc(1)]) #otoh, this SHOULD keep working..
-simplify(t1, t2) == [Constraint(TLoc(1), TGlob("G")), Constraint(TGlob("F"), TLoc(1))]
+simplify(t1, t2) == [DirectConstraint(TLoc(1), TGlob("G")), DirectConstraint(TGlob("F"), TLoc(1))]
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TProd([TLoc(1), TLoc(1)])
 t2 = TProd([TLoc(1), TTermAuto(TGlob("A"), TLoc(1))])
-repr(simplify(t1, t2)) == repr([Constraint(TLoc(1), TLoc(1)), Constraint(TLoc(1), TTerm(TGlob("A"), TLoc(1)))])
+repr(simplify(t1, t2)) == repr([DirectConstraint(TLoc(1), TLoc(1)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TLoc(1)))])
 robinsonUnify(TForall(t1), TForall(t2)) # Recursive Error, nice!
+@assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TLoc(1), TLoc(2), TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))])
-repr(simplify(t1, t2)) == repr([Constraint(TLoc(2), TTerm(TGlob("A"), TTerm(TGlob("B"), TLoc(1)))), Constraint(TLoc(1), TLoc(1)), Constraint(TLoc(2), TLoc(2)), Constraint(TLoc(1), TLoc(2))])
+repr(simplify(t1, t2)) == repr([DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(1)), DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TLoc(2))])
 robinsonUnify(TForall(t1), TForall(t2)) # Recursive Error, nice!
+@assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C"))), TLoc(2), TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))])
-repr(Set(simplify(t1, t2))) == repr(Set(Constraint[Constraint(TLoc(2), TLoc(2)), Constraint(TLoc(1), TTerm(TGlob("A"), TTerm(TGlob("B"), TGlob("C")))), Constraint(TLoc(2), TTerm(TGlob("A"), TTerm(TGlob("B"), TLoc(1)))), Constraint(TLoc(1), TLoc(2))]))
+repr(Set(simplify(t1, t2))) == repr(Set(DirectConstraint[DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C")))), DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(2))]))
 robinsonUnify(TForall(t1), TForall(t2)) .|> pr
-test_unify(t1, t2)   #####  YESSSSS
+@assert test_unify(t1, t2)   #####  YESSSSS
 
 t1 = TProd([TLoc(1), TLoc(2)])
 t2 = TProd([TLoc(2), TTermAuto(TGlob("A"), TLoc(1))])
-repr(simplify(t1, t2)) == "Constraint[Constraint(TLoc(2), TTerm(TGlob(\"A\"), TLoc(1))), Constraint(TLoc(1), TLoc(2))]"
+repr(simplify(t1, t2)) == "DirectConstraint[DirectConstraint(TLoc(2), TTermAuto(TGlob(\"A\"), TLoc(1))), DirectConstraint(TLoc(1), TLoc(2))]"
 robinsonUnify(TForall(t1), TForall(t2))
-test_unify(t1, t2)
+@assert test_unify(t1, t2)
 
 t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TGlob("F"), TLoc(3), TLoc(3), TGlob("G")])
-simplify(t1, t2) == [Constraint(TLoc(2), TGlob("G")), Constraint(TLoc(1), TLoc(3)), Constraint(TLoc(1), TGlob("F")), Constraint(TLoc(2), TLoc(3))]
+simplify(t1, t2) == [DirectConstraint(TLoc(2), TGlob("G")), DirectConstraint(TLoc(1), TLoc(3)), DirectConstraint(TLoc(1), TGlob("F")), DirectConstraint(TLoc(2), TLoc(3))]
 robinsonUnify(TForall(t1), TForall(t2)) # Error, nice
+@assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TForall(TGlob("A"))
 t2 =  TGlob("A")
 simplify(t1, t2) # Nope, and that's fine
 robinsonUnify(t1, t2)
+@assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TGlob("F"), TLoc(1), TLoc(1), TGlob("G")])
-simplify(t1, t2) == [Constraint(TLoc(2), TLoc(1)), Constraint(TLoc(1), TLoc(1)), Constraint(TLoc(2), TGlob("G")), Constraint(TLoc(1), TGlob("F")), ]
+simplify(t1, t2) == [DirectConstraint(TLoc(2), TLoc(1)), DirectConstraint(TLoc(1), TLoc(1)), DirectConstraint(TLoc(2), TGlob("G")), DirectConstraint(TLoc(1), TGlob("F")), ]
 robinsonUnify(TForall(t1), TForall(t2)) # Error, nice
+@assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1, t2 = TLoc(3), TForall(TTermAuto(TGlob("A"), TLoc(2)))
-test_unify(t1, t2.body)
+@assert test_unify(t1, t2.body)
 
 t1 = TForall(TTermAuto(TLoc(1), TProd([TGlob("A"), TLoc(2)])))
 t2 = TForall(TTermAuto(TLoc(1), TLoc(2)))
 s1, s2 = robinsonUnify(t1, t2)
-test_unify(t1.body, t2.body)
+@assert test_unify(t1.body, t2.body)
 
 t1 = TForall(TLoc(3))
 t2 = TForall(TTermAuto(TLoc(1), TLoc(2)))
 s1, s2 = robinsonUnify(t1, t2)
-test_unify(t1.body, t2.body)
+@assert test_unify(t1.body, t2.body)
 
 # function prepTransEx(l, g1, g2)
 #     v1=vcat([[TLoc(i), TLoc(i)] for i in 1:l]...)
@@ -453,18 +516,59 @@ test_unify(t1.body, t2.body)
 # end
 # t1, t2 = prepTransEx(505, "F", "F")
 # robinsonUnify(TForall(t1), TForall(t2))
-# test_unify(t1, t2)
+# @assert test_unify(t1, t2)
 
 # t1, t2 = prepTransEx(10, "F", "G")
 # robinsonUnify(TForall(t1), TForall(t2))
 
 
 
+# K for TESTS w/ DIFFERENT NUMBER OF ITEMS NOW:
+t1 = TProd([TLoc(1), TGlob("B")])
+t2 = TProd([TGlob("A"), TLoc(1), TLoc(2)])
+@assert robinsonUnify(t1, t2) isa Error
+
+t1 = TProd([TLoc(1), TGlob("B"), TLoc(2)])
+t2 = TProd([TGlob("A"), TLoc(1)])
+s1, s2 = robinsonUnify(t1, t2)
+ass_reduc(t1, s1) |> pr
+ass_reduc(t2, s2) |> pr
 
 
+t1 = TProd([TGlob("A"), TGlob("B")])
+t2 = TProd([TGlob("A"), TGlob("B")])
+@assert robinsonUnify(t1, t2) == (TProd(Type_[]), TProd(Type_[]))
+
+t1 = TProd([TGlob("A"), TGlob("B"), TGlob("C")])
+t2 = TProd([TGlob("A"), TGlob("B")])
+@assert robinsonUnify(t1, t2) == (TProd(Type_[]), TProd(Type_[]))
+
+t1 = TTerm(TProd([TLoc(1), TGlob("B"), TLoc(2)]), TGlob("Z"))
+t2 = TTerm(TProd([TGlob("A"), TLoc(1)]), TGlob("Z"))
+@assert robinsonUnify(t1, t2) isa Error
+
+t1 = TTerm(TProd([TLoc(1), TGlob("B")]), TGlob("Z"))
+t2 = TTerm(TProd([TGlob("A"), TLoc(1), TLoc(2)]), TGlob("Z"))
+s1, s2 = robinsonUnify(t1, t2)
+ass_reduc(t1, s1) |> pr
+ass_reduc(t2, s2) |> pr
 
 
+t1 = TTermAuto(TTerm(TProd([TLoc(1), TLoc(2)]), TGlob("Z")), TGlob("Z"))
+t2 = TTermAuto(TTerm(TProd([TGlob("A"), TLoc(2)]), TGlob("Z")), TGlob("Z"))
+@assert test_unify(t1, t2)
 
+t1 = TTermAuto(TTerm(TProd([TLoc(1)]), TGlob("Z")), TGlob("Z"))
+t2 = TTermAuto(TTerm(TProd([TGlob("A"), TLoc(2)]), TGlob("Z")), TGlob("Z"))
+@assert robinsonUnify(t1, t2) isa Error
+
+t1 = TTermAuto(TTerm(TProd([TLoc(1), TLoc(2)]), TGlob("Z")), TGlob("Z"))
+t2 = TTermAuto(TTerm(TProd([TGlob("A")]), TGlob("Z")), TGlob("Z"))
+t1 |> pr
+t2 |> pr
+s1, s2 = robinsonUnify(t1, t2)
+ass_reduc(t1, s1) |> pr
+ass_reduc(t2, s2) |> pr
 
 
 sr = ass_reduc
@@ -473,7 +577,7 @@ sr = ass_reduc
 t1 = TProd([TTerm(TLoc(1), TLoc(2)), TLoc(3)])
 t2 = TProd([TLoc(1), TLoc(2), TLoc(2)])
 t3 = TProd([TGlob("G"), TLoc(1)])
-t4 = TProd([TTerm(TGlob("A"), TGlob("B"))])
+t4 = TProd([TTermAuto(TGlob("A"), TGlob("B"))])
 get_reduc_subst([t1, t2, t3, t4]) |> reduc |> pr == "[G->A->B x A->B]"
 
 sr(sr(t1, t2), sr(t3, t4)) |> pr
@@ -507,9 +611,6 @@ get_reduc_subst([t1, t2, t3, t4, t5]) |> reduc |> pr == "[Z->Z x F x T2->Z->Z x 
 sr(sr(t1, t2), sr(t3, t4, t5)) |> pr
 sr(sr(t1, t2, t3, t4), t5) |> pr
 sr(t1, sr(t2, t3), sr(t4, t5)) |> pr
-
-
-
 
 struct Inf_res
     # IDEA: you can ALWAYS turn this into a TTerm !
@@ -629,52 +730,57 @@ function infer_type_rec(term::EApp)::Union{Inf_res, Error}
 end
 
 e = ELoc(2)
-infer_type_rec(e) == Inf_res(Type_[TLoc(1), TLoc(2)], TLoc(2))
+@assert infer_type_rec(e) == Inf_res(Type_[TLoc(1), TLoc(2)], TLoc(2))
 
 e = EGlob("f", TTermAuto(TGlob("A"), TGlob("B")))
-infer_type_rec(e) == Inf_res(Type_[], TTerm(TGlob("A"), TGlob("B")))
+@assert infer_type_rec(e) == Inf_res(Type_[], TTermAuto(TGlob("A"), TGlob("B")))
 
 e = EAnno(ELoc(1), TGlob("A"))
-infer_type_rec(e) == Inf_res(Type_[TGlob("A")], TGlob("A"))
+@assert infer_type_rec(e) == Inf_res(Type_[TGlob("A")], TGlob("A"))
 
 e = EAnno(ELoc(2), TGlob("A"))
-infer_type_rec(e) == Inf_res(Type_[TLoc(1), TGlob("A")], TGlob("A"))
+@assert infer_type_rec(e) == Inf_res(Type_[TLoc(1), TGlob("A")], TGlob("A"))
 
 tglob = TForall(TTermAuto(TGlob("A"), TLoc(2)))
 tanno = TForall(TTermAuto(TLoc(1), TGlob("B")))
 # tanno = TForall(TTermAuto(TGlob("A"), TGlob("B")))
 # tanno = TTermAuto(TGlob("A"), TGlob("B"))
 e = EAnno(EGlob("f", tglob), tanno)
-infer_type_rec(e) == Inf_res(Type_[], TTerm(TGlob("A"), TGlob("B")))
+@assert infer_type_rec(e) == Inf_res(Type_[], TTermAuto(TGlob("A"), TGlob("B")))
 
 
 tt = TTermAuto(TGlob("A"), TGlob("B"))
 e = EProd([EGlob("f", tt), EGlob("g", tt)])
-infer_type_rec(e) == Inf_res(Type_[], TProd(Type_[TTerm(TGlob("A"), TGlob("B")), TTerm(TGlob("A"), TGlob("B"))]))
+@assert infer_type_rec(e) == Inf_res(Type_[], TProd(Type_[TTermAuto(TGlob("A"), TGlob("B")), TTermAuto(TGlob("A"), TGlob("B"))]))
 
 tt = TForall(TTermAuto(TLoc(1), TGlob("B")))
 e = EProd([EGlob("f", tt), EGlob("g", tt)])
-infer_type_rec(e).res_type |> pr == "[T1->B x T2->B]" # T2, important! GOOD
+@assert infer_type_rec(e).res_type |> pr == "[T1->B x T2->B]" # T2, important! GOOD
 
 e = EProd([ELoc(2), ELoc(2)])
-infer_type_rec(e) == Inf_res(Type_[TLoc(1), TLoc(2)], TProd(Type_[TLoc(2), TLoc(2)]))
+@assert infer_type_rec(e) == Inf_res(Type_[TLoc(1), TLoc(2)], TProd(Type_[TLoc(2), TLoc(2)]))
 
 e = EProd([ELoc(2), EAnno(ELoc(2), TLoc(4))])
-infer_type_rec(e) == Inf_res(Type_[TLoc(1), TLoc(5)], TProd(Type_[TLoc(5), TLoc(5)]))
+@assert infer_type_rec(e) == Inf_res(Type_[TLoc(1), TLoc(5)], TProd(Type_[TLoc(5), TLoc(5)]))
 
 
 e = EProd([EAnno(ELoc(1), TLoc(3)), EAnno(ELoc(1), TLoc(4))])
-infer_type_rec(e) == Inf_res(Type_[TLoc(6)], TProd(Type_[TLoc(6), TLoc(6)]))
+@assert infer_type_rec(e) == Inf_res(Type_[TLoc(6)], TProd(Type_[TLoc(6), TLoc(6)]))
 
 
 e = EProd([EAnno(ELoc(1), TLoc(3)), EAnno(ELoc(1), TLoc(4)), EAnno(ELoc(2), TLoc(5))])
-infer_type_rec(e) == Inf_res(Type_[TLoc(6), TLoc(11)], TProd(Type_[TLoc(6), TLoc(6), TLoc(11)]))
+@assert infer_type_rec(e) == Inf_res(Type_[TLoc(6), TLoc(11)], TProd(Type_[TLoc(6), TLoc(6), TLoc(11)]))
 
 e = EAbs(EProd([ELoc(2), EAnno(ELoc(1), TGlob("T"))]))
-infer_type_rec(e) == Inf_res(Type_[], TTerm(TProd(Type_[TGlob("T"), TLoc(1)]), TProd(Type_[TLoc(1), TGlob("T")])))
+@assert infer_type_rec(e) == Inf_res(Type_[], TTerm(TProd(Type_[TGlob("T"), TLoc(1)]), TProd(Type_[TLoc(1), TGlob("T")])))
 
 e = EProd([EAnno(ELoc(1), TLoc(2)), EAnno(ELoc(1), TLoc(3)), EAnno(ELoc(1), TLoc(4))])
-infer_type_rec(e) == Inf_res(Type_[TLoc(7)], TProd(Type_[TLoc(7), TLoc(7), TLoc(7)]))
+@assert infer_type_rec(e) == Inf_res(Type_[TLoc(7)], TProd(Type_[TLoc(7), TLoc(7), TLoc(7)]))
+
+e = EAnno(EAbs(EGlob("b", TGlob("B"))), TTermAuto(TProd([TGlob("A")]),  TGlob("B")))
+infer_type_rec(e).res_type |> pr
+@assert infer_type_rec(e) == Inf_res(Type_[], TTerm(TProd(Type_[TProd(Type_[TGlob("A")])]), TGlob("B")))
+
 
 
 
@@ -683,45 +789,41 @@ function infer_type_(term::EApp, ts_computed::Array{Inf_res})::Union{Inf_res, Er
     # First, fix TLoc's by SQUASHING THEM TO BE TTERMS. 
     # Idea: - EAbs come as TTErms (Inf_res with NO dependencies)  - ELocs come as InfRes WITH the dependency  - NONE of the inf_res have a Forall around cuz it's how it is in this mess
     ts_computed_2 = Array{Inf_res}([ts_computed[1]])
-    # Again, I'm BRUTALLY FAKING contravariance & saying that if you have a TProd in output, you need AS MANY FIELDS IN INPUT:
     for t in ts_computed[2:end]
-        if ts_computed_2[end] isa TProd # Can happen the FISRT iteration
-            ar = ts_computed_2[end].data |> length
-            fake_tterm = TForall(TTerm(TProd([TLoc(i) for i in 1:ar]), TLoc(ar+1)))
-        elseif ts_computed_2[end] isa TTerm && ts_computed_2[end].t_out isa TProd
-            ar = ts_computed_2[end].t_out.data |> length
-            fake_tterm = TForall(TTerm(TProd([TLoc(i) for i in 1:ar]), TLoc(ar+1)))
-        else
-            fake_tterm = TForall(TTerm(TLoc(1), TLoc(2)))
-        end
-        tterm_subst = robinsonUnify(TForall(t.res_type), fake_tterm, t|>arity, fake_tterm|> arity)
+        fake_tterm = TForall(TTerm(TLoc(1), TLoc(2)))
+        tterm_subst = robinsonUnify(t.res_type, fake_tterm, t|>arity, fake_tterm.body |> arity)
         if tterm_subst isa Error return Error("Calling a non-function: $(t)")
         else push!(ts_computed_2, ass_reduc(t, tterm_subst[1]))
         end
     end
     # ^ Each of these still has ITS OWN TLoc's
 
-    prod_w_unified_args = infer_type_(EProd([]), ts_computed_2) # REUSING the TProd inference, HACKING the fact that Term is NOT used
+    prod_w_unified_args = infer_type_(EProd([]), ts_computed_2) 
+    # ^ REUSING the TProd inference, HACKING the fact that Term is NOT used
+    full_arity = prod_w_unified_args |> arity
+    # ^Can i compute this in some smarter way?  # Dunno !
     ts_computed_res, args = Array{Type_}(prod_w_unified_args.res_type.data), TProd(prod_w_unified_args.arg_types) # Switcharoo, TProd becomes array and array becomes TProd.. What a mess
 
     # Then, actually unify all in/outs:
 
     unified_types = Array{Type_}([ts_computed_res[1]])
-    prev_out, prev_out_arity = unified_types[end], unified_types[end] |> arity # TODO fix when app is not a mess anymore
+    prev_out = unified_types[end] # TODO fix when app is not a mess anymore
     for op in ts_computed_res[2:end]
         next_in = op.t_in # YES this always exists now
-        substs =  robinsonUnify(
-            prev_out, next_in, prev_out_arity, op |> arity)
+        substs =  robinsonUnify(prev_out, next_in, full_arity, full_arity)
         if substs isa Error 
             return Error("Mismatched app: get out type $(prev_out |> pr) but required type $(next_in .|> pr), with error '$(substs)'")
         end
         (s1, s2) = substs
-        unified_types = Array{Type_}(unified_types .|> (x->ass_reduc(x, s1))) # if they BECAME EQUAL to last_one, this should work
+        unified_types = Array{Type_}(unified_types .|> (x->ass_reduc(x, s1))) 
+        # if they BECAME EQUAL to last_one, this should work
         # ^ Also Maybe you can SKIP updating all of them but who cares
         args = ass_reduc(args, s1) # Keep track of the Arg types, too
         push!(unified_types, ass_reduc(op, s2))
-        prev_out, prev_out_arity = unified_types[end], unified_types[end] |> arity
+        prev_out = unified_types[end]
         # ^ POSSIBLY BROKEN: Shouldnt i look at the max arity of the ENTIRE unified_types ?
+        full_arity = Inf_res(args.data, TProd(unified_types)) |> arity
+        # TODO: ^ IMPROVE, i'm CERTAIN there's a better way (smthg like TProd(s1) |> arity or smthg ?)
     end
     return Inf_res(args.data, unified_types[end].t_out)
     # Returns the OUTPUT type instead of the composed TTerm type cuz this is a mess
@@ -730,14 +832,13 @@ end
 
 tf = EAnno(EAbs(EGlob("b", TGlob("B"))), TTermAuto(TGlob("A"),  TGlob("B")))
 targ = EAnno(ELoc(1), TGlob("A"))
-
-infer_type_rec(tf)
-
-
-
-infer_type_rec(targ)
 e = EAppAuto(tf, targ)
 infer_type_rec(e)
 
 e = EAbs(EApp([EProd([ELoc(1), ELoc(1)]), ELoc(2)]))
-infer_type_rec(e)
+e |> pr
+infer_type_rec(e).res_type |> pr
+
+
+# SHOULD be: 
+TTerm(TProd([TLoc(1), TTerm(TProd([TLoc(1), TLoc(1)]), TLoc(2))]), TLoc(2)) |> pr
