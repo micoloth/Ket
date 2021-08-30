@@ -13,6 +13,10 @@ function test_unify(t1, t2)
     return res
 end
 
+# s1, s2 =  robinsonUnify(t1, t2)
+# ass_reduc(t1, s1)
+# ass_reduc(t2, s2)
+
 t1 = TAppAuto(TGlob("G0"), TLoc(1))
 t2 = TAppAuto(TGlob("G0"), TLoc(2))
 simplify(t1, t2) == [DirectConstraint(TLoc(1), TLoc(2))]
@@ -203,6 +207,20 @@ s1, s2 = robinsonUnify(t1, t2)
 # robinsonUnify(TForall(t1), TForall(t2))
 
 
+t1 = TProd([TLoc(1), TSumTerm("EQ", TProd([TGlob("E"), TLoc(2)]))])
+t2 = TProd([TGlob("A"), TSumTerm("EQ", TLoc(1))])
+t1|>pr
+@assert test_unify(t1, t2)
+
+t1 = TProd([TLoc(1), TSumTerm("EQ", TProd([TGlob("E"), TLoc(2)]))])
+t2 = TProd([TGlob("A"), TLoc(2)])
+@assert test_unify(t1, t2)
+
+t1 = TProd([TLoc(1), TSumTerm("EQ", TProd([TGlob("E"), TLoc(2)]))])
+t2 = TProd([TGlob("A"), TSumTerm("GQ", TProd([TGlob("E"), TLoc(2)]))])
+@assert robinsonUnify(t1, t2) isa Error
+
+
 
 # K for TESTS w/ DIFFERENT NUMBER OF ITEMS NOW:
 t1 = TProd([TLoc(1), TGlob("B")])
@@ -391,7 +409,7 @@ infer_type_rec(e)
 infer_type_rec(e).res_type |> pr
 
 
-e = EApp([ESumTerm(2, 2, EGlobAuto("b")), EBranches([EGlob("f", TLoc(1)), EAbs()])])
+# e = EApp([ESumTerm(2, EGlobAuto("b")), EBranches([EGlob("f", TLoc(1)), EAbs()])])
 
 
 SType |> pr

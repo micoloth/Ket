@@ -65,7 +65,6 @@ end
 
 struct ESumTerm <: Expr
     tag::Index
-    total_branches::Index # SUPER TEMPORARY, but i need this for type inference UNTIL I'm not having the DIRECTIONAL constraints
     data::Expr
     # SEE what's happening?? NO other struct has 2 fields like this!! This because the optional thing here is DATA.
 end
@@ -121,11 +120,17 @@ end
 struct TSum <: Type_
     data::Array{Type_}  # THIS IS A BIG PROBLEM. Thanks i hate it!
 end
+struct TSumTerm <: Type_
+    tag::String  # Here, for TYPES, the tag is a string ( for now)
+    data::Type_
+    # SEE what's happening?? NO other struct has 2 fields like this!! This because the optional thing here is DATA.
+end
 Base.:(==)(a::TProd, b::TProd) = Base.:(==)(a.data, b.data)
 Base.:(==)(a::TSum, b::TSum) = Base.:(==)(a.data, b.data)
 Base.:(==)(a::TTerm, b::TTerm) = (a.t_in == b.t_in) && (a.t_out == b.t_out)
 Base.:(==)(a::TForall, b::TForall) = Base.:(==)(a.body, b.body)
 Base.:(==)(a::TApp, b::TApp) = a.ops_dot_ordered == b.ops_dot_ordered
+Base.:(==)(a::TSumTerm, b::TSumTerm) = (a.data == b.data) && (a.tag == b.tag)
 
 
 pr(x::EGlob)::String = "$(x.n)"
@@ -158,7 +163,7 @@ subst(news::Array{Expr}, t::EApp)::Expr = EApp(t.ops_dot_ordered .|> x->subst(ne
 subst(news::Array{Expr}, t::EAbs)::Expr = t # EAbs(subst(news, t.body)) 
 subst(news::Array{Expr}, t::EAnno)::Expr = EAnno(subst(news, t.expr), t.type) 
 subst(news::Array{Expr}, t::EProd)::Expr = EProd(t.data .|> (x->subst(news, x))) 
-subst(news::Array{Expr}, t::ESumTerm)::Expr = ESumTerm(t.tag, t.total_branches, subst(news, t.data)) 
+subst(news::Array{Expr}, t::ESumTerm)::Expr = ESumTerm(t.tag, subst(news, t.data)) 
 subst(news::Array{Expr}, t::EBranches)::Expr = EBranches(t.ops_chances .|> x->subst(news, x)) # Just like EApp, This should have No effect being all EAbs's, but just in case. 
 
 reduc(t::EGlob)::Expr = t
@@ -169,7 +174,7 @@ reduc(t::EApp)::Expr = (t|>pr|>println; reduc(Array{Expr}(t.ops_dot_ordered .|> 
 reduc(t::EProd)::Expr = EProd(t.data .|> reduc)
 reduc(t::EAnno)::Expr = EAnno(t.expr |> reduc, t.type)
 reduc(t::EBranches)::Expr = EBranches(t.ops_chances .|> reduc)
-reduc(t::ESumTerm)::Expr = ESumTerm(t.tag, t.total_branches, t.data |> reduc)
+reduc(t::ESumTerm)::Expr = ESumTerm(t.tag, t.data |> reduc)
 function reduc(ops::Array{Expr})::Expr
     #println("> doing the ", typeof(func),  " ", typeof(arg), " thing")
     # if ops[1] isa EAbs ops[1] = reduc(Array{Expr}([EProd([]), ops[1]])) end # this is because i still havent decided between prods and 0-arg'd lambda's. 
@@ -214,19 +219,24 @@ reduc(EApp([ycomb, ycomb])) |> pr
 f = EAbs(EGlob("cdef", TGlob("C")))
 g = EAbs(ELoc(1))
 
-e = ESumTerm(1,2, EProd([EGlob("cpass", TGlob("C"))]))
+e = ESumTerm(1, EProd([EGlob("cpass", TGlob("C"))]))
 case2 = EAbs(EApp([ELoc(1), EBranches([ELoc(2), ELoc(3)])]))  # Case 2 meaning a sum of 2 types
 
 reduc(EApp([EProd([e,f,g]), case2]))
 
 # Sum types 2. : IF: ( i e on 1+1)
 
-Tbool = TSum([TTop(), TTop()])
-# Then just use Case w/ 2 functions w/Null input
-# Important: Null input should mean EMPTY PRODUCT ie >1< ie TTop() !!
-
-
-
+Tbool = TSum([TProd([]), TProd([])])
+if_ = EAbs(EApp([EAnno(EApp([ELoc(2), ELoc(1)]), Tbool), EBranches([EApp([ELoc(1), ELoc(3)]), EApp([ELoc(1), ELoc(4)])])]))
+# What THIS WOULD REQUIRE is, a POP/PartialApp to say that NO, you are Not interested in ^^ what comes out of Tbool, ONLY as a redirection !!  
+# Well, EITHER that, OR the (A+B)xC --> (AxC)+(BxC) function: i THINK you can use that as well, if you look closely !!
+# if_ = EAbs(EApp([
+#     EProd([ELoc(1), EAnno(EApp([ELoc(2), ELoc(1)]), Tbool)]), 
+#     magic_distr_func,
+#     magic_remove_dumb_1x_func,
+#     EBranches([ELoc(3), ELoc(4)])
+# ]))
+# infer_type_rec(if_).res_type |> pr
 
 # NOT used by the above:
 arity(base::Index, t::EGlob)::Index= base 
@@ -255,7 +265,9 @@ subst(news::Array{Type_}, t::TTop)::Type_ = t
 subst(news::Array{Type_}, t::TTerm)::Type_ = TTerm(subst(news, t.t_in), subst(news, t.t_out)) 
 subst(news::Array{Type_}, t::TForall)::Type_ = t # TForall(subst(news, t.body)) 
 subst(news::Array{Type_}, t::TProd)::Type_ = TProd(t.data .|> (x->subst(news, x))) 
+subst(news::Array{Type_}, t::TSum)::Type_ = TSum(t.data .|> (x->subst(news, x))) 
 subst(news::Array{Type_}, t::TApp)::Type_ = TApp(t.ops_dot_ordered .|> x->subst(news, x)) 
+subst(news::Array{Type_}, t::TSumTerm)::Type_ = TSumTerm(t.tag, subst(news, t.data)) 
 
 reduc(t::TGlob)::Type_ = t
 reduc(t::TLoc)::Type_ = t
@@ -264,6 +276,8 @@ reduc(t::TTerm)::Type_ = t
 reduc(t::TForall)::Type_ = TForall(reduc(t.body))
 reduc(t::TApp)::Type_ = reduc(t.ops_dot_ordered .|> reduc) # EApp is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
 reduc(t::TProd)::Type_ = TProd(t.data .|> reduc)
+reduc(t::TSum)::Type_ = TSum(t.data .|> reduc)
+reduc(t::TSumTerm)::Type_ = TSumTerm(t.tag, t.data |> reduc)
 function reduc(ops::Array{Type_})
     #println("> doing the ", typeof(func),  " ", typeof(arg), " thing")
     if ops[1] isa TForall ops[1] = reduc(Array{Type_}([TProd([]), ops[1]])) end # this is because i still havent decided between prods and 0-arg'd lambda's. 
@@ -298,6 +312,8 @@ function pr(x::TTerm)::String
     end
 end
 pr(x::TApp)::String = x |>reduc |>just_pr  # Will i regret this? Yes!
+pr(x::TSumTerm)::String = x.tag * "($(x.data |> pr))"
+pr(x::TSum)::String = "($(join(x.data .|> pr, " + ")))" 
 just_pr(x::TApp) = x.ops_dot_ordered .|> pr .|>(x->"($(x))") |> (x->join(x, " .")) |> (x->"[Ap $(x)]")
 just_pr(x::Type_) = pr(x)
 pr(xs::Array{Type_}) = xs .|> pr
@@ -311,6 +327,8 @@ arity(base::Index, t::TApp)::Index = t.ops_dot_ordered .|> (x->arity(base, x)) |
 arity(base::Index, t::TTerm)::Index = [t.t_in, t.t_out] .|> (x->arity(base, x)) |> maximum
 arity(base::Index, t::TForall)::Index = base # Lam(arity(base, t.body)) 
 arity(base::Index, t::TProd)::Index = t.data .|> (x->arity(base, x)) |> (x->maximum(x, init=0))
+arity(base::Index, t::TSum)::Index = t.data .|> (x->arity(base, x)) |> (x->maximum(x, init=0))
+arity(base::Index, t::TSumTerm)::Index = arity(base, t.data)
 arity(t::Type_)::Index = arity(0, t)
 
 

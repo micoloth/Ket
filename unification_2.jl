@@ -11,6 +11,8 @@ usesLocs(t::TLoc)::Array{Index} = Array{Index}([t.var])
 usesLocs(t::TTop)::Array{Index} = Array{Index}([])
 usesLocs(t::TApp)::Array{Index} = unique(vcat((t.ops_dot_ordered .|> usesLocs)...))
 usesLocs(t::TProd)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
+usesLocs(t::TSum)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
+usesLocs(t::TSumTerm)::Array{Index} = t.data |> usesLocs
 usesLocs(t::TForall)::Array{Index} = Array{Index}([])
 usesLocs(t::TTerm)::Array{Index} = unique(vcat(t.t_in |> usesLocs, t.t_out |> usesLocs))
 
@@ -134,6 +136,14 @@ function simplify_(t1::TSum, t2::TSum)::SimpRes
         Error("Different lengths: $(length(t1.data)) > $(length(t2.data)), so if you are in the last case you are screwed..")
     else
         Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(t1.data, t2.data)])  
+    end 
+end
+
+function simplify_(t1::TSumTerm, t2::TSumTerm)::SimpRes
+    if t1.tag != t2.tag
+        Error("For now, you can NEVER unify different tags: $(t1.tag) != $(t2.tag)")
+    else
+        Array{Constraint}([DirectConstraint(t1.data, t2.data)])  
     end 
 end
 
