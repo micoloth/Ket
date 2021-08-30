@@ -133,14 +133,15 @@ pr(x::ELoc)::String = "$(x.n)"
 pr(x::EUnit)::String = "T" 
 # pr(x::EApp)::String = "(" * pr(x.arg) * " ." * pr(x.func) *")" # join(x.func .|> pr, ".")
 pr(x::EAbs)::String = "/{$(pr(x.body))}" 
-pr(x::EProd)::String = "[$(join(x.data .|> pr, ", ")),]" 
+pr(x::EProd)::String = "[$(join(x.data .|> pr, ", "))]" 
 pr(x::ESumTerm)::String = "$(x.tag)_$(pr(x.data))"
 pr(x::EBranches)::String = "{" * (["$(i)_-->$(e|>pr)" for (i,e) in enumerate(x.ops_chances)] |> (s->join(s, ", "))) * ")"
 pr(x::EAnno)::String = "$(pr(x.expr)):$(pr(x.type))" 
 function pr(x::EApp)::String
     if length(x.ops_dot_ordered) == 2
         arg, func = x.ops_dot_ordered[1], x.ops_dot_ordered[2]
-        arg = (arg isa EProd && length(arg.data)==1) ? (arg.data[1] |> pr) : (arg |> pr)
+        # arg = (arg isa EProd && length(arg.data)==1) ? (arg.data[1] |> pr) : (arg |> pr)
+        arg = (arg isa EProd) ? (arg |> pr)[2:end-1] : (arg |> pr)
         pr(func) * "(" * arg * ")"
     elseif length(x.ops_dot_ordered) <= 1
         throw(DomainError("howw $(x)"))
