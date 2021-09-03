@@ -79,10 +79,15 @@ struct ReverseConstraint <: Constraint# (Meaning <-)
     t1::Type_
     t2::Type_
 end
+Base.:(==)(a::DirectConstraint, b::DirectConstraint) = (a.t1 == b.t1) && (a.t2 == b.t2)
+Base.:(==)(a::ReverseConstraint, b::ReverseConstraint) = (a.t1 == b.t1) && (a.t2 == b.t2)
+
+
 Error = String
 SimpRes = Union{Array{Constraint},Error}
 
 pr(c::Constraint)::String = pr(c.t1) * "==" * pr(c.t2)
+just_pr(c::Constraint)::String = just_pr(c.t1) * "==" * just_pr(c.t2)
 
 function simplify_(t1::TApp, t2::TApp)::SimpRes
     @assert t1.ops_dot_ordered |> length == 2 && t2.ops_dot_ordered |> length == 2  # TEMPORARY
@@ -146,11 +151,22 @@ function simplify_(t1::TSumTerm, t2::TSumTerm)::SimpRes
         Array{Constraint}([DirectConstraint(t1.data, t2.data)])  
     end 
 end
-
+function simplify_(t1::Type_, t2::TSumTerm)::SimpRes
+    # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
+    if (t1 isa TLoc) Array{Constraint}([DirectConstraint(t1, t2)])
+    else Array{Constraint}([DirectConstraint(t1, t2.data)])  
+    end 
+end
+function simplify_(t1::TSumTerm, t2::Type_)::SimpRes
+    # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
+    if (t2 isa TLoc) Array{Constraint}([DirectConstraint(t1, t2)])
+    else Array{Constraint}([DirectConstraint(t1.data, t2)])  
+    end
+end
 function simplify_(t1::Type_, t2::Type_)::SimpRes # base case
     if t1 == t2 Array{Constraint}([])
     elseif typeof(t1) === TLoc || typeof(t2) === TLoc Array{Constraint}([DirectConstraint(t1, t2)]) 
-    else Error("Different: $(pr(t1)) is really different from $(pr(t2))")
+    else Error("Different: $(just_pr(t1)) is really different from $(just_pr(t2))")
     end
 end
 
@@ -366,8 +382,29 @@ function infer_type_(term::EAnno, t_computed::Inf_res)::Union{Inf_res,Error}
         else
             return Inf_res(ass_reduc(term.type.body, s2))
         end
-    else  # HACK HACK HACK: Workaround for the fact that if one writes "ELoc(1):A", it's CLEAR what he means, EVEN if ELoc(1) is a PROJ FUNCTION, NOT a term
-    return ass_reduc(t_computed, s1)
+    else 
+        # println("Term: ", term)
+        # println("Term pr: ", term|>pr)
+        # println("Term type with subst: ", ass_reduc(term.type.body, s2))
+        # println("Term type with subst pr: ", ass_reduc(term.type.body, s2) |> pr)
+
+        # println("t_computed res: ", t_computed.res_type)
+        # println("t_computed res pr: ", t_computed.res_type|>pr)
+        # println("t_computed res pr red: ", t_computed.res_type|>reduc|>pr)
+
+        # println("t_computed res with subst: ", ass_reduc(t_computed.res_type, s1))
+        # println("t_computed res with subst pr: ", ass_reduc(t_computed.res_type, s1)|>pr)
+
+        # println("t_computed args: ", t_computed.arg_types)
+        # println("t_computed args pr: ", t_computed.arg_types .|> pr)
+        
+        # println("t_computed args with subst: ", ass_reduc(TProd(t_computed.arg_types), s1))
+        # println("t_computed args with subst pr: ", ass_reduc(TProd(t_computed.arg_types), s1)|>pr)
+
+        # println("\n", "Imean does this ever even happen?")
+        args = ass_reduc(TProd(t_computed.arg_types), s1).data
+        tt = ass_reduc(term.type.body, s2)
+        return Inf_res(args, tt)
     end
 end
 
@@ -438,7 +475,10 @@ end
 function infer_type_rec(term::ELoc)::Union{Inf_res,Error} return infer_type_(term) end
 function infer_type_rec(term::EGlob)::Union{Inf_res,Error} return infer_type_(term) end
 function infer_type_rec(term::EUnit)::Union{Inf_res,Error} return infer_type_(term) end
-function infer_type_rec(term::EAnno)::Union{Inf_res,Error} tt = infer_type_rec(term.expr); return (tt isa Error) ? tt : infer_type_(term, tt) end
+function infer_type_rec(term::EAnno)::Union{Inf_res,Error} 
+    tt = infer_type_rec(term.expr)
+    return (tt isa Error) ? tt : infer_type_(term, tt) 
+end
 function infer_type_rec(term::EAbs)::Union{Inf_res,Error} tt = infer_type_rec(term.body); return (tt isa Error) ? tt : infer_type_(term, tt) end
 function infer_type_rec(term::EProd)::Union{Inf_res,Error} 
     tts::Array{Union{Inf_res,Error} } = term.data .|> infer_type_rec

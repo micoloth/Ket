@@ -125,11 +125,13 @@ struct TSumTerm <: Type_
     data::Type_
     # SEE what's happening?? NO other struct has 2 fields like this!! This because the optional thing here is DATA.
 end
+Base.:(==)(a::TGlob, b::TGlob) = Base.:(==)(a.var, b.var)
+Base.:(==)(a::TLoc, b::TLoc) = Base.:(==)(a.var, b.var)
+Base.:(==)(a::TForall, b::TForall) = Base.:(==)(a.body, b.body)
+Base.:(==)(a::TApp, b::TApp) = all(a.ops_dot_ordered .== b.ops_dot_ordered)
+Base.:(==)(a::TTerm, b::TTerm) = (a.t_in == b.t_in) && (a.t_out == b.t_out)
 Base.:(==)(a::TProd, b::TProd) = Base.:(==)(a.data, b.data)
 Base.:(==)(a::TSum, b::TSum) = Base.:(==)(a.data, b.data)
-Base.:(==)(a::TTerm, b::TTerm) = (a.t_in == b.t_in) && (a.t_out == b.t_out)
-Base.:(==)(a::TForall, b::TForall) = Base.:(==)(a.body, b.body)
-Base.:(==)(a::TApp, b::TApp) = a.ops_dot_ordered == b.ops_dot_ordered
 Base.:(==)(a::TSumTerm, b::TSumTerm) = (a.data == b.data) && (a.tag == b.tag)
 
 
@@ -180,8 +182,11 @@ function reduc(ops::Array{Expr})::Expr
     # if ops[1] isa EAbs ops[1] = reduc(Array{Expr}([EProd([]), ops[1]])) end # this is because i still havent decided between prods and 0-arg'd lambda's. 
     #^ this MIGHT VERY WELL FAIL, idk
     while (length(ops) >= 2) 
-        if (ops[1] isa EProd && ops[2] isa EAbs) ops = vcat(Array{Expr}([subst(ops[1].data, ops[2].body) |> reduc]), ops[3:end]) 
-        elseif (ops[1] isa ESumTerm && ops[2] isa EBranches) ops = vcat([EApp([ops[1].data, ops[2].ops_chances[ops[1].tag]]) |> reduc], ops[3:end])
+        ops1, ops2 = (ops[1] isa EAnno ? ops[1].expr : ops[1]), (ops[2] isa EAnno ? ops[2].expr : ops[2])
+        if (ops1 isa EProd && ops2 isa EAbs) 
+            ops = vcat(Array{Expr}([subst(ops1.data, ops2.body) |> reduc]), ops[3:end]) 
+        elseif (ops1 isa ESumTerm && ops2 isa EBranches) 
+            ops = vcat([EApp([ops1.data, ops2.ops_chances[ops1.tag]]) |> reduc], ops[3:end])
         else break
         end
     end
@@ -272,7 +277,7 @@ subst(news::Array{Type_}, t::TSumTerm)::Type_ = TSumTerm(t.tag, subst(news, t.da
 reduc(t::TGlob)::Type_ = t
 reduc(t::TLoc)::Type_ = t
 reduc(t::TTop)::Type_ = t
-reduc(t::TTerm)::Type_ = t
+reduc(t::TTerm)::Type_ = TTerm(t.t_in |> reduc, t.t_out |> reduc) 
 reduc(t::TForall)::Type_ = TForall(reduc(t.body))
 reduc(t::TApp)::Type_ = reduc(t.ops_dot_ordered .|> reduc) # EApp is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
 reduc(t::TProd)::Type_ = TProd(t.data .|> reduc)
@@ -291,12 +296,12 @@ pr(x::TGlob)::String = "$(x.var)"
 pr(x::TLoc)::String = "T$(x.var)"
 pr(x::TTop)::String = "⊥"
 # pr(x::TExists)::String = "∃$(x.var)"
-pr(x::TForall)::String = (arity(x.body) > 0) ? ("∀($(x.body |> pr))") : (x.body |> pr)
+pr(x::TForall)::String = "∀($(x.body |> pr))" #(arity(x.body) > 0) ? ("∀($(x.body |> pr))") : (x.body |> pr)
 function pr(x::TProd; is_an_arg::Bool = false)::String
-    if length(x.data) == 1 && is_an_arg
-        x.data[1] |> pr
+    if is_an_arg
+        join(x.data .|> pr, " x ")
     elseif length(x.data) == 0 
-        "1"
+        is_an_arg ? "" : "1T"
     else
         "[$(join(x.data .|> pr, " x "))]" 
     end
@@ -311,12 +316,30 @@ function pr(x::TTerm)::String
     else return (x.t_in |> pr) * "->" *( x.t_out|> pr)
     end
 end
-pr(x::TApp)::String = x |>reduc |>just_pr  # Will i regret this? Yes!
-pr(x::TSumTerm)::String = x.tag * "($(x.data |> pr))"
+function pr(x::TSumTerm)::String 
+    if x.data isa TProd
+        return x.tag * "($(pr(x.data; is_an_arg=true)))"
+    else
+        return x.tag * "($(x.data |> pr))"
+    end
+end
 pr(x::TSum)::String = "($(join(x.data .|> pr, " + ")))" 
-just_pr(x::TApp) = x.ops_dot_ordered .|> pr .|>(x->"($(x))") |> (x->join(x, " .")) |> (x->"[Ap $(x)]")
-just_pr(x::Type_) = pr(x)
+# pr(x::TApp)::String = x |>just_pr  # Did i regret this? Yes!
+# just_pr(x::TApp) = x.ops_dot_ordered .|> pr .|>(x->"($(x))") |> (x->join(x, " .")) |> (x->"[Ap $(x)]")
+function pr(x::TApp)::String
+    if length(x.ops_dot_ordered) == 2
+        arg, func = x.ops_dot_ordered[1], x.ops_dot_ordered[2]
+        # arg = (arg isa TProd && length(arg.data)==1) ? (arg.data[1] |> pr) : (arg |> pr)
+        arg = (arg isa TProd) ? (arg |> pr)[2:end-1] : (arg |> pr)
+        pr(func) * "(" * arg * ")"
+    elseif length(x.ops_dot_ordered) <= 1
+        throw(DomainError("howw $(x)"))
+    else
+        x.ops_dot_ordered .|> pr |> x->join(x, ".") |> (x->"[Ap $(x)]")
+    end
+end
 pr(xs::Array{Type_}) = xs .|> pr
+just_pr(x::Type_) = pr(x)
 
 
 # NOT used by the above:

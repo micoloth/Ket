@@ -13,6 +13,8 @@ function test_unify(t1, t2)
     return res
 end
 
+eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> all
+
 # s1, s2 =  robinsonUnify(t1, t2)
 # ass_reduc(t1, s1)
 # ass_reduc(t2, s2)
@@ -74,7 +76,8 @@ robinsonUnify(TForall(t1), TForall(t2))
 
 t1 = TAppAuto(TGlob("G2"), TLoc(3))
 t2 = TAppAuto(TGlob("G2"), TForall(TAppAuto(TLoc(1), TGlob("G3"))))
-repr(simplify(t1, t2)) == repr([DirectConstraint(TLoc(3), TForall(TApp([TProd([TGlob("G3")]), TLoc(1)])))])
+eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(3), TForall(TApp([TProd([TGlob("G3")]), TLoc(1)])))])
+
 # ^ Go fuck yourself, then die 
 robinsonUnify(TForall(t1), TForall(t2))
 @assert test_unify(t1, t2)
@@ -117,7 +120,7 @@ s1, s2 = robinsonUnify(TForall(t1), TForall(t2))
 
 t1 = TAppAuto(TLoc(4), TGlob("X"))
 t2 = TAppAuto(TTermAuto(TLoc(1), TLoc(2)), TLoc(3)) 
-repr(simplify(t1, t2)) == repr([DirectConstraint(TLoc(4), TTerm(TLoc(1), TLoc(2))), DirectConstraint(TGlob("X"), TLoc(3))])
+eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(4), TTermAuto(TLoc(1), TLoc(2))), DirectConstraint(TGlob("X"), TLoc(3))])
 # ^ Go fuck yourself, then die 
 robinsonUnify(TForall(t1), TForall(t2))
 @assert test_unify(t1, t2)
@@ -130,30 +133,38 @@ robinsonUnify(TForall(t1), TForall(t2))
 
 t1 = TProd([TLoc(1), TLoc(1)])
 t2 = TProd([TGlob("F"), TGlob("G")]) # OUCHHHH
-simplify(t1, t2) == [DirectConstraint(TLoc(1), TGlob("G")), DirectConstraint(TLoc(1), TGlob("F"))]
+eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(1), TGlob("G")), DirectConstraint(TLoc(1), TGlob("F"))])
 robinsonUnify(TForall(t1), TForall(t2)) # Error, nice
 @assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TProd([TLoc(1), TGlob("F")])
 t2 = TProd([TGlob("G"), TLoc(1)]) # otoh, this SHOULD keep working..
-simplify(t1, t2) == [DirectConstraint(TLoc(1), TGlob("G")), DirectConstraint(TGlob("F"), TLoc(1))]
+eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(1), TGlob("G")), DirectConstraint(TGlob("F"), TLoc(1))])
 robinsonUnify(TForall(t1), TForall(t2))
 @assert test_unify(t1, t2)
 
 t1 = TProd([TLoc(1), TLoc(1)])
 t2 = TProd([TLoc(1), TTermAuto(TGlob("A"), TLoc(1))])
-repr(simplify(t1, t2)) == repr([DirectConstraint(TLoc(1), TLoc(1)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TLoc(1)))])
+eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(1), TLoc(1)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TLoc(1)))])
 robinsonUnify(TForall(t1), TForall(t2)) # Recursive Error, nice!
 @assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TLoc(1), TLoc(2), TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))])
-repr(simplify(t1, t2)) == repr([DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(1)), DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TLoc(2))])
+eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(1)), DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TLoc(2))])
 @assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C"))), TLoc(2), TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))])
-repr(Set(simplify(t1, t2))) == repr(Set(DirectConstraint[DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C")))), DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(2))]))
+eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C")))), DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(2))])
+
+c1 = simplify(t1, t2)
+c2 = [DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C")))), DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(2))]
+c1[1] == c2[3]
+c1[2] == c2[2]
+c1[3] == c2[1] # BROOOKEEEN.....
+c1[4] == c2[4]
+(Set{Constraint}(c1) .== Set{Constraint}(c2)) |> all
 robinsonUnify(TForall(t1), TForall(t2)) .|> pr
 @assert test_unify(t1, t2)   #####  YESSSSS
 
