@@ -11,31 +11,31 @@ abstract type Type_ end
 
 
 
-# IDEA: a sum means two possible REFERENCED 1-STATES, 
+# IDEA: a sum means two possible REFERENCED 1-STATES,
 # in the same way a prod means two possible DEREFERENCED 0-STATES.
 
-# If you see a COMPUTATION/Program call as a DEREFERENCING, 
-# That is, 
+# If you see a COMPUTATION/Program call as a DEREFERENCING,
+# That is,
 # sure prods are better, but that's NOT IT:
 
 # a DATA REPRESENTING COMPUTATION  is also CHOSE WHAT THING TO RUN.
 
 
 struct EGlob <: Expr
-    n::Id 
+    n::Id
     type::Type_ # Type_ ???
 end
 struct ELoc <: Expr n::Index end
 struct EUnit <: Expr end
 struct EApp <: Expr
-    ops_dot_ordered::Array{Expr} 
+    ops_dot_ordered::Array{Expr}
     # Each one must compute to a lambda
     # Each lambda must RETURN a PROD, but really WE WILL BE EXTREMELY GENEROUS WITH THE TYPECHECKING
     # Furthermore, the FIRST one (dot_ordered) can (should?) should be a lambda with ZERO arguments, but again, WE WILL BE EXTREMELY GENEROUS WITH THE TYPECHECKING
     # Is typechecking still what we are doing?🤔
 end
 struct EAbs <: Expr # lambda, for some reason
-    body::Expr 
+    body::Expr
 end
 struct EProd <: Expr
     # important idea: If you are only wrapping a product you ALREADY HAVE, this makes no sense.
@@ -43,8 +43,8 @@ struct EProd <: Expr
     data::Array{Expr}
 end
 
-# IDEA: you have that: You are wondering: 
-# If you have to define 2 branches of computation (even if you only do 1), 
+# IDEA: you have that: You are wondering:
+# If you have to define 2 branches of computation (even if you only do 1),
 # WHERE DOES IT END?
 
 # But this is dual to: If you must provide 2 args to make a product, WHERE DO THESE COME FROM???
@@ -59,7 +59,7 @@ end
 
 
 # >>> STILL this is a thing that exists:
-# # # ------ > It's ALMOST LIKE, IF DATA WERE PRODUCT-LIKE, COMPUTATION WAS SUM-LIKE, 
+# # # ------ > It's ALMOST LIKE, IF DATA WERE PRODUCT-LIKE, COMPUTATION WAS SUM-LIKE,
 # BUT,
 # You are now using DATA TO REPRESENT COMPUTATION .......... S.........
 
@@ -69,7 +69,7 @@ struct ESumTerm <: Expr
     # SEE what's happening?? NO other struct has 2 fields like this!! This because the optional thing here is DATA.
 end
 struct EBranches <: Expr
-    ops_chances::Array{Expr} 
+    ops_chances::Array{Expr}
     # Each one must compute to a lambda  # ( I mean this is not new..)
     # Also, FINE, i'm giving up & saying these have to TYPECHECK TO A SINGLE OUTPUT
 end
@@ -95,22 +95,22 @@ Base.:(==)(a::EProd, b::EProd) = Base.:(==)(a.data, b.data)
 
 # struct TUnit <: Type_ end
 struct TTop <: Type_ end
-struct TGlob <: Type_  
-    var::Id 
+struct TGlob <: Type_
+    var::Id
 end
-struct TLoc <: Type_ 
-    var::Index 
+struct TLoc <: Type_
+    var::Index
 end
 struct TForall <: Type_
     body::Type_ # idea: this CAN contain (type level) local variables
 end
 struct TApp <: Type_ # idk why they woudn't have this
-    ops_dot_ordered::Array{Type_} 
+    ops_dot_ordered::Array{Type_}
     # Each one must compute to a TForall
     # Each lambda must RETURN a TPROD, but really WE WILL BE EXTREMELY GENEROUS WITH THE "TYPECHECKING"
 end
 struct TTerm <: Type_
-    t_in::Type_  # Type of input, should be a TProd.  
+    t_in::Type_  # Type of input, should be a TProd.
     # NOTE: This^ Only breaks if it is a TGlob, OR a TSum i guess (unless it's a TSum of TProds, that's actually the reduced form?)
     t_out::Type_  # type of the output
 end
@@ -137,13 +137,13 @@ Base.:(==)(a::TSumTerm, b::TSumTerm) = (a.data == b.data) && (a.tag == b.tag)
 
 pr(x::EGlob)::String = "$(x.n)"
 pr(x::ELoc)::String = "$(x.n)"
-pr(x::EUnit)::String = "T" 
+pr(x::EUnit)::String = "T"
 # pr(x::EApp)::String = "(" * pr(x.arg) * " ." * pr(x.func) *")" # join(x.func .|> pr, ".")
-pr(x::EAbs)::String = "/{$(pr(x.body))}" 
-pr(x::EProd)::String = "[$(join(x.data .|> pr, ", "))]" 
+pr(x::EAbs)::String = "/{$(pr(x.body))}"
+pr(x::EProd)::String = "[$(join(x.data .|> pr, ", "))]"
 pr(x::ESumTerm)::String = "$(x.tag)_$(pr(x.data))"
 pr(x::EBranches)::String = "{" * (["$(i)_-->$(e|>pr)" for (i,e) in enumerate(x.ops_chances)] |> (s->join(s, ", "))) * ")"
-pr(x::EAnno)::String = "$(pr(x.expr)):$(pr(x.type))" 
+pr(x::EAnno)::String = "$(pr(x.expr)):$(pr(x.type))"
 function pr(x::EApp)::String
     if length(x.ops_dot_ordered) == 2
         arg, func = x.ops_dot_ordered[1], x.ops_dot_ordered[2]
@@ -158,15 +158,15 @@ function pr(x::EApp)::String
 end
 
 
-subst(news::Array{Expr}, t::EGlob)::Expr= t 
+subst(news::Array{Expr}, t::EGlob)::Expr= t
 subst(news::Array{Expr}, t::ELoc)::Expr = if t.n <= length(news) news[t.n] else throw(DomainError("Undefined local var $(t.n), n args given = $(length(news))" )) end
-subst(news::Array{Expr}, t::EUnit)::Expr = t 
-subst(news::Array{Expr}, t::EApp)::Expr = EApp(t.ops_dot_ordered .|> x->subst(news, x)) 
-subst(news::Array{Expr}, t::EAbs)::Expr = t # EAbs(subst(news, t.body)) 
-subst(news::Array{Expr}, t::EAnno)::Expr = EAnno(subst(news, t.expr), t.type) 
-subst(news::Array{Expr}, t::EProd)::Expr = EProd(t.data .|> (x->subst(news, x))) 
-subst(news::Array{Expr}, t::ESumTerm)::Expr = ESumTerm(t.tag, subst(news, t.data)) 
-subst(news::Array{Expr}, t::EBranches)::Expr = EBranches(t.ops_chances .|> x->subst(news, x)) # Just like EApp, This should have No effect being all EAbs's, but just in case. 
+subst(news::Array{Expr}, t::EUnit)::Expr = t
+subst(news::Array{Expr}, t::EApp)::Expr = EApp(t.ops_dot_ordered .|> x->subst(news, x))
+subst(news::Array{Expr}, t::EAbs)::Expr = t # EAbs(subst(news, t.body))
+subst(news::Array{Expr}, t::EAnno)::Expr = EAnno(subst(news, t.expr), t.type)
+subst(news::Array{Expr}, t::EProd)::Expr = EProd(t.data .|> (x->subst(news, x)))
+subst(news::Array{Expr}, t::ESumTerm)::Expr = ESumTerm(t.tag, subst(news, t.data))
+subst(news::Array{Expr}, t::EBranches)::Expr = EBranches(t.ops_chances .|> x->subst(news, x)) # Just like EApp, This should have No effect being all EAbs's, but just in case.
 
 reduc(t::EGlob)::Expr = t
 reduc(t::ELoc)::Expr = t
@@ -179,13 +179,13 @@ reduc(t::EBranches)::Expr = EBranches(t.ops_chances .|> reduc)
 reduc(t::ESumTerm)::Expr = ESumTerm(t.tag, t.data |> reduc)
 function reduc(ops::Array{Expr})::Expr
     #println("> doing the ", typeof(func),  " ", typeof(arg), " thing")
-    # if ops[1] isa EAbs ops[1] = reduc(Array{Expr}([EProd([]), ops[1]])) end # this is because i still havent decided between prods and 0-arg'd lambda's. 
+    # if ops[1] isa EAbs ops[1] = reduc(Array{Expr}([EProd([]), ops[1]])) end # this is because i still havent decided between prods and 0-arg'd lambda's.
     #^ this MIGHT VERY WELL FAIL, idk
-    while (length(ops) >= 2) 
+    while (length(ops) >= 2)
         ops1, ops2 = (ops[1] isa EAnno ? ops[1].expr : ops[1]), (ops[2] isa EAnno ? ops[2].expr : ops[2])
-        if (ops1 isa EProd && ops2 isa EAbs) 
-            ops = vcat(Array{Expr}([subst(ops1.data, ops2.body) |> reduc]), ops[3:end]) 
-        elseif (ops1 isa ESumTerm && ops2 isa EBranches) 
+        if (ops1 isa EProd && ops2 isa EAbs)
+            ops = vcat(Array{Expr}([subst(ops1.data, ops2.body) |> reduc]), ops[3:end])
+        elseif (ops1 isa ESumTerm && ops2 isa EBranches)
             ops = vcat([EApp([ops1.data, ops2.ops_chances[ops1.tag]]) |> reduc], ops[3:end])
         else break
         end
@@ -233,10 +233,10 @@ reduc(EApp([EProd([e,f,g]), case2]))
 
 Tbool = TSum([TProd([]), TProd([])])
 if_ = EAbs(EApp([EAnno(EApp([ELoc(2), ELoc(1)]), Tbool), EBranches([EApp([ELoc(1), ELoc(3)]), EApp([ELoc(1), ELoc(4)])])]))
-# What THIS WOULD REQUIRE is, a POP/PartialApp to say that NO, you are Not interested in ^^ what comes out of Tbool, ONLY as a redirection !!  
+# What THIS WOULD REQUIRE is, a POP/PartialApp to say that NO, you are Not interested in ^^ what comes out of Tbool, ONLY as a redirection !!
 # Well, EITHER that, OR the (A+B)xC --> (AxC)+(BxC) function: i THINK you can use that as well, if you look closely !!
 # if_ = EAbs(EApp([
-#     EProd([ELoc(1), EAnno(EApp([ELoc(2), ELoc(1)]), Tbool)]), 
+#     EProd([ELoc(1), EAnno(EApp([ELoc(2), ELoc(1)]), Tbool)]),
 #     magic_distr_func,
 #     magic_remove_dumb_1x_func,
 #     EBranches([ELoc(3), ELoc(4)])
@@ -244,11 +244,11 @@ if_ = EAbs(EApp([EAnno(EApp([ELoc(2), ELoc(1)]), Tbool), EBranches([EApp([ELoc(1
 # infer_type_rec(if_).res_type |> pr
 
 # NOT used by the above:
-arity(base::Index, t::EGlob)::Index= base 
+arity(base::Index, t::EGlob)::Index= base
 arity(base::Index, t::ELoc)::Index = max(base, t.n)
-arity(base::Index, t::EUnit)::Index = base 
+arity(base::Index, t::EUnit)::Index = base
 arity(base::Index, t::EApp)::Index = t.ops_dot_ordered .|> arity |> maximum
-arity(base::Index, t::EAbs)::Index = base # Lam(arity(base, t.body)) 
+arity(base::Index, t::EAbs)::Index = base # Lam(arity(base, t.body))
 arity(base::Index, t::EProd)::Index = t.data .|> (x->arity(base, x)) |> (x->maximum(x, init=0))
 arity(base::Index, t::EAnno)::Index = arity(base, t.expr)
 arity(base::Index, t::EBranches)::Index = t.ops_chances .|> (x->arity(base, x)) |> maximum
@@ -256,7 +256,7 @@ arity(base::Index, t::ESumTerm)::Index = arity(base, t.data)
 arity(t::Expr)::Index = arity(0, t)
 
 
-# Type functions 
+# Type functions
 
 
 TFunAuto(tin, tout) = TTerm(tin, tout)
@@ -264,20 +264,20 @@ TTermAuto(tin, tout) = TTerm(TProd([tin]), tout)
 TAppAuto(tfun, targ) = TApp([TProd([targ]), tfun])
 
 
-subst(news::Array{Type_}, t::TGlob)::Type_= t 
+subst(news::Array{Type_}, t::TGlob)::Type_= t
 subst(news::Array{Type_}, t::TLoc)::Type_ = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
-subst(news::Array{Type_}, t::TTop)::Type_ = t 
-subst(news::Array{Type_}, t::TTerm)::Type_ = TTerm(subst(news, t.t_in), subst(news, t.t_out)) 
-subst(news::Array{Type_}, t::TForall)::Type_ = t # TForall(subst(news, t.body)) 
-subst(news::Array{Type_}, t::TProd)::Type_ = TProd(t.data .|> (x->subst(news, x))) 
-subst(news::Array{Type_}, t::TSum)::Type_ = TSum(t.data .|> (x->subst(news, x))) 
-subst(news::Array{Type_}, t::TApp)::Type_ = TApp(t.ops_dot_ordered .|> x->subst(news, x)) 
-subst(news::Array{Type_}, t::TSumTerm)::Type_ = TSumTerm(t.tag, subst(news, t.data)) 
+subst(news::Array{Type_}, t::TTop)::Type_ = t
+subst(news::Array{Type_}, t::TTerm)::Type_ = TTerm(subst(news, t.t_in), subst(news, t.t_out))
+subst(news::Array{Type_}, t::TForall)::Type_ = t # TForall(subst(news, t.body))
+subst(news::Array{Type_}, t::TProd)::Type_ = TProd(t.data .|> (x->subst(news, x)))
+subst(news::Array{Type_}, t::TSum)::Type_ = TSum(t.data .|> (x->subst(news, x)))
+subst(news::Array{Type_}, t::TApp)::Type_ = TApp(t.ops_dot_ordered .|> x->subst(news, x))
+subst(news::Array{Type_}, t::TSumTerm)::Type_ = TSumTerm(t.tag, subst(news, t.data))
 
 reduc(t::TGlob)::Type_ = t
 reduc(t::TLoc)::Type_ = t
 reduc(t::TTop)::Type_ = t
-reduc(t::TTerm)::Type_ = TTerm(t.t_in |> reduc, t.t_out |> reduc) 
+reduc(t::TTerm)::Type_ = TTerm(t.t_in |> reduc, t.t_out |> reduc)
 reduc(t::TForall)::Type_ = TForall(reduc(t.body))
 reduc(t::TApp)::Type_ = reduc(t.ops_dot_ordered .|> reduc) # EApp is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
 reduc(t::TProd)::Type_ = TProd(t.data .|> reduc)
@@ -285,7 +285,7 @@ reduc(t::TSum)::Type_ = TSum(t.data .|> reduc)
 reduc(t::TSumTerm)::Type_ = TSumTerm(t.tag, t.data |> reduc)
 function reduc(ops::Array{Type_})
     #println("> doing the ", typeof(func),  " ", typeof(arg), " thing")
-    if ops[1] isa TForall ops[1] = reduc(Array{Type_}([TProd([]), ops[1]])) end # this is because i still havent decided between prods and 0-arg'd lambda's. 
+    if ops[1] isa TForall ops[1] = reduc(Array{Type_}([TProd([]), ops[1]])) end # this is because i still havent decided between prods and 0-arg'd lambda's.
     #^ this MIGHT VERY WELL FAIL, idk
     while (length(ops) >= 2 && ops[1] isa TProd && ops[2] isa TForall) ops = vcat([subst(ops[1].data, ops[2].body) |> reduc], ops[3:end]) end
     # TODO: make this into a more reasonable stack
@@ -300,14 +300,14 @@ pr(x::TForall)::String = "∀($(x.body |> pr))" #(arity(x.body) > 0) ? ("∀($(x
 function pr(x::TProd; is_an_arg::Bool = false)::String
     if is_an_arg
         join(x.data .|> pr, " x ")
-    elseif length(x.data) == 0 
+    elseif length(x.data) == 0
         is_an_arg ? "" : "1T"
     else
-        "[$(join(x.data .|> pr, " x "))]" 
+        "[$(join(x.data .|> pr, " x "))]"
     end
 end
 function pr(x::TTerm)::String
-    if x.t_in isa TTerm 
+    if x.t_in isa TTerm
         return "(" * (x.t_in |> pr) * ")->" * (x.t_out|> pr )
     elseif (x.t_in isa TProd && x.t_in.data |> length == 1 && x.t_in.data[1] isa TTerm)
         return "(" * (pr(x.t_in; is_an_arg=true)) * ")->" * (x.t_out|> pr )
@@ -316,14 +316,14 @@ function pr(x::TTerm)::String
     else return (x.t_in |> pr) * "->" *( x.t_out|> pr)
     end
 end
-function pr(x::TSumTerm)::String 
+function pr(x::TSumTerm)::String
     if x.data isa TProd
         return x.tag * "($(pr(x.data; is_an_arg=true)))"
     else
         return x.tag * "($(x.data |> pr))"
     end
 end
-pr(x::TSum)::String = "($(join(x.data .|> pr, " + ")))" 
+pr(x::TSum)::String = "($(join(x.data .|> pr, " + ")))"
 # pr(x::TApp)::String = x |>just_pr  # Did i regret this? Yes!
 # just_pr(x::TApp) = x.ops_dot_ordered .|> pr .|>(x->"($(x))") |> (x->join(x, " .")) |> (x->"[Ap $(x)]")
 function pr(x::TApp)::String
@@ -343,12 +343,12 @@ just_pr(x::Type_) = pr(x)
 
 
 # NOT used by the above:
-arity(base::Index, t::TGlob)::Index= base 
+arity(base::Index, t::TGlob)::Index= base
 arity(base::Index, t::TLoc)::Index = max(base, t.var)
-arity(base::Index, t::TTop)::Index = base 
+arity(base::Index, t::TTop)::Index = base
 arity(base::Index, t::TApp)::Index = t.ops_dot_ordered .|> (x->arity(base, x)) |> maximum
 arity(base::Index, t::TTerm)::Index = [t.t_in, t.t_out] .|> (x->arity(base, x)) |> maximum
-arity(base::Index, t::TForall)::Index = base # Lam(arity(base, t.body)) 
+arity(base::Index, t::TForall)::Index = base # Lam(arity(base, t.body))
 arity(base::Index, t::TProd)::Index = t.data .|> (x->arity(base, x)) |> (x->maximum(x, init=0))
 arity(base::Index, t::TSum)::Index = t.data .|> (x->arity(base, x)) |> (x->maximum(x, init=0))
 arity(base::Index, t::TSumTerm)::Index = arity(base, t.data)

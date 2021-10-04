@@ -6,7 +6,7 @@ include("unification_2.jl")
 function test_unify(t1, t2)
     println("Unify ", t1 |> pr, "  and  ", t2 |> pr, ":")
     (s1, s2) = robinsonUnify(TForall(t1), TForall(t2))
-    red1 = reduc(TApp([s1, TForall(t1)])) 
+    red1 = reduc(TApp([s1, TForall(t1)]))
     println("reduced term: ", red1 |> pr)
     res = (red1 == reduc(TApp([s2, TForall(t2)])))
     println(res)
@@ -78,7 +78,7 @@ t1 = TAppAuto(TGlob("G2"), TLoc(3))
 t2 = TAppAuto(TGlob("G2"), TForall(TAppAuto(TLoc(1), TGlob("G3"))))
 eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(3), TForall(TApp([TProd([TGlob("G3")]), TLoc(1)])))])
 
-# ^ Go fuck yourself, then die 
+# ^ Go fuck yourself, then die
 robinsonUnify(TForall(t1), TForall(t2))
 @assert test_unify(t1, t2)
 
@@ -88,8 +88,8 @@ simplify(t1, t2)  == Error("Different: T3 is really different from ∀([Just (T3
 robinsonUnify(TForall(t1), TForall(t2))
 @assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
-t1 = TForall(TAppAuto(TGlob("F"), TLoc(1)))   
-t2 = TForall(TAppAuto(TGlob("F"), TLoc(2)))   
+t1 = TForall(TAppAuto(TGlob("F"), TLoc(1)))
+t2 = TForall(TAppAuto(TGlob("F"), TLoc(2)))
 simplify(t1, t2) isa Error  # LAMBDAS CANNOT BE UNIFIED (below, they are preapplied, which is a whole different discussion!!!)
 robinsonUnify(TForall(t1), TForall(t2))
 @assert robinsonUnify(TForall(t1), TForall(t2)) isa Error
@@ -119,9 +119,9 @@ s1, s2 = robinsonUnify(TForall(t1), TForall(t2))
 @assert test_unify(t1, t2)
 
 t1 = TAppAuto(TLoc(4), TGlob("X"))
-t2 = TAppAuto(TTermAuto(TLoc(1), TLoc(2)), TLoc(3)) 
+t2 = TAppAuto(TTermAuto(TLoc(1), TLoc(2)), TLoc(3))
 eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(4), TTermAuto(TLoc(1), TLoc(2))), DirectConstraint(TGlob("X"), TLoc(3))])
-# ^ Go fuck yourself, then die 
+# ^ Go fuck yourself, then die
 robinsonUnify(TForall(t1), TForall(t2))
 @assert test_unify(t1, t2)
 
@@ -240,7 +240,7 @@ t2 = TProd([TGlob("A"), TLoc(1), TLoc(2)])
 
 t1 = TProd([TLoc(1), TGlob("B"), TLoc(2)])
 t2 = TProd([TGlob("A"), TLoc(1)])
-s1, s2 = robinsonUnify(t1, t2) 
+s1, s2 = robinsonUnify(t1, t2)
 ass_reduc(t1, s1) |> pr
 ass_reduc(t2, s2) |> pr
 @assert ass_reduc(t1, s1) == TProd(Type_[TGlob("A"), TGlob("B"), TLoc(1)])
@@ -362,9 +362,9 @@ e = EAnno(ELoc(2), TGlob("A"))
 @assert infer_type_rec(e) == Inf_res(Type_[TLoc(1), TGlob("A")], TGlob("A"))
 
 e = EApp([ELoc(1), EAbs(ELoc(1))])
-infer_type_rec(e) |> (x->x.arg_types) == [TLoc(1)] # And NOTT [TProd([TLoc(1)])], plz ???? 
-infer_type_rec(ELoc(1)) 
-infer_type_rec(EAbs(ELoc(1))) 
+infer_type_rec(e) |> (x->x.arg_types) == [TLoc(1)] # And NOTT [TProd([TLoc(1)])], plz ????
+infer_type_rec(ELoc(1))
+infer_type_rec(EAbs(ELoc(1)))
 
 
 tglob = TForall(TTermAuto(TGlob("A"), TLoc(2)))

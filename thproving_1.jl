@@ -57,8 +57,8 @@ invdx |> pr_ty
 
 invsx = EAnno(EAbs(opE(ivE(e1E()), e1E())), TTermAuto(e1(), op(iv(e1()), e1())))
 invsx |> pr
-invsx |> pr_ty 
-invsx |> pr_ty_red 
+invsx |> pr_ty
+invsx |> pr_ty_red
 
 nuldx = EAnno(EAbs(ELoc(1)), TForall(TTerm(op(TLoc(1), e1()), TLoc(1))))
 nulsx = EAnno(EAbs(ELoc(2)), TForall(TTerm(op(e1(), TLoc(1)), TLoc(1))))
@@ -76,7 +76,7 @@ e = infer_type_rec(assdx)
 # > Imean does this ever even happen?
 # > "ELocs typed [\"[T1]\", \"T2\"] cannot be unified with ELocs typed [\"[T1 x T2]\", \"T3\"], with error 'Different lengths: 1 < 2, so you cannot even drop.'"
 # ^ This is because: The SECOND is the correct INFERRED type of the ARGUMENT INTO opE(proj2_1, ELoc(2)),
-# ^ while the first thing, is: the CORRECT INFERRED type of the ARGUMENT INTO proj1_1, THAT WOULD BE [\"[T1]\"] (YES)- Augmented to [\"[T1]\", \"T2\"] by the Prod augmentation procedure. 
+# ^ while the first thing, is: the CORRECT INFERRED type of the ARGUMENT INTO proj1_1, THAT WOULD BE [\"[T1]\"] (YES)- Augmented to [\"[T1]\", \"T2\"] by the Prod augmentation procedure.
 # ^ Ok but this is DUMB, because: it's really NOT ABOUT AUGMENTING, it's about BEING CONTRAVARIANT ALL THE WAY DOWN!!
 
 # ^ ALSO, now that i think about it: There's a whole thing about finding the MEET/JOIN of 2 types instead of a simple arrow !!!
@@ -93,10 +93,10 @@ e = infer_type_rec(assdx)
 ############
 
 e = EApp([ELoc(1), EAbs(ELoc(1))])
-infer_type_rec(e) 
-# |> (x->x.arg_types) == [TLoc(1)] # And NOTT [TProd([TLoc(1)])], plz ???? 
-# infer_type_rec(ELoc(1)) 
-# infer_type_rec(EAbs(ELoc(1))) 
+infer_type_rec(e)
+# |> (x->x.arg_types) == [TLoc(1)] # And NOTT [TProd([TLoc(1)])], plz ????
+# infer_type_rec(ELoc(1))
+# infer_type_rec(EAbs(ELoc(1)))
 
 
 
