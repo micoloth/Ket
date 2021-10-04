@@ -30,11 +30,11 @@ end
 pr(x::FreeVar)::String = "F$(x.n)"
 # pr(x::LocalVar)::String = "_$(x.n)"
 pr(x::MetaVar)::String = "M$(x.n)"
-# pr(x::Uni)::String = "T" 
-pr(x::Ap)::String = "("*pr(x.l)*" "*pr(x.r)*")" 
-pr(x::Lam)::String = "/{"*pr(x.body)*"}" 
-pr(x::Prod)::String = x.terms .|> pr |> (s->join(", ", s)) |> s->"[$(s)]" 
-pr(x::Pi)::String = "("*pr(x.from)*"->"*pr(x.to)*")" 
+# pr(x::Uni)::String = "T"
+pr(x::Ap)::String = "("*pr(x.l)*" "*pr(x.r)*")"
+pr(x::Lam)::String = "/{"*pr(x.body)*"}"
+pr(x::Prod)::String = x.terms .|> pr |> (s->join(", ", s)) |> s->"[$(s)]"
+pr(x::Pi)::String = "("*pr(x.from)*"->"*pr(x.to)*")"
 
 pr(Ap(Lam(FreeVar("1")), FreeVar("2")))
 
@@ -42,7 +42,7 @@ pr(Ap(Lam(FreeVar("1")), FreeVar("2")))
 
 abstract type RelFactInst end
 
-struct EqFactInst <: RelFactInst 
+struct EqFactInst <: RelFactInst
     l::Term
     r::Term
 end
@@ -56,29 +56,29 @@ end
 MetaType = Union{MetaType_ref, MetaType_any_new}
 
 
-struct TypedTerm <: RelFactInst 
+struct TypedTerm <: RelFactInst
     term::Term
     type::Union{Term, MetaType}
 end
-struct ComputesToInst <: RelFactInst 
+struct ComputesToInst <: RelFactInst
     term::Term
     type::Term
 end
 
 abstract type RelConstrInst end
 
-struct EqConstrInst <: RelConstrInst 
+struct EqConstrInst <: RelConstrInst
     l::Term
     r::Term
 end
-struct IsaConstrInst <: RelConstrInst 
+struct IsaConstrInst <: RelConstrInst
     term::Term
     type::Term
 end
 
 Error=String
 
-struct CheckedTerm_ 
+struct CheckedTerm_
     typedTerm::TypedTerm
     constrs::Array{RelConstrInst}
 end
@@ -103,12 +103,12 @@ end
 
 function typeOfConcat(first_tt::TypedTerm, second_tt::TypedTerm)::CheckedTerm
     constrs::Array{EqConstrInst} = [EqConstrInst(first_tt.type.to, second_tt.type.from)]
-    if typeof(first_tt.type) !== Pi 
+    if typeof(first_tt.type) !== Pi
         return Error("first_tt type $(pr(first_tt.type)) should be a Pi")
     elseif typeof(first_tt.type) === MetaType
         push!(constrs, EqConstrInst(first_tt.type, Pi(MetaVar(newvar()), MetaVar(newvar()))))  # TO MAKE BETTER
 
-    elseif typeof(second_tt.type) !== Pi 
+    elseif typeof(second_tt.type) !== Pi
         Error("second_tt type $(pr(second_tt.type)) should be a Pi")
     else CheckedTerm_(
         constrs,
@@ -131,7 +131,7 @@ function typeOfLambda(body_tt::TypedTerm)::CheckedTerm
     end
 end
 
-typeOf(t::Lam)::CheckedTerm = typeCheckBind(typeOfLambda, typeOf(t.body))  
+typeOf(t::Lam)::CheckedTerm = typeCheckBind(typeOfLambda, typeOf(t.body))
 
 
 Context = Dict{Id, Term}()
@@ -144,7 +144,7 @@ end
 
 isGood(n) = (if n<5 "Y" else "N" end)
 isGood(1)
-############################################################### types 
+############################################################### types
 
 # typeOf(t::LocalVar)::TypeRes = Error("wait you can't type Local Vars??? ($(t.n))")
 # typeOf(t::Uni)::TypeRes = TypeRes_(Uni(Term), [])
@@ -160,7 +160,7 @@ function typeOf(t::Ap)::CheckedTerm
     end
 end
 
-function typeOf(t::Lam)::TypeRes 
+function typeOf(t::Lam)::TypeRes
     v, m = newvar(), newvar()
     ctx[v] = MetaVar(m)
     mctx[m] = Uni(Term)
@@ -168,10 +168,10 @@ function typeOf(t::Lam)::TypeRes
     pop!(ctx, v)
     pop!(mctx, m)
     if typeof(typeres) === Error return typeres end
-    return TypeRes_(Pi(MetaVar(m), substFV(LocalVar(0), v, raise(1, typeres.type))), 
+    return TypeRes_(Pi(MetaVar(m), substFV(LocalVar(0), v, raise(1, typeres.type))),
                     vcat(typeres.cs, [Constraint(MetaVar(m), MetaVar(m))]))
-end 
-     
+end
+
 function typeOf(t::Pi)::TypeRes
     v = newvar()
     tpfrom = typeOf(ctx, mctx, t.from)
