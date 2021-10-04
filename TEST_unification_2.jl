@@ -283,6 +283,30 @@ ass_reduc(t2, s2) |> pr
 @assert ass_reduc(t1, s1) == TTerm(TProd(Type_[TTerm(TProd(Type_[TGlob("A"), TLoc(1)]), TGlob("Z"))]), TGlob("Z"))
 
 
+
+# HARDER TESTS ON REVERSE CONSTRAINTS:
+t1 = TProd([TGlob("F"), TLoc(1), TLoc(1)])
+t2 = TProd([TLoc(1), TGlob("G")])
+simplify(DirectConstraint(t1, t2))
+test_unify(t1, t2) # Yeah it's false, it's fine tho
+
+t1 = TProd([TGlob("F"), TLoc(1), TLoc(1)])
+t2 = TProd([TLoc(1), TGlob("G")])
+simplify(ReverseConstraint(t1, t2)) # BROKEN !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!!
+
+
+
+
+
+
+t1 = TProd([TLoc(1), TGlob("G")])
+t2 = TProd([TGlob("F"), TLoc(1), TLoc(1)])
+simplify(ReverseConstraint(t2, t1))
+s1, s2 = robinsonUnify(t1, t2)
+ass_reduc(t1, s1) |> pr
+ass_reduc(t2, s2) |> pr
+
+
 sr = ass_reduc
 
 # Each TLoc refers to position in the row BELOW:
@@ -336,6 +360,12 @@ e = EAnno(ELoc(1), TGlob("A"))
 
 e = EAnno(ELoc(2), TGlob("A"))
 @assert infer_type_rec(e) == Inf_res(Type_[TLoc(1), TGlob("A")], TGlob("A"))
+
+e = EApp([ELoc(1), EAbs(ELoc(1))])
+infer_type_rec(e) |> (x->x.arg_types) == [TLoc(1)] # And NOTT [TProd([TLoc(1)])], plz ???? 
+infer_type_rec(ELoc(1)) 
+infer_type_rec(EAbs(ELoc(1))) 
+
 
 tglob = TForall(TTermAuto(TGlob("A"), TLoc(2)))
 tanno = TForall(TTermAuto(TLoc(1), TGlob("B")))
