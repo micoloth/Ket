@@ -269,28 +269,29 @@ function get_subst_prod(tloc::TLoc, tt::Type_, current_arity::Int)::TProd
     TProd(prod)
 end
 
+function share_ctx_tlocs_names(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index)
+    s1 = TProd([TLoc(i) for i in 1:t1arity])
+    s2 = TProd([TLoc(i) for i in (t1arity + 1):(t1arity + t2arity)])
+    TApp([s1, t1]), TApp([s2, t2])
+end
 
-function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index; unify_tlocs_ctx::Bool = true)::Union{Tuple{TProd,TProd},Error}
+
+struct ItsLiterallyAlreadyOk end
+
+function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index; unify_tlocs_ctx::Bool = true)::Union{Tuple{TProd,TProd},Error, ItsLiterallyAlreadyOk}
     # I maybe i can improve this a bit, not now tho:
 
     if unify_tlocs_ctx
-        # IDEA: The following s1 and s2 are ALSO used in a case where t1 and t2 contain EMPTY PROD, in which case they are returned (see below) but EVERYTHING works.
-        # >>STILL, you might want to create a different function..
         current_arity = t1arity + t2arity
-        s1 = TProd([TLoc(i) for i in 1:t1arity])
-        t1 = TApp([s1, t1])
-        s2 = TProd([TLoc(i) for i in (t1arity + 1):(t1arity + t2arity)])
-        t2 = TApp([s2, t2])
+        t1, t2 = share_ctx_tlocs_names(t1, t2, t1arity, t2arity)
     else
-        # This means Unification has ALREADY HAPPENED !!!
-        t1, t2 = t1.body, t2.body
-        s1, s2 = TProd([TLoc(i) for i in 1:t1arity]), TProd([TLoc(i) for i in 1:t2arity])
+        # This means Sharing of names has ALREADY HAPPENED !!!
         current_arity = max(t1arity, t2arity)
+        t1, t2 = t1.body, t2.body
     end
 
     # Note that now everything is Shared # Also note this is always Dirsect constraint
-    t1 = reduc(t1)
-    t2 = reduc(t2)
+    t1, t2 = reduc(t1), reduc(t2)
     # Note that the below WERE Reduced before:
     cs = simplify_(t1, t2) # Note they are Already bodies, at this point
     if cs isa Error return cs end
@@ -337,10 +338,7 @@ function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index;
     end
 
     if length(current_total_subst) == 0
-        # @assert (t1arity == t2arity) "$(t1arity) != $(t2arity), HOW tho ..."
-        # ^ This assert makes sense EVERY TIME THERE'S NO PASSED ARITIES
-        # TODO: remove this dumb shit, replace with LITERALLY NOTHING
-        return s1, s2
+        return ItsLiterallyAlreadyOk()
     end
 
     final_subst = ass_reduc(current_total_subst...)
@@ -402,7 +400,9 @@ end
 function infer_type_(term::EUnit)::Union{Inf_res,Error} return Inf_res(TTop()) end
 function infer_type_(term::EAnno, t_computed::Inf_res)::Union{Inf_res,Error}
     substs = robinsonUnify(t_computed.res_type, term.type)
-    if substs isa Error return substs end
+    if substs isa Error return substs
+    elseif substs isa ItsLiterallyAlreadyOk return Inf_res(term.type)
+    end
     s1, s2 = substs
     if term.type isa TForall
         term_type = term.type.body # Oh fuck what am i doing
@@ -471,11 +471,14 @@ function infer_type_(term::EProd, ts_computed::Array{Inf_res})::Union{Inf_res,Er
             ir |> arity, last_one |> arity)
         if substs isa Error
             return Error("ELocs typed $(ir.arg_types .|> pr) cannot be unified into ELocs typed $(last_one.arg_types .|> pr), with error '$(substs)'")
+        elseif substs isa ItsLiterallyAlreadyOk
+            push!(unified_RES_types, ir.res_type)
+        else
+            (s1, s2) = substs
+            last_one = ass_reduc(last_one, s2)
+            unified_RES_types::Array{Type_} = unified_RES_types .|> (x -> ass_reduc(x, s2)) # if they BECAME EQUAL to last_one, this should work
+            push!(unified_RES_types, ass_reduc(ir.res_type, s1))
         end
-        (s1, s2) = substs
-        last_one = ass_reduc(last_one, s2)
-        unified_RES_types::Array{Type_} = unified_RES_types .|> (x -> ass_reduc(x, s2)) # if they BECAME EQUAL to last_one, this should work
-        push!(unified_RES_types, ass_reduc(ir.res_type, s1))
     end
 
     push!(unified_RES_types, last_one.res_type)
@@ -537,6 +540,7 @@ function infer_type_(term::EApp, ts_computed::Array{Inf_res})::Union{Inf_res,Err
         fake_tterm = TForall(TTerm(TLoc(1), TLoc(2)))
         tterm_subst = robinsonUnify(t.res_type, fake_tterm, t |> arity, fake_tterm.body |> arity)
         if tterm_subst isa Error return Error("Calling a non-function: $(t)")
+        elseif tterm_subst isa ItsLiterallyAlreadyOk push!(ts_computed_2, t)
         else push!(ts_computed_2, ass_reduc(t, tterm_subst[1]))
         end
     end
@@ -559,6 +563,9 @@ function infer_type_(term::EApp, ts_computed::Array{Inf_res})::Union{Inf_res,Err
         # TODO: i DONT LIKE these Foralls, it's WRONG, but, it's the only way of accessing unify_tlocs_ctx atm
         if substs isa Error
             return Error("Mismatched app: get out type $(prev_out |> pr) but required type $(next_in |> pr), with error '$(substs)'")
+        elseif substs isa ItsLiterallyAlreadyOk
+            print("I KNOW PREFECTLY WELL THAT IM BROKENNNN")
+            continue
         end
         (s1, s2) = substs
         # ^ Wait.. Are you telling me, if unify_tlocs_ctx=false, s1 and s2 are ALWAYS the same ???  # # Man, this is a crazy world..

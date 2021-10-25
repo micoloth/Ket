@@ -8,7 +8,12 @@ using Test
 
 function test_unify(t1, t2)
     println("Unify ", t1 |> pr, "  and  ", t2 |> pr, ":")
-    (s1, s2) = robinsonUnify(TForall(t1), TForall(t2))
+    rr = robinsonUnify(TForall(t1), TForall(t2))
+    if rr isa ItsLiterallyAlreadyOk
+        println("apparently they are the same")
+        return true
+    end
+    (s1, s2) = rr
     red1 = reduc(TApp([s1, TForall(t1)]))
     println("reduced term: ", red1 |> pr)
     res = (red1 == reduc(TApp([s2, TForall(t2)])))
@@ -162,14 +167,6 @@ t2 = TProd([TLoc(1), TLoc(2), TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"
 t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C"))), TLoc(2), TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))])
 # eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C")))), DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(2))])
-
-# c1 = simplify(t1, t2)
-c2 = [DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C")))), DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(2))]
-c1[1] == c2[3]
-c1[2] == c2[2]
-c1[3] == c2[1] # BROOOKEEEN.....
-c1[4] == c2[4]
-(Set{Constraint}(c1) .== Set{Constraint}(c2)) |> all
 robinsonUnify(TForall(t1), TForall(t2)) .|> pr
 @test test_unify(t1, t2)   #####  YESSSSS
 
@@ -253,11 +250,11 @@ ass_reduc(t2, s2) |> pr
 
 t1 = TProd([TGlob("A"), TGlob("B")])
 t2 = TProd([TGlob("A"), TGlob("B")])
-@test robinsonUnify(t1, t2) == (TProd(Type_[]), TProd(Type_[]))
+@test robinsonUnify(t1, t2) isa ItsLiterallyAlreadyOk
 
 t1 = TProd([TGlob("A"), TGlob("B"), TGlob("C")])
 t2 = TProd([TGlob("A"), TGlob("B")])
-@test robinsonUnify(t1, t2) == (TProd(Type_[]), TProd(Type_[]))
+@test robinsonUnify(t1, t2) isa ItsLiterallyAlreadyOk
 
 t1 = TTerm(TProd([TLoc(1), TGlob("B"), TLoc(2)]), TGlob("Z"))
 t2 = TTerm(TProd([TGlob("A"), TLoc(1)]), TGlob("Z"))
