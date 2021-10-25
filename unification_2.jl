@@ -94,6 +94,8 @@ struct ReverseConstraint <: Constraint# (Meaning <-)
 end
 Base.:(==)(a::DirectConstraint, b::DirectConstraint) = (a.t1 == b.t1) && (a.t2 == b.t2)
 Base.:(==)(a::ReverseConstraint, b::ReverseConstraint) = (a.t1 == b.t1) && (a.t2 == b.t2)
+reduc(c::DirectConstraint) = DirectConstraint(reduc(c.t1), reduc(c.t2))
+reduc(c::ReverseConstraint) = ReverseConstraint(reduc(c.t1), reduc(c.t2))
 
 
 Error = String
@@ -125,18 +127,23 @@ end
 
 function simplify_(t1::TForall, t2::TForall)::SimpRes
     println("Simplyfing two Foralls:")
-    cons = DirectConstraint(t1.body, t2.body)
     # FOR NOW, these will be REALLY PICKY
-    cons = simplify(cons)
-    # Only accepted case: All constraints are about TLoc only and THE SAME
-    is_same(c::Constraint) = (c.t1 isa TLoc) && (c.t1 == c.t2)
-    if typeof(cons) == Error
-        Error("Different lambdas: with this error: $(cons)")
-    elseif length(cons) == 0 || (cons .|> is_same |> all)
+    if t1 == t2
         Array{Constraint}([])
     else
-        Error("Different lambdas $(pr(t1)) != $(pr(t2)): I know I'm being picky, but impossible to simplify this part: $(cons)")
+        Error("Different lambdas $(pr(t1)) != $(pr(t2)): I know I'm being picky, but impossible to tell if these are the same: $([t1.body, t2.body])")
     end
+    # Only accepted case: All constraints are about TLoc only and THE SAME
+    # cons = DirectConstraint(t1.body, t2.body)
+    # cons = simplify(cons)
+    # is_same(c::Constraint) = (c.t1 isa TLoc) && (c.t1 == c.t2)
+    # if typeof(cons) == Error
+    #     Error("Different lambdas: with this error: $(cons)")
+    # elseif length(cons) == 0 || (cons .|> is_same |> all)
+    #     Array{Constraint}([])
+    # else
+    #     Error("Different lambdas $(pr(t1)) != $(pr(t2)): I know I'm being picky, but impossible to simplify this part: $(cons)")
+    # end
 end
 
 function simplify_(t1::TTerm, t2::TTerm)::SimpRes
@@ -191,34 +198,33 @@ function simplify_(c::ReverseConstraint)::SimpRes
     (res isa Error) ? res : (Array{Constraint}(res .|> swap))
 end
 
-
-function backtrack(array::SimpRes)::SimpRes
-    if typeof(array) === Error
-        return array
-    end
-    reduced = Set{Constraint}([])
-    while length(array) > 0
-        array2 = Array{Constraint}([])
-        for c in array
-            cs = simplify_(c)
-            if typeof(cs) === Error return cs
-            elseif length(cs) == 1 && cs[1] == c push!(reduced, c)
-            elseif length(cs) != 0 append!(array2, cs) end
-        end
-        array = array2
-    end
-    return Array{Constraint}([reduced...])
-end
-
-function simplify(t1::Type_, t2::Type_)::SimpRes  # simply the toplevel interface
-    t1 = reduc(t1)
-    t2 = reduc(t2)
-    return backtrack(Array{Constraint}([DirectConstraint(t1, t2)]))
-    # array=[Constraint(t1, t2)]
-end
-
-simplify(c::Constraint)::SimpRes = simplify(c.t1, c.t2)
-simplify(c::Constraint)::SimpRes = simplify(c.t1, c.t2)
+# I ELIMINATED BACKTRACK
+# function backtrack(array::SimpRes)::SimpRes
+#     if typeof(array) === Error
+#         return array
+#     end
+#     reduced = Set{Constraint}([])
+#     while length(array) > 0
+#         array2 = Array{Constraint}([])
+#         for c in array
+#             cs = simplify_(c)
+#             if typeof(cs) === Error return cs
+#             elseif length(cs) == 1 && cs[1] == c push!(reduced, c)
+#             elseif length(cs) != 0 append!(array2, cs) end
+#         end
+#         array = array2
+#     end
+#     return Array{Constraint}([reduced...])
+# end
+# function simplify(t1::Type_, t2::Type_)::SimpRes  # simply the toplevel interface
+#     t1 = reduc(t1)
+#     t2 = reduc(t2)
+#     return backtrack(Array{Constraint}([DirectConstraint(t1, t2)]))
+#     # array=[Constraint(t1, t2)]
+# end
+# simplify(c::Constraint)::SimpRes = simplify(c.t1, c.t2)
+# simplify(c::Constraint)::SimpRes = simplify(c.t1, c.t2)
+# I ELIMINATED BACKTRACK
 
 
 
@@ -282,8 +288,11 @@ function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index;
         current_arity = max(t1arity, t2arity)
     end
 
-    # Now everything is Shared # Note that the below Reduces:
-    cs = simplify(t1, t2) # they are Already bodies, at this point
+    # Note that now everything is Shared # Also note this is always Dirsect constraint
+    t1 = reduc(t1)
+    t2 = reduc(t2)
+    # Note that the below WERE Reduced before:
+    cs = simplify_(t1, t2) # Note they are Already bodies, at this point
     if cs isa Error return cs end
     STACK = cs
 
@@ -292,6 +301,9 @@ function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index;
 
     while (length(STACK) > 0)
         c = pop!(STACK)
+        if c isa Error
+            return c
+        end
         ct1, ct2 = c.t1, c.t2
 
         if ct1 isa TLoc && ct2 isa TLoc
@@ -305,7 +317,8 @@ function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index;
             # middle_subst[ct2.var] = ct1
             i, tt = ct2.var, ct1
         else
-            cs_inside = simplify(ct1, ct2)
+            c = reduc(c)
+            cs_inside = simplify_(c)
             if cs_inside isa Error return cs_inside end
             append!(STACK, cs_inside)
             continue
@@ -457,7 +470,7 @@ function infer_type_(term::EProd, ts_computed::Array{Inf_res})::Union{Inf_res,Er
             TProd(ir.arg_types), TProd(last_one.arg_types),
             ir |> arity, last_one |> arity)
         if substs isa Error
-            return Error("ELocs typed $(ir.arg_types .|> pr) cannot be unified with ELocs typed $(last_one.arg_types .|> pr), with error '$(substs)'")
+            return Error("ELocs typed $(ir.arg_types .|> pr) cannot be unified into ELocs typed $(last_one.arg_types .|> pr), with error '$(substs)'")
         end
         (s1, s2) = substs
         last_one = ass_reduc(last_one, s2)

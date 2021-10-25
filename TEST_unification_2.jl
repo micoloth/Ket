@@ -26,62 +26,62 @@ eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> al
 
 t1 = TAppAuto(TGlob("G0"), TLoc(1))
 t2 = TAppAuto(TGlob("G0"), TLoc(2))
-simplify(t1, t2) == [DirectConstraint(TLoc(1), TLoc(2))]
+# @test simplify(t1, t2) == [DirectConstraint(TLoc(1), TLoc(2))]
 robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t1 = TAppAuto(TGlob("G0"), TLoc(1))
 t2 = TAppAuto(TGlob("G0"), TGlob("G99"))
-c = simplify(t1, t2) == [DirectConstraint(TLoc(1), TGlob("G99"))]
+# @test simplify(t1, t2) == [DirectConstraint(TLoc(1), TGlob("G99"))]
 robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t1 = TAppAuto(TForall(TLoc(1)), TLoc(1))
 t2 = TLoc(2)
-simplify(t1, t2) == [DirectConstraint(TLoc(1), TLoc(2))]
+# @test simplify(t1, t2) == [DirectConstraint(TLoc(1), TLoc(2))]
 robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t1 = TForall(TLoc(1))
 t2 = TForall(TLoc(1))
-simplify(t1, t2) == []
+# @test simplify(t1, t2) == []
 robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t1 = TForall(TLoc(1))
 t2 = TForall(TLoc(2))
-simplify(t1, t2) isa Error
+# simplify(t1, t2) isa Error
 robinsonUnify(TForall(t1), TForall(t2))
 @test robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TForall(TLoc(1))
 t2 = TLoc(3)
-simplify(t1, t2) == [DirectConstraint(TForall(TLoc(1)), TLoc(3))]
+# @test simplify(t1, t2) == [DirectConstraint(TForall(TLoc(1)), TLoc(3))]
 robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t1 = TForall(TLoc(1))
 t2 = TGlob("G")
-simplify(t1, t2) == Error("Different: ∀(T1) is really different from G")
+# @test simplify(t1, t2) == Error("Different: ∀(T1) is really different from G")
 robinsonUnify(TForall(t1), TForall(t2))
 @test robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TForall(TLoc(1))
 t2 = TForall(TLoc(1))
-simplify(t1, t2)
+# simplify(t1, t2)
 robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t = TAppAuto(TForall(TLoc(1)), TGlob("G1"))
 t1 = TAppAuto(TLoc(3), t)
 t2 = TAppAuto(TLoc(4), t)
-simplify(t1, t2) == [DirectConstraint(TLoc(3), TLoc(4))]
+# @test simplify(t1, t2) == [DirectConstraint(TLoc(3), TLoc(4))]
 robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t1 = TAppAuto(TGlob("G2"), TLoc(3))
 t2 = TAppAuto(TGlob("G2"), TForall(TAppAuto(TLoc(1), TGlob("G3"))))
-eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(3), TForall(TApp([TProd([TGlob("G3")]), TLoc(1)])))])
+# eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(3), TForall(TApp([TProd([TGlob("G3")]), TLoc(1)])))])
 
 # ^ Go fuck yourself, then die
 robinsonUnify(TForall(t1), TForall(t2))
@@ -89,81 +89,81 @@ robinsonUnify(TForall(t1), TForall(t2))
 
 t1 = TAppAuto(TGlob("G2"), TGlob("G3"))
 t2 = TAppAuto(TGlob("G2"), TForall(TAppAuto(TLoc(1), TGlob("G3"))))
-simplify(t1, t2)  == Error("Different: T3 is really different from ∀([Just (T3).(T1)])")  # Globals cannot be "solved", and that's ok
+# simplify(t1, t2)  == Error("Different: T3 is really different from ∀([Just (T3).(T1)])")  # Globals cannot be "solved", and that's ok
 robinsonUnify(TForall(t1), TForall(t2))
 @test robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TForall(TAppAuto(TGlob("F"), TLoc(1)))
 t2 = TForall(TAppAuto(TGlob("F"), TLoc(2)))
-simplify(t1, t2) isa Error  # LAMBDAS CANNOT BE UNIFIED (below, they are preapplied, which is a whole different discussion!!!)
+# simplify(t1, t2) isa Error  # LAMBDAS CANNOT BE UNIFIED (below, they are preapplied, which is a whole different discussion!!!)
 robinsonUnify(TForall(t1), TForall(t2))
 @test robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TApp([TProd([TGlob("X"), TGlob("Y")]), TForall(TAppAuto(TGlob("F"), TLoc(1)))])
 t2 = TApp([TProd([TGlob("Y"), TGlob("X")]), TForall(TAppAuto(TGlob("F"), TLoc(2)))])
-simplify(t1, t2) == DirectConstraint[]
+# @test simplify(t1, t2) == DirectConstraint[]
 robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t1 = TApp([TProd([TGlob("X"), TGlob("Y")]), TForall(TAppAuto(TGlob("F"), TLoc(1)))])
 t2 = TApp([TProd([TGlob("X"), TGlob("Y")]), TForall(TAppAuto(TGlob("F"), TLoc(2)))])
-simplify(t1, t2) == Error("Different: X is really different from Y")
+# @test simplify(t1, t2) == Error("Different: X is really different from Y")
 robinsonUnify(TForall(t1), TForall(t2))
 @test robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TApp([TProd([TLoc(3), TLoc(2)]), TForall(TAppAuto(TGlob("F"), TLoc(1)))])
 t2 = TApp([TProd([TLoc(1), TLoc(4)]), TForall(TAppAuto(TGlob("F"), TLoc(2)))])
-simplify(t1, t2) == [DirectConstraint(TLoc(3), TLoc(4))]
+# @test simplify(t1, t2) == [DirectConstraint(TLoc(3), TLoc(4))]
 robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t1 = TApp([TProd([TGlob("X"), TLoc(2)]), TForall(TAppAuto(TLoc(2), TLoc(1)))])
 t2 = TApp([TProd([TLoc(1), TLoc(4)]), TForall(TAppAuto(TGlob("F"), TLoc(2)))])
-simplify(t1, t2)  == [DirectConstraint(TGlob("X"), TLoc(4)), DirectConstraint(TLoc(2), TGlob("F"))]
+# simplify(t1, t2)  == [DirectConstraint(TGlob("X"), TLoc(4)), DirectConstraint(TLoc(2), TGlob("F"))]
 s1, s2 = robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t1 = TAppAuto(TLoc(4), TGlob("X"))
 t2 = TAppAuto(TTermAuto(TLoc(1), TLoc(2)), TLoc(3))
-eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(4), TTermAuto(TLoc(1), TLoc(2))), DirectConstraint(TGlob("X"), TLoc(3))])
+# eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(4), TTermAuto(TLoc(1), TLoc(2))), DirectConstraint(TGlob("X"), TLoc(3))])
 # ^ Go fuck yourself, then die
 robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t1 = TProd([TLoc(1), TLoc(2)])
 t2 = TProd([TLoc(3), TLoc(3)])
-simplify(t1, t2)
+# simplify(t1, t2)
 robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t1 = TProd([TLoc(1), TLoc(1)])
 t2 = TProd([TGlob("F"), TGlob("G")]) # OUCHHHH
-eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(1), TGlob("G")), DirectConstraint(TLoc(1), TGlob("F"))])
+# eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(1), TGlob("G")), DirectConstraint(TLoc(1), TGlob("F"))])
 robinsonUnify(TForall(t1), TForall(t2)) # Error, nice
 @test robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TProd([TLoc(1), TGlob("F")])
 t2 = TProd([TGlob("G"), TLoc(1)]) # otoh, this SHOULD keep working..
-eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(1), TGlob("G")), DirectConstraint(TGlob("F"), TLoc(1))])
+# eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(1), TGlob("G")), DirectConstraint(TGlob("F"), TLoc(1))])
 robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t1 = TProd([TLoc(1), TLoc(1)])
 t2 = TProd([TLoc(1), TTermAuto(TGlob("A"), TLoc(1))])
-eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(1), TLoc(1)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TLoc(1)))])
+# eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(1), TLoc(1)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TLoc(1)))])
 robinsonUnify(TForall(t1), TForall(t2)) # Recursive Error, nice!
 @test robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TLoc(1), TLoc(2), TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))])
-eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(1)), DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TLoc(2))])
+# eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(1)), DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TLoc(2))])
 @test robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C"))), TLoc(2), TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))])
-eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C")))), DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(2))])
+# eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C")))), DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(2))])
 
-c1 = simplify(t1, t2)
+# c1 = simplify(t1, t2)
 c2 = [DirectConstraint(TLoc(2), TLoc(2)), DirectConstraint(TLoc(1), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C")))), DirectConstraint(TLoc(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLoc(1)))), DirectConstraint(TLoc(1), TLoc(2))]
 c1[1] == c2[3]
 c1[2] == c2[2]
@@ -175,25 +175,25 @@ robinsonUnify(TForall(t1), TForall(t2)) .|> pr
 
 t1 = TProd([TLoc(1), TLoc(2)])
 t2 = TProd([TLoc(2), TTermAuto(TGlob("A"), TLoc(1))])
-repr(simplify(t1, t2)) == "DirectConstraint[DirectConstraint(TLoc(2), TTermAuto(TGlob(\"A\"), TLoc(1))), DirectConstraint(TLoc(1), TLoc(2))]"
+# repr(simplify(t1, t2)) == "DirectConstraint[DirectConstraint(TLoc(2), TTermAuto(TGlob(\"A\"), TLoc(1))), DirectConstraint(TLoc(1), TLoc(2))]"
 robinsonUnify(TForall(t1), TForall(t2))
 @test test_unify(t1, t2)
 
 t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TGlob("F"), TLoc(3), TLoc(3), TGlob("G")])
-simplify(t1, t2) == [DirectConstraint(TLoc(2), TGlob("G")), DirectConstraint(TLoc(1), TLoc(3)), DirectConstraint(TLoc(1), TGlob("F")), DirectConstraint(TLoc(2), TLoc(3))]
+# eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(2), TGlob("G")), DirectConstraint(TLoc(1), TLoc(3)), DirectConstraint(TLoc(1), TGlob("F")), DirectConstraint(TLoc(2), TLoc(3))])
 robinsonUnify(TForall(t1), TForall(t2)) # Error, nice
 @test robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TForall(TGlob("A"))
 t2 =  TGlob("A")
-simplify(t1, t2) # Nope, and that's fine
+# simplify(t1, t2) # Nope, and that's fine
 robinsonUnify(t1, t2)
 @test robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
 t1 = TProd([TLoc(1), TLoc(1), TLoc(2), TLoc(2)])
 t2 = TProd([TGlob("F"), TLoc(1), TLoc(1), TGlob("G")])
-simplify(t1, t2) == [DirectConstraint(TLoc(2), TLoc(1)), DirectConstraint(TLoc(1), TLoc(1)), DirectConstraint(TLoc(2), TGlob("G")), DirectConstraint(TLoc(1), TGlob("F")), ]
+# eq_constraints(simplify(t1, t2), [DirectConstraint(TLoc(2), TLoc(1)), DirectConstraint(TLoc(1), TLoc(1)), DirectConstraint(TLoc(2), TGlob("G")), DirectConstraint(TLoc(1), TGlob("F")), ])
 robinsonUnify(TForall(t1), TForall(t2)) # Error, nice
 @test robinsonUnify(TForall(t1), TForall(t2)) isa Error
 
@@ -292,16 +292,16 @@ ass_reduc(t2, s2) |> pr
 # HARDER TESTS ON REVERSE CONSTRAINTS:
 t1 = TProd([TGlob("F"), TLoc(1), TLoc(1)])
 t2 = TProd([TLoc(1), TGlob("G")])
-simplify(DirectConstraint(t1, t2))
+# simplify(DirectConstraint(t1, t2))
 test_unify(t1, t2) # Yeah it's false, it's fine tho
 
 t1 = TProd([TGlob("F"), TLoc(1), TLoc(1)])
 t2 = TProd([TLoc(1), TGlob("G")])
-# simplify(ReverseConstraint(t1, t2)) # BROKEN !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!!
+# # simplify(ReverseConstraint(t1, t2)) # BROKEN !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!! !!!
 
 t1 = TProd([TLoc(1), TGlob("G")])
 t2 = TProd([TGlob("F"), TLoc(1), TLoc(1)])
-simplify(ReverseConstraint(t2, t1))
+# simplify(ReverseConstraint(t2, t1))
 s1, s2 = robinsonUnify(t1, t2) # Cannot unify !!!!!!!!!!!!!!!!!!!!!!!!!!!
 # ass_reduc(t1, s1) |> pr
 # ass_reduc(t2, s2) |> pr
