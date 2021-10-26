@@ -19,17 +19,6 @@
 
 include("mylambda1.jl")
 
-usesLocs(t::TGlob)::Array{Index} = Array{Index}([])
-usesLocs(t::TLoc)::Array{Index} = Array{Index}([t.var])
-usesLocs(t::TTop)::Array{Index} = Array{Index}([])
-usesLocs(t::TApp)::Array{Index} = unique(vcat((t.ops_dot_ordered .|> usesLocs)...))
-usesLocs(t::TProd)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
-usesLocs(t::TSum)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
-usesLocs(t::TSumTerm)::Array{Index} = t.data |> usesLocs
-usesLocs(t::TForall)::Array{Index} = Array{Index}([])
-usesLocs(t::TTerm)::Array{Index} = unique(vcat(t.t_in |> usesLocs, t.t_out |> usesLocs))
-
-
 ########################################## SIMPLIFY
 
 # ((question is: RECURSIVE(call simplify_) OR MANAGED (return constrains)?
@@ -198,50 +187,27 @@ function simplify_(c::ReverseConstraint)::SimpRes
     (res isa Error) ? res : (Array{Constraint}(res .|> swap))
 end
 
-# I ELIMINATED BACKTRACK
-# function backtrack(array::SimpRes)::SimpRes
-#     if typeof(array) === Error
-#         return array
-#     end
-#     reduced = Set{Constraint}([])
-#     while length(array) > 0
-#         array2 = Array{Constraint}([])
-#         for c in array
-#             cs = simplify_(c)
-#             if typeof(cs) === Error return cs
-#             elseif length(cs) == 1 && cs[1] == c push!(reduced, c)
-#             elseif length(cs) != 0 append!(array2, cs) end
-#         end
-#         array = array2
-#     end
-#     return Array{Constraint}([reduced...])
-# end
-# function simplify(t1::Type_, t2::Type_)::SimpRes  # simply the toplevel interface
-#     t1 = reduc(t1)
-#     t2 = reduc(t2)
-#     return backtrack(Array{Constraint}([DirectConstraint(t1, t2)]))
-#     # array=[Constraint(t1, t2)]
-# end
-# simplify(c::Constraint)::SimpRes = simplify(c.t1, c.t2)
-# simplify(c::Constraint)::SimpRes = simplify(c.t1, c.t2)
-# I ELIMINATED BACKTRACK
-
-
 
 # Unify: solve f(x) = g(y) in the sense of finding x AND y,
 # EXCEPT it WONT fail if post-applying some DROPPINGs here and there will help.
 # It WONT RETURN THEM, either. See above.
 
-Subst = Dict{Index,Type_}  # I'm using this as a SPARSE VECTOR
-
 # idea: in NO CASE x=f(x) can be solved, (if types_ are REDUCED), because we handle RecursiveTypes Differently!!
+usesLocs(t::TGlob)::Array{Index} = Array{Index}([])
+usesLocs(t::TLoc)::Array{Index} = Array{Index}([t.var])
+usesLocs(t::TTop)::Array{Index} = Array{Index}([])
+usesLocs(t::TApp)::Array{Index} = unique(vcat((t.ops_dot_ordered .|> usesLocs)...))
+usesLocs(t::TProd)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
+usesLocs(t::TSum)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
+usesLocs(t::TSumTerm)::Array{Index} = t.data |> usesLocs
+usesLocs(t::TForall)::Array{Index} = Array{Index}([])
+usesLocs(t::TTerm)::Array{Index} = unique(vcat(t.t_in |> usesLocs, t.t_out |> usesLocs))
 function check_not_recursive(tloc::TLoc, tt::Type_)::Bool
     for v in usesLocs(tt)
     if tloc.var == v return false end
     end
     return true
 end
-
 
 get_reduc_subst(t::Array{TProd}) = TApp(vcat([t[end]], t[end - 1:-1:1] .|> (x -> TForall(x))))
 get_reduc_subst(t::Array{Type_}) = TApp(vcat([t[end]], t[end - 1:-1:1] .|> (x -> TForall(x))))
@@ -252,7 +218,6 @@ ass_smart_reduc(t...) = (length(t) <= 1) ? (collect(t)) : ([get_reduc_subst(coll
 # TODO: change "[reduc()]" in "smart_reduc" !!
 ass_reduc(t::TProd ...)::TProd = (length(t) == 1) ? (t[1]) : (get_reduc_subst(collect(t)) |> reduc)
 ass_reduc(t1::Type_, ts::TProd ...)::Type_ = (length(ts) == 0) ? (t1) : (get_reduc_subst(vcat([t1], collect(ts))) |> reduc)
-
 
 ass_reduc(c::DirectConstraint, ts::TProd ...) = DirectConstraint(ass_reduc(c.t1, ts...), ass_reduc(c.t2, ts...))
 ass_reduc(c::ReverseConstraint, ts::TProd ...) = ReverseConstraint(ass_reduc(c.t1, ts...), ass_reduc(c.t2, ts...))
@@ -274,12 +239,19 @@ function share_ctx_tlocs_names(t1::TForall, t2::TForall, t1arity::Index, t2arity
     s2 = TProd([TLoc(i) for i in (t1arity + 1):(t1arity + t2arity)])
     TApp([s1, t1]), TApp([s2, t2])
 end
-
+function share_ctx_tlocs_names_and_return(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index)
+    s1 = TProd([TLoc(i) for i in 1:t1arity])
+    s2 = TProd([TLoc(i) for i in (t1arity + 1):(t1arity + t2arity)])
+    s1, s2, TApp([s1, t1]), TApp([s2, t2])
+end
 
 struct ItsLiterallyAlreadyOk end
 
-function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index; unify_tlocs_ctx::Bool = true)::Union{Tuple{TProd,TProd},Error, ItsLiterallyAlreadyOk}
+function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index; unify_tlocs_ctx::Bool = true, fail_if_prod_should_be_extended=true)::Union{Tuple{TProd,TProd},Error, ItsLiterallyAlreadyOk}
     # I maybe i can improve this a bit, not now tho:
+
+    current_total_subst =  Array{TProd}([]) # SMART_REDUCED VERSION # (Can be a single [TProd] or the whole list)
+    # ^ Still, to pass into get_reduc_subst IN THIS ORDER
 
     if unify_tlocs_ctx
         current_arity = t1arity + t2arity
@@ -290,39 +262,29 @@ function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index;
         t1, t2 = t1.body, t2.body
     end
 
-    # Note that now everything is Shared # Also note this is always Dirsect constraint
-    t1, t2 = reduc(t1), reduc(t2)
-    # Note that the below WERE Reduced before:
-    cs = simplify_(t1, t2) # Note they are Already bodies, at this point
-    if cs isa Error return cs end
-    STACK = cs
-
-    current_total_subst =  Array{TProd}([]) # SMART_REDUCED VERSION # (Can be a single [TProd] or the whole list)
-    # ^ Still, to pass into get_reduc_subst IN THIS ORDER
+    STACK = Array{Constraint}([DirectConstraint(t1, t2)])
 
     while (length(STACK) > 0)
         c = pop!(STACK)
-        if c isa Error
-            return c
-        end
         ct1, ct2 = c.t1, c.t2
 
-        if ct1 isa TLoc && ct2 isa TLoc
-            i, tt = ct1.var, ct2 # it's ARBITRARY since these names have no meaning anyway
-        elseif ct1 isa TLoc
-            if !check_not_recursive(ct1, ct2) return Error("$(ct1) == $(ct2) is not a thing (recursive)") end
-            # middle_subst[ct1.var] = ct2
-            i, tt = ct1.var, ct2
-        elseif ct2 isa TLoc
-            if !check_not_recursive(ct2, ct1) return Error("$(ct2) == $(ct1) is not a thing (recursive)") end
-            # middle_subst[ct2.var] = ct1
-            i, tt = ct2.var, ct1
-        else
+        if !(ct1 isa TLoc || ct2 isa TLoc)
             c = reduc(c)
             cs_inside = simplify_(c)
             if cs_inside isa Error return cs_inside end
             append!(STACK, cs_inside)
             continue
+        elseif ct1 isa TLoc && ct2 isa TLoc
+            i, tt = ct1.var, ct2 # it's ARBITRARY since these names have no meaning anyway
+            # println("This is a constraint I'm adding now: $(i) of the first term must be $(tt.var) from the second")
+        elseif ct1 isa TLoc
+            if !check_not_recursive(ct1, ct2) return Error("$(ct1) == $(ct2) is not a thing (recursive)") end
+            i, tt = ct1.var, ct2
+            # println("This is a constraint I'm adding now: $(i) of the first term must be $(tt) from the second")
+        elseif ct2 isa TLoc
+            if !check_not_recursive(ct2, ct1) return Error("$(ct2) == $(ct1) is not a thing (recursive)") end
+            i, tt = ct2.var, ct1
+            # println("This is a constraint I'm adding now: $(i) of the second term must be $(tt) from the first")
         end
         new_subst = get_subst_prod(TLoc(i), tt, current_arity)
         current_total_subst = Array{TProd}(ass_smart_reduc(current_total_subst..., new_subst))
@@ -343,11 +305,7 @@ function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index;
 
     final_subst = ass_reduc(current_total_subst...)
     subst1 = TProd(final_subst.data[1:t1arity])
-    if unify_tlocs_ctx
-        subst2 = TProd(final_subst.data[(t1arity + 1):(t1arity + t2arity)])
-    else
-        subst2 = TProd(final_subst.data[1:t2arity])
-    end
+    subst2 = if unify_tlocs_ctx TProd(final_subst.data[(t1arity + 1):(t1arity + t2arity)]) else subst2 = TProd(final_subst.data[1:t2arity]) end
     return subst1, subst2
 end
 
@@ -466,19 +424,23 @@ function infer_type_(term::EProd, ts_computed::Array{Inf_res})::Union{Inf_res,Er
     unified_RES_types = Array{Type_}([])
     last_one = pop!(ts_computed)
     for ir in ts_computed
+        ira, loa = ir |> arity, last_one |> arity
+        s1, s2, ir_argt, last_one_argt = share_ctx_tlocs_names_and_return(TForall(TProd(ir.arg_types)), TForall(TProd(last_one.arg_types)), ira, loa)
         substs =  robinsonUnify(
-            TProd(ir.arg_types), TProd(last_one.arg_types),
-            ir |> arity, last_one |> arity)
+            TForall(ir_argt), TForall(last_one_argt), ira+loa, ira+loa;
+            unify_tlocs_ctx=false, fail_if_prod_should_be_extended=false)
         if substs isa Error
             return Error("ELocs typed $(ir.arg_types .|> pr) cannot be unified into ELocs typed $(last_one.arg_types .|> pr), with error '$(substs)'")
-        elseif substs isa ItsLiterallyAlreadyOk
-            push!(unified_RES_types, ir.res_type)
-        else
-            (s1, s2) = substs
-            last_one = ass_reduc(last_one, s2)
-            unified_RES_types::Array{Type_} = unified_RES_types .|> (x -> ass_reduc(x, s2)) # if they BECAME EQUAL to last_one, this should work
-            push!(unified_RES_types, ass_reduc(ir.res_type, s1))
+            continue
         end
+        if substs isa ItsLiterallyAlreadyOk
+            s1s, s2s = [s1], [s2]
+        else
+            s1s, s2s = [s1, substs[1]], [s2, substs[2]]
+        end
+        last_one = ass_reduc(last_one, s2s...)
+        unified_RES_types::Array{Type_} = unified_RES_types .|> (x -> ass_reduc(x, s2)) # if they BECAME EQUAL to last_one, this should work
+        push!(unified_RES_types, ass_reduc(ir.res_type, s1s...))
     end
 
     push!(unified_RES_types, last_one.res_type)
@@ -564,17 +526,17 @@ function infer_type_(term::EApp, ts_computed::Array{Inf_res})::Union{Inf_res,Err
         if substs isa Error
             return Error("Mismatched app: get out type $(prev_out |> pr) but required type $(next_in |> pr), with error '$(substs)'")
         elseif substs isa ItsLiterallyAlreadyOk
-            print("I KNOW PREFECTLY WELL THAT IM BROKENNNN")
-            continue
+            prev_out = ts_computed_res[i].t_out
+        else
+            (s1, s2) = substs
+            # ^ Wait.. Are you telling me, if unify_tlocs_ctx=false, s1 and s2 are ALWAYS the same ???  # # Man, this is a crazy world..
+            ts_computed_res = Array{Type_}(ts_computed_res .|> (x -> ass_reduc(x, s1)))
+            # ^ the LENGTH of ts_computed_res DOES NOT CHANGE HERE
+            # ^ Also Maybe you can SKIP updating all of them but who cares
+            args = ass_reduc(args, s1) # Keep track of the Arg types, too
+            full_arity = s1 |> arity
+            prev_out = ts_computed_res[i].t_out
         end
-        (s1, s2) = substs
-        # ^ Wait.. Are you telling me, if unify_tlocs_ctx=false, s1 and s2 are ALWAYS the same ???  # # Man, this is a crazy world..
-        ts_computed_res = Array{Type_}(ts_computed_res .|> (x -> ass_reduc(x, s1)))
-        # ^ the LENGTH of ts_computed_res DOES NOT CHANGE HERE
-        # ^ Also Maybe you can SKIP updating all of them but who cares
-        args = ass_reduc(args, s1) # Keep track of the Arg types, too
-        full_arity = s1 |> arity
-        prev_out = ts_computed_res[i].t_out
     end
     return Inf_res(args.data, ts_computed_res[end].t_out)
     # Returns the OUTPUT type instead of the composed TTerm type cuz this is a mess
