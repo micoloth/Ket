@@ -8,12 +8,12 @@ pr_ty_red(e) = (r = e |> infer_type_rec; (r isa Error ? r : r |> (x->x.res_type)
 # pr_ty(e) = e.infer_type_rec.?{x.res_type.pr}
 
 # Texp = TGlob("EXP")
-# e1E = EGlob("e1", TTerm(TProd([]), Texp))
-# ivE = EGlob("iv", TTerm(TProd([Texp]), Texp))
-# opE = EGlob("op", TTerm(TProd([Texp, Texp]), Texp))
-# e1() = EApp([EProd([]), e1E])
-# iv(e::Expr) = EApp([EProd([e]), ivE])
-# op(e1::Expr, e2::Expr) = EApp([EProd([e1, e2]), opE])
+# e1E = TGlob("e1", TTerm(TProd([]), Texp))
+# ivE = TGlob("iv", TTerm(TProd([Texp]), Texp))
+# opE = TGlob("op", TTerm(TProd([Texp, Texp]), Texp))
+# e1() = TApp([TProd([]), e1E])
+# iv(e::Expr) = TApp([TProd([e]), ivE])
+# op(e1::Expr, e2::Expr) = TApp([TProd([e1, e2]), opE])
 # ee = op(iv(e1()), e1())
 # ee |> pr
 # infer_type_rec(ee).res_type |> pr # == "EXP", YES!!
@@ -31,51 +31,51 @@ eq(e1::Term, e2::Term) = TApp([TProd([e1, e2]), eqT])
 
 
 # You want to be able to build Expressions out of this, too:
-e1E() = EGlob("e", e1())
-ivE(e::Expr) = EAnno(EProd([e]), ivT)
-opE(e1::Expr, e2::Expr) = EAnno(EProd([e1, e2]), opT)
-eqE(e1::Expr, e2::Expr) = EAnno(EProd([e1, e2]), eqT)
+e1E() = TGlob("e", e1())
+ivE(e::Expr) = TAnno(TProd([e]), ivT)
+opE(e1::Expr, e2::Expr) = TAnno(TProd([e1, e2]), opT)
+eqE(e1::Expr, e2::Expr) = TAnno(TProd([e1, e2]), eqT)
 
 # TESTS/ examples:
 ee = op(iv(e1()), e1())
 TAbs(op(TLoc(2), TLoc(3))) |> reduc
-EAnno(EProd([e1E()]), iv(e1())) |> pr_ty
+TAnno(TProd([e1E()]), iv(e1())) |> pr_ty
 ivE(e1E()) |> pr_ty
 opE(ivE(e1E()), e1E()) |> pr_ty
 opE(ivE(e1E()), e1E()) |> pr # I mean, it sucks but it's Not wrong...
-EAnno(opE(ivE(e1E()), e1E()),  op(iv(e1()), e1())) |> pr_ty
-fp = EAbs(ELoc(2)) # This is supposed to be SECOND PROJECTION
-EApp([opE(EGlobAuto("a"), EGlobAuto("b")), fp]) |> reduc |> pr
-EApp([opE(EGlobAuto("a"), EGlobAuto("b")), fp]) |> pr_ty
+TAnno(opE(ivE(e1E()), e1E()),  op(iv(e1()), e1())) |> pr_ty
+fp = TAbs(TLoc(2)) # This is supposed to be SECOND PROJECTION
+TApp([opE(EGlobAuto("a"), EGlobAuto("b")), fp]) |> reduc |> pr
+TApp([opE(EGlobAuto("a"), EGlobAuto("b")), fp]) |> pr_ty
 
 
 # First possibility (easy): with EQUALITY PRESERVING FUNCTIONS.
 
-invdx = EAnno(EAbs(e1E()), TTermAuto(op(iv(e1()), e1()), e1()))
+invdx = TAnno(TAbs(e1E()), TTermAuto(op(iv(e1()), e1()), e1()))
 invdx |> pr
 invdx |> pr_ty
 
-invsx = EAnno(EAbs(opE(ivE(e1E()), e1E())), TTermAuto(e1(), op(iv(e1()), e1())))
+invsx = TAnno(TAbs(opE(ivE(e1E()), e1E())), TTermAuto(e1(), op(iv(e1()), e1())))
 invsx |> pr
 invsx |> pr_ty
 invsx |> pr_ty_red
 
-nuldx = EAnno(EAbs(ELoc(1)), TAbs(TTerm(op(TLoc(1), e1()), TLoc(1))))
-nulsx = EAnno(EAbs(ELoc(2)), TAbs(TTerm(op(e1(), TLoc(1)), TLoc(1))))
+nuldx = TAnno(TAbs(TLoc(1)), TAbs(TTerm(op(TLoc(1), e1()), TLoc(1))))
+nulsx = TAnno(TAbs(TLoc(2)), TAbs(TTerm(op(e1(), TLoc(1)), TLoc(1))))
 nuldx |> pr_ty
 nulsx |> pr_ty
 
 # op(op(a,b),c) --> op(a,op(b,c))
-proj1_1, proj2_1 = EApp([ELoc(1), EAbs(ELoc(1))]), EApp([ELoc(1), EAbs(ELoc(2))])
-assdx = EAnno(
-    EAbs(opE(proj1_1, opE(proj2_1, ELoc(2)))),
+proj1_1, proj2_1 = TApp([TLoc(1), TAbs(TLoc(1))]), TApp([TLoc(1), TAbs(TLoc(2))])
+assdx = TAnno(
+    TAbs(opE(proj1_1, opE(proj2_1, TLoc(2)))),
     TAbs(TTerm(op(op(TLoc(1), TLoc(2)), TLoc(3)), op(TLoc(1), op(TLoc(2), TLoc(3))))))
 
 e = infer_type_rec(assdx)
 # What's the problem here?
 # > Imean does this ever even happen?
 # > "ELocs typed [\"[T1]\", \"T2\"] cannot be unified with ELocs typed [\"[T1 x T2]\", \"T3\"], with error 'Different lengths: 1 < 2, so you cannot even drop.'"
-# ^ This is because: The SECOND is the correct INFERRED type of the ARGUMENT INTO opE(proj2_1, ELoc(2)),
+# ^ This is because: The SECOND is the correct INFERRED type of the ARGUMENT INTO opE(proj2_1, TLoc(2)),
 # ^ while the first thing, is: the CORRECT INFERRED type of the ARGUMENT INTO proj1_1, THAT WOULD BE [\"[T1]\"] (YES)- Augmented to [\"[T1]\", \"T2\"] by the Prod augmentation procedure.
 # ^ Ok but this is DUMB, because: it's really NOT ABOUT AUGMENTING, it's about BEING CONTRAVARIANT ALL THE WAY DOWN!!
 
@@ -92,11 +92,11 @@ e = infer_type_rec(assdx)
 
 ############
 
-e = EApp([ELoc(1), EAbs(ELoc(1))])
+e = TApp([TLoc(1), TAbs(TLoc(1))])
 infer_type_rec(e)
 # |> (x->x.arg_types) == [TLoc(1)] # And NOTT [TProd([TLoc(1)])], plz ????
-# infer_type_rec(ELoc(1))
-# infer_type_rec(EAbs(ELoc(1)))
+# infer_type_rec(TLoc(1))
+# infer_type_rec(TAbs(TLoc(1)))
 
 
 

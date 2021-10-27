@@ -475,16 +475,16 @@ robinsonUnify(t1::Term, t2::Term; unify_tlocs_ctx::Bool = true, mode::Unify_mode
 pr_ctx(i::TTerm) = "Given [$(join(i.t_in.data .|>pr, ", "))], get $(i.t_out|>pr)"
 TTermEmpty(res_type::Term) = TTerm(TProd([]), res_type)
 
-function infer_type_(term::ELoc)::Union{TTerm,Error}
+function infer_type_(term::TLoc)::Union{TTerm,Error}
     return TTerm(TProd([TLoc(i) for i in 1:term.var]), TLoc(term.var))  # TAbs(TLoc(term.var)) was an idea i tried
 end
-function infer_type_(term::EGlob)::Union{TTerm,Error}
+function infer_type_(term::TGlob)::Union{TTerm,Error}
     if term.type isa TAbs return TTermEmpty(term.type.body)
     # ^ This is because TTerm's are Naked (no Forall) for some reason- BOY will this become a mess
     else return TTermEmpty(term.type) end
 end
-function infer_type_(term::EUnit)::Union{TTerm,Error} return TTermEmpty(TTop()) end
-function infer_type_(term::EAnno, t_computed::TTerm)::Union{TTerm,Error}
+function infer_type_(term::TUnit)::Union{TTerm,Error} return TTermEmpty(TTop()) end
+function infer_type_(term::TAnno, t_computed::TTerm)::Union{TTerm,Error}
     substs = robinsonUnify(t_computed.t_out, term.type, mode=imply_)
     if substs isa Error return substs
     elseif substs isa ItsLiterallyAlreadyOk return TTerm(t_computed.t_in, term.type)
@@ -504,7 +504,7 @@ function infer_type_(term::EAnno, t_computed::TTerm)::Union{TTerm,Error}
     end
 end
 
-function infer_type_(term::EProd, ts_computed::Array{TTerm})::Union{TTerm,Error}
+function infer_type_(term::TProd, ts_computed::Array{TTerm})::Union{TTerm,Error}
     # IDEA: This checking that all args are the same, really belongs to the DIAGONAL FUNCTOR of terms,
     # but this is a hodgepodge, so that's fine.
     # @assert length(term.data) == length(ts_computed) "$(length(term.data)) != $(length(ts_computed)) in $(term.data) != $(ts_computed)"
@@ -538,23 +538,23 @@ function infer_type_(term::EProd, ts_computed::Array{TTerm})::Union{TTerm,Error}
     return TTerm(args, TProd(unified_RES_types))
 end
 
-function infer_type_(term::EAbs, t_computed::TTerm)::Union{TTerm,Error}
+function infer_type_(term::TAbs, t_computed::TTerm)::Union{TTerm,Error}
     return TTerm(TProd([]), t_computed)
 end
-function infer_type_(term::ESumTerm, t_computed::TTerm)::Union{TTerm,Error}
+function infer_type_(term::TSumTerm, t_computed::TTerm)::Union{TTerm,Error}
     arT, tag = t_computed |> arity, term.tag
     types = vcat([TLoc(n) for n in (arT + 1):(arT + tag - 1)], [t_computed.t_out])
     return TTerm(t_computed.t_in, TAbs(TSum(types)))
 end
-function infer_type_(term::EBranches, t_computed::TTerm)::Union{TTerm,Error}
+function infer_type_(term::TBranches, t_computed::TTerm)::Union{TTerm,Error}
     arT, tag = t_computed |> arity, term.tag
     types = vcat([TLoc(n) for n in (arT + 1):(arT + tag - 1)], [t_computed.t_out])
     return TTerm(t_computed.t_in, TAbs(TSum(types)))
 end
 
-function infer_type_(term::EApp, ts_computed::Array{TTerm})::Union{TTerm,Error}
+function infer_type_(term::TApp, ts_computed::Array{TTerm})::Union{TTerm,Error}
     # First, fix TLoc's by SQUASHING THEM TO BE TTERMS.
-    # Idea: - EAbs come as TTErms (TTerm with NO dependencies)  - ELocs come as InfRes WITH the dependency  - NONE of the TTerm have a Forall around cuz it's how it is in this mess
+    # Idea: - TAbs come as TTErms (TTerm with NO dependencies)  - ELocs come as InfRes WITH the dependency  - NONE of the TTerm have a Forall around cuz it's how it is in this mess
     ts_computed_2 = Array{TTerm}([ts_computed[1]])
     for t in ts_computed[2:end]
         fake_tterm = TAbs(TTerm(TLoc(1), TLoc(2)))
@@ -567,7 +567,7 @@ function infer_type_(term::EApp, ts_computed::Array{TTerm})::Union{TTerm,Error}
     # ^ Each of these still has ITS OWN TLoc's
 
     # Second, Unify the context of the TLocs:
-    all_w_unified_args = infer_type_(EProd([]), ts_computed_2)
+    all_w_unified_args = infer_type_(TProd([]), ts_computed_2)
     # ^ REUSING the TProd inference, HACKING the fact that Term is NOT used
     # What comes out is a: TTerm(TProd([...]), TProd(([TTerm(), ...])))
     full_arity = all_w_unified_args |> arity
@@ -604,26 +604,26 @@ end
 
 
 # Silly categorical-algebra-ish recursive wrapup:
-function infer_type_rec(term::ELoc)::Union{TTerm,Error} return infer_type_(term) end
-function infer_type_rec(term::EGlob)::Union{TTerm,Error} return infer_type_(term) end
-function infer_type_rec(term::EUnit)::Union{TTerm,Error} return infer_type_(term) end
-function infer_type_rec(term::EAnno)::Union{TTerm,Error}
+function infer_type_rec(term::TLoc)::Union{TTerm,Error} return infer_type_(term) end
+function infer_type_rec(term::TGlob)::Union{TTerm,Error} return infer_type_(term) end
+function infer_type_rec(term::TUnit)::Union{TTerm,Error} return infer_type_(term) end
+function infer_type_rec(term::TAnno)::Union{TTerm,Error}
     tt = infer_type_rec(term.expr)
     return (tt isa Error) ? tt : infer_type_(term, tt)
 end
-function infer_type_rec(term::EAbs)::Union{TTerm,Error} tt = infer_type_rec(term.body); return (tt isa Error) ? tt : infer_type_(term, tt) end
-function infer_type_rec(term::EProd)::Union{TTerm,Error}
+function infer_type_rec(term::TAbs)::Union{TTerm,Error} tt = infer_type_rec(term.body); return (tt isa Error) ? tt : infer_type_(term, tt) end
+function infer_type_rec(term::TProd)::Union{TTerm,Error}
     tts::Array{Union{TTerm,Error} } = infer_type_rec.(term.data)
     for tt in tts if tt isa Error return tt end end
     return infer_type_(term, Array{TTerm}(tts))
 end
-function infer_type_rec(term::ESumTerm)::Union{TTerm,Error} tt = infer_type_rec(term.data); return (tt isa Error) ? tt : infer_type_(term, tt) end
-function infer_type_rec(term::EBranches)::Union{TTerm,Error}
+function infer_type_rec(term::TSumTerm)::Union{TTerm,Error} tt = infer_type_rec(term.data); return (tt isa Error) ? tt : infer_type_(term, tt) end
+function infer_type_rec(term::TBranches)::Union{TTerm,Error}
     tts = infer_type_rec.(term.ops_chances)
     for tt in tts if tt isa Error return tt end end
     return infer_type_(term, Array{TTerm}(tts))
 end
-function infer_type_rec(term::EApp)::Union{TTerm,Error}
+function infer_type_rec(term::TApp)::Union{TTerm,Error}
     tts::Array{Union{TTerm,Error}} = infer_type_rec.(term.ops_dot_ordered)
     for tt in tts if tt isa Error return tt end end
     return infer_type_(term, Array{TTerm}(tts))
