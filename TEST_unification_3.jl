@@ -275,21 +275,20 @@ s1, s2 = robinsonUnify(t1, t2)
 # robinsonUnify(TAbs(t1), TAbs(t2))
 
 
-t1 = TProd([TLoc(1), TSumTerm("EQ", TProd([TGlob("E"), TLoc(2)]))])
-t2 = TProd([TGlob("A"), TSumTerm("EQ", TLoc(1))])
+t1 = TProd([TLoc(1), TSumTerm(1, "EQ", TProd([TGlob("E"), TLoc(2)]))])
+t2 = TProd([TGlob("A"), TSumTerm(1, "EQ", TLoc(1))])
 t1|>pr
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
 
-t1 = TProd([TLoc(1), TSumTerm("EQ", TProd([TGlob("E"), TLoc(2)]))])
+t1 = TProd([TLoc(1), TSumTerm(1, "EQ", TProd([TGlob("E"), TLoc(2)]))])
 t2 = TProd([TGlob("A"), TLoc(2)])
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
 
-t1 = TProd([TLoc(1), TSumTerm("EQ", TProd([TGlob("E"), TLoc(2)]))])
-t2 = TProd([TGlob("A"), TSumTerm("GQ", TProd([TGlob("E"), TLoc(2)]))])
+t1 = TProd([TLoc(1), TSumTerm(1, "EQ", TProd([TGlob("E"), TLoc(2)]))])
+t2 = TProd([TGlob("A"), TSumTerm(2, "GQ", TProd([TGlob("E"), TLoc(2)]))])
 @test robinsonUnify(t1, t2) isa Error
-
 
 
 # K for TESTS w/ DIFFERENT NUMBER OF ITEMS NOW:
@@ -451,8 +450,6 @@ res3 = sr(t1, sr(t2, t3), sr(t4, t5)) |> pr
 # TEST INFERENCE:
 
 
-include("unification_3.jl")
-
 e = TLoc(2)
 @test infer_type_rec(e) == TTerm(TProd([TLoc(1), TLoc(2)]), TLoc(2))
 
@@ -472,7 +469,7 @@ e = TProd([TLoc(2), TLoc(2)])
 e = TProd([TLoc(2), TAnno(TLoc(2), TLoc(1))])
 @test infer_type_rec(e) == TTerm(TProd([TLoc(1), TLoc(2)]), TProd(Term[TLoc(2), TLoc(2)]))
 
-e = TProd([EGlobAuto("t"), TAnno(TLoc(1), TLoc(1))])
+e = TProd([TGlobAuto("t"), TAnno(TLoc(1), TLoc(1))])
 infer_type_rec(e)
 
 tglob = TAbs(TTermAuto(TGlob("A"), TLoc(2)))
@@ -516,7 +513,7 @@ e = TAnno(TAbs(TGlob("b", TGlob("B"))), TTermAuto(TProd([TGlob("A")]),  TGlob("B
 
 tf = TAnno(TAbs(TGlob("b", TGlob("B"))), TTermAuto(TGlob("A"),  TGlob("B")))
 targ = TAnno(TLoc(1), TGlob("A"))
-e = EAppAuto(tf, targ)
+e = TAppAuto(tf, targ)
 infer_type_rec(tf).t_out |>pr
 @test infer_type_rec(e) == TTerm(TProd([TGlob("A")]), TGlob("B"))
 
@@ -586,7 +583,7 @@ end # COMMENT TESTS
 
 
 
-# e = TApp([TSumTerm(2, EGlobAuto("b")), TBranches([TGlob("f", TLoc(1)), TAbs()])])
+# e = TApp([TSumTerm(2, "2", TGlobAuto("b")), TBranches([TGlob("f", TLoc(1)), TAbs()])])
 
 
 

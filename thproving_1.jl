@@ -45,8 +45,8 @@ opE(ivE(e1E()), e1E()) |> pr_ty
 opE(ivE(e1E()), e1E()) |> pr # I mean, it sucks but it's Not wrong...
 TAnno(opE(ivE(e1E()), e1E()),  op(iv(e1()), e1())) |> pr_ty
 fp = TAbs(TLoc(2)) # This is supposed to be SECOND PROJECTION
-TApp([opE(EGlobAuto("a"), EGlobAuto("b")), fp]) |> reduc |> pr
-TApp([opE(EGlobAuto("a"), EGlobAuto("b")), fp]) |> pr_ty
+TApp([opE(TGlobAuto("a"), TGlobAuto("b")), fp]) |> reduc |> pr
+TApp([opE(TGlobAuto("a"), TGlobAuto("b")), fp]) |> pr_ty
 
 
 # First possibility (easy): with EQUALITY PRESERVING FUNCTIONS.

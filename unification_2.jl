@@ -355,7 +355,7 @@ function infer_type_(term::TGlob)::Union{Inf_res,Error}
     # ^ This is because Inf_res's are Naked (no Forall) for some reason- BOY will this become a mess
     else return Inf_res(term.type) end
 end
-function infer_type_(term::TUnit)::Union{Inf_res,Error} return Inf_res(TTop()) end
+function infer_type_(term::TTop)::Union{Inf_res,Error} return Inf_res(TTop()) end
 function infer_type_(term::TAnno, t_computed::Inf_res)::Union{Inf_res,Error}
     substs = robinsonUnify(t_computed.res_type, term.type)
     if substs isa Error return substs
@@ -468,7 +468,7 @@ end
 # Silly categorical-algebra-ish recursive wrapup:
 function infer_type_rec(term::TLoc)::Union{Inf_res,Error} return infer_type_(term) end
 function infer_type_rec(term::TGlob)::Union{Inf_res,Error} return infer_type_(term) end
-function infer_type_rec(term::TUnit)::Union{Inf_res,Error} return infer_type_(term) end
+function infer_type_rec(term::TTop)::Union{Inf_res,Error} return infer_type_(term) end
 function infer_type_rec(term::TAnno)::Union{Inf_res,Error}
     tt = infer_type_rec(term.expr)
     return (tt isa Error) ? tt : infer_type_(term, tt)

@@ -15,7 +15,7 @@
 # What is the meaning of the "NTHG" function ????
 
 
-include("mylambda1.jl")
+include("mylambda1_dep.jl")
 
 
 abstract type Constraint end
@@ -43,7 +43,6 @@ Error = String
 SimpRes = Union{Array{Constraint},Error}
 
 pr(c::Constraint)::String = pr(c.t1) * "==" * pr(c.t2)
-just_pr(c::Constraint)::String = just_pr(c.t1) * "==" * just_pr(c.t2)
 
 
 #a join b  ==  a v b  ==  a<avb, b<avb  ==  a CAN BECOME a join b, b CAN BECOME a join b
@@ -129,7 +128,7 @@ function meetjoin_rec_unify_(t1::TSumTerm, t2::TSumTerm, do_meet)::Union{Error, 
     else
         res = meetjoin_rec_unify_(t1.data, t2.data, do_meet) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
         if res isa Error return res end
-        MeetJoin_rec_res(TSumTerm(t1.tag, res.res_type), res.cs)
+        MeetJoin_rec_res(TSumTerm(t1.tag, t1.tag_name, res.res_type), res.cs)
     end
 end
 function meetjoin_rec_unify_(t1::Term, t2::TSumTerm, do_meet)::Union{Error, MeetJoin_rec_res}
@@ -138,7 +137,7 @@ function meetjoin_rec_unify_(t1::Term, t2::TSumTerm, do_meet)::Union{Error, Meet
     else
         res = meetjoin_rec_unify_(t1, t2.data, do_meet) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
         if res isa Error return res end
-        MeetJoin_rec_res(TSumTerm(t2.tag, res.res_type), res.cs)
+        MeetJoin_rec_res(TSumTerm(t2.tag, t1.tag_name, res.res_type), res.cs)
     end
 end
 function meetjoin_rec_unify_(t1::TSumTerm, t2::Term, do_meet)::Union{Error, MeetJoin_rec_res}
@@ -147,7 +146,7 @@ function meetjoin_rec_unify_(t1::TSumTerm, t2::Term, do_meet)::Union{Error, Meet
     else
         res = meetjoin_rec_unify_(t1.data, t2, do_meet) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
         if res isa Error return res end
-        MeetJoin_rec_res(TSumTerm(t1.tag, res.res_type), res.cs)
+        MeetJoin_rec_res(TSumTerm(t1.tag, t1.tag_name, res.res_type), res.cs)
     end
 end
 
@@ -160,7 +159,7 @@ function meetjoin_rec_unify_(t1::Term, t2::Term, do_meet)::Union{Error, MeetJoin
     if t1 == t2 MeetJoin_rec_res(t1, Array{EqConstraint}([]))
     elseif t1 isa TLoc MeetJoin_rec_res(t1, Array{EqConstraint}([EqConstraint(t1, t2)]))
     elseif t2 isa TLoc MeetJoin_rec_res(t2, Array{EqConstraint}([EqConstraint(t2, t1)]))
-    else Error("Different: $(just_pr(t1)) is really different from $(just_pr(t2))")
+    else Error("Different: $(pr(t1)) is really different from $(pr(t2))")
     end
 end
 
@@ -244,7 +243,7 @@ end
 function imply_unify_(t1::Term, t2::Term)::SimpRes # base case
     if t1 == t2 Array{Constraint}([])
     elseif typeof(t1) === TLoc || typeof(t2) === TLoc Array{Constraint}([DirectConstraint(t1, t2)])
-    else Error("Different: $(just_pr(t1)) is really different from $(just_pr(t2))")
+    else Error("Different: $(pr(t1)) is really different from $(pr(t2))")
     end
 end
 
@@ -483,7 +482,7 @@ function infer_type_(term::TGlob)::Union{TTerm,Error}
     # ^ This is because TTerm's are Naked (no Forall) for some reason- BOY will this become a mess
     else return TTermEmpty(term.type) end
 end
-function infer_type_(term::TUnit)::Union{TTerm,Error} return TTermEmpty(TTop()) end
+function infer_type_(term::TTop)::Union{TTerm,Error} return TTermEmpty(TTop()) end
 function infer_type_(term::TAnno, t_computed::TTerm)::Union{TTerm,Error}
     substs = robinsonUnify(t_computed.t_out, term.type, mode=imply_)
     if substs isa Error return substs
@@ -606,7 +605,7 @@ end
 # Silly categorical-algebra-ish recursive wrapup:
 function infer_type_rec(term::TLoc)::Union{TTerm,Error} return infer_type_(term) end
 function infer_type_rec(term::TGlob)::Union{TTerm,Error} return infer_type_(term) end
-function infer_type_rec(term::TUnit)::Union{TTerm,Error} return infer_type_(term) end
+function infer_type_rec(term::TTop)::Union{TTerm,Error} return infer_type_(term) end
 function infer_type_rec(term::TAnno)::Union{TTerm,Error}
     tt = infer_type_rec(term.expr)
     return (tt isa Error) ? tt : infer_type_(term, tt)
