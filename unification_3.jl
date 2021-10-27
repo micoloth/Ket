@@ -316,10 +316,10 @@ function share_ctx_tlocs_names(t1::TForall, t2::TForall, t1arity::Index, t2arity
     s2 = TProd([TLoc(i) for i in (t1arity + 1):(t1arity + t2arity)])
     TApp([s1, t1]), TApp([s2, t2])
 end
-function share_ctx_tlocs_names_and_return(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index)
+function share_ctx_tlocs_names_get_substs(t1arity::Index, t2arity::Index)
     s1 = TProd([TLoc(i) for i in 1:t1arity])
     s2 = TProd([TLoc(i) for i in (t1arity + 1):(t1arity + t2arity)])
-    s1, s2, TApp([s1, t1]), TApp([s2, t2])
+    s1, s2
 end
 
 struct ItsLiterallyAlreadyOk end
@@ -334,7 +334,7 @@ function get_first_pair_of_matching_indices(v::Array{Index})
 end
 function get_loc_loc_constraint(v)
     for i in 1:length(v)
-        if v[i].t2 isa TLoc return i end
+        if (v[i].t1 isa TLoc && v[i].t2 isa TLoc) return i end
     end
     nothing
 end
@@ -468,42 +468,26 @@ robinsonUnify(t1::Type_, t2::Type_; unify_tlocs_ctx::Bool = true, mode::Unify_mo
 
 
 
-
-
 # Type inference
 
-struct Inf_res
-    # IDEA: you can ALWAYS turn this into a TTerm !
-    # Other idea: this is always BARE, ie with NO Forall around. This is because it should be around BOTHthe args and the res!
-    arg_types::Array{Type_} # IDEA: you can always turn this into a TProd
-    res_type::Type_
-end
-pr(i::Inf_res) = "Given [$(join(i.arg_types .|>pr, ", "))], get $(i.res_type|>pr)"
-Inf_res(res_type::Type_) = Inf_res([], res_type)
-Base.:(==)(a::Inf_res, b::Inf_res) = Base.:(==)(a.arg_types, b.arg_types) && Base.:(==)(a.res_type, b.res_type)
-ass_reduc(ir::Inf_res, t::TProd ...) = Inf_res(ass_reduc(TProd(ir.arg_types), t...).data, ass_reduc(ir.res_type, t...))
-arity(ir::Inf_res) = max(
-    (length(ir.arg_types) > 0) ? (ir.arg_types .|> arity |> maximum) : 0, # Yee! Dynamic typing!!
-    ir.res_type |> arity)
-pad_elocs(elocs::Array{Type_}, max_t_arity::Int, max_length::Int)::Array{Type_} = vcat(elocs, [TLoc(i + max_t_arity) for i in 1:(max_length - length(elocs))])
+# IMPORTANT: I'm using TTerm's for carrying around contexts, but PLEASE make sure it's always TTerm OF A TPROD...
 
-function infer_type_(term::ELoc)::Union{Inf_res,Error}
-    return Inf_res(
-        Array{Type_}([TLoc(i) for i in 1:term.n]),
-        # TForall(TLoc(term.n))
-        TLoc(term.n)
-    )
+pr_ctx(i::TTerm) = "Given [$(join(i.t_in.data .|>pr, ", "))], get $(i.t_out|>pr)"
+TTermEmpty(res_type::Type_) = TTerm(TProd([]), res_type)
+
+function infer_type_(term::ELoc)::Union{TTerm,Error}
+    return TTerm(TProd([TLoc(i) for i in 1:term.n]), TLoc(term.n))  # TForall(TLoc(term.n)) was an idea i tried
 end
-function infer_type_(term::EGlob)::Union{Inf_res,Error}
-    if term.type isa TForall return Inf_res(term.type.body)
-    # ^ This is because Inf_res's are Naked (no Forall) for some reason- BOY will this become a mess
-    else return Inf_res(term.type) end
+function infer_type_(term::EGlob)::Union{TTerm,Error}
+    if term.type isa TForall return TTermEmpty(term.type.body)
+    # ^ This is because TTerm's are Naked (no Forall) for some reason- BOY will this become a mess
+    else return TTermEmpty(term.type) end
 end
-function infer_type_(term::EUnit)::Union{Inf_res,Error} return Inf_res(TTop()) end
-function infer_type_(term::EAnno, t_computed::Inf_res)::Union{Inf_res,Error}
-    substs = robinsonUnify(t_computed.res_type, term.type, mode=imply_)
+function infer_type_(term::EUnit)::Union{TTerm,Error} return TTermEmpty(TTop()) end
+function infer_type_(term::EAnno, t_computed::TTerm)::Union{TTerm,Error}
+    substs = robinsonUnify(t_computed.t_out, term.type, mode=imply_)
     if substs isa Error return substs
-    elseif substs isa ItsLiterallyAlreadyOk return Inf_res(term.type)
+    elseif substs isa ItsLiterallyAlreadyOk return TTerm(t_computed.t_in, term.type)
     end
     s1, s2 = substs
     if term.type isa TForall
@@ -511,16 +495,16 @@ function infer_type_(term::EAnno, t_computed::Inf_res)::Union{Inf_res,Error}
     else
         term_type = term.type
     end
-    if t_computed.arg_types |> length == 0 # HOPEFULLY this is a Type, NOT a body
-        return Inf_res(ass_reduc(term_type, s2))
+    if t_computed.t_in.data |> length == 0 # HOPEFULLY this is a Type, NOT a body
+        return TTermEmpty(ass_reduc(term_type, s2))
     else
-        args = ass_reduc(TProd(t_computed.arg_types), s1).data
+        args = ass_reduc(t_computed.t_in, s1)
         tt = ass_reduc(term_type, s2)
-        return Inf_res(args, tt)
+        return TTerm(args, tt)
     end
 end
 
-function infer_type_(term::EProd, ts_computed::Array{Inf_res})::Union{Inf_res,Error}
+function infer_type_(term::EProd, ts_computed::Array{TTerm})::Union{TTerm,Error}
     # IDEA: This checking that all args are the same, really belongs to the DIAGONAL FUNCTOR of terms,
     # but this is a hodgepodge, so that's fine.
     # @assert length(term.data) == length(ts_computed) "$(length(term.data)) != $(length(ts_computed)) in $(term.data) != $(ts_computed)"
@@ -528,121 +512,121 @@ function infer_type_(term::EProd, ts_computed::Array{Inf_res})::Union{Inf_res,Er
 
     # IDEA: if max_eargs_length == 0, you STILL have to UNIFY the TLocs, which is currenty done by
     # JUST RUNNING robinsonUnify on the Empty prods, and using that behaviour.
-    unified_RES_types = Array{Type_}([])
-    last_one = pop!(ts_computed)
-    for ir in ts_computed
-        ira, loa = ir |> arity, last_one |> arity
-        s1, s2, ir_argt, last_one_argt = share_ctx_tlocs_names_and_return(TForall(TProd(ir.arg_types)), TForall(TProd(last_one.arg_types)), ira, loa)
-        TApp([s1, t1]), TApp([s2, t2])
-        substs =  robinsonUnify(
-            TForall(ir_argt), TForall(last_one_argt), ira+loa, ira+loa;
+    unified_RES_types::Array{Type_} = Array{Type_}([ts_computed[1].t_out])
+    args, full_arity = ts_computed[1].t_in, ts_computed[1] |> arity
+    for t in ts_computed[2:end]
+        s1, s2 = share_ctx_tlocs_names_get_substs(full_arity, t |> arity)
+        args, t = ass_reduc(args, s1), ass_reduc(t, s2)
+        unified_RES_types = unified_RES_types .|> (x -> ass_reduc(x, s1))
+        full_arity = max(s1|>arity, s2|>arity)
+        res = robinsonUnify(
+            TForall(args), TForall(t.t_in), full_arity, full_arity;
             unify_tlocs_ctx=false, mode=meet_)
-        if substs isa Error
-            return Error("ELocs typed $(ir.arg_types .|> pr) cannot be unified into ELocs typed $(last_one.arg_types .|> pr), with error '$(substs)'")
-            continue
-        end
-        if substs isa ItsLiterallyAlreadyOk
-            s1s, s2s = [s1], [s2]
+        if res isa Error
+            return Error("ELocs typed $(t.arg_types .|> pr) cannot be unified into ELocs typed $(args.arg_types .|> pr), with error '$(res)'")
+        elseif res isa ItsLiterallyAlreadyOk
+            push!(unified_RES_types, t.t_out)
+            full_arity = max(s1|>arity, s2|>arity)
         else
-            s1s, s2s = [s1, substs[1]], [s2, substs[2]]
+            s1, s2, meeted = res
+            args = meeted
+            unified_RES_types = unified_RES_types .|> (x -> ass_reduc(x, s1)) # if they BECAME EQUAL to the stuff "args" comes from, this should work.. No?
+            push!(unified_RES_types, ass_reduc(t.t_out, s2))
+            full_arity = max(s1|>arity, s2|>arity) # god i HOPE this makes sense.....
         end
-        last_one = ass_reduc(last_one, s2s...)
-        unified_RES_types::Array{Type_} = unified_RES_types .|> (x -> ass_reduc(x, s2)) # if they BECAME EQUAL to last_one, this should work
-        push!(unified_RES_types, ass_reduc(ir_res_type, s1s...))
     end
-
-    push!(unified_RES_types, last_one.res_type)
-    return Inf_res(last_one.arg_types, TProd(unified_RES_types))
+    return TTerm(args, TProd(unified_RES_types))
 end
 
-function infer_type_(term::EAbs, t_computed::Inf_res)::Union{Inf_res,Error}
-    return Inf_res(Array{Type_}([]), TTerm(TProd(t_computed.arg_types), t_computed.res_type))
+function infer_type_(term::EAbs, t_computed::TTerm)::Union{TTerm,Error}
+    return TTerm(TProd([]), t_computed)
 end
-function infer_type_(term::ESumTerm, t_computed::Inf_res)::Union{Inf_res,Error}
+function infer_type_(term::ESumTerm, t_computed::TTerm)::Union{TTerm,Error}
     arT, tag = t_computed |> arity, term.tag
-    types = vcat([TLoc(n) for n in (arT + 1):(arT + tag - 1)], [t_computed.res_type])
-    return Inf_res(t_computed.arg_types, TForall(TSum(types)))
+    types = vcat([TLoc(n) for n in (arT + 1):(arT + tag - 1)], [t_computed.t_out])
+    return TTerm(t_computed.t_in, TForall(TSum(types)))
 end
-function infer_type_(term::EBranches, t_computed::Inf_res)::Union{Inf_res,Error}
+function infer_type_(term::EBranches, t_computed::TTerm)::Union{TTerm,Error}
     arT, tag = t_computed |> arity, term.tag
-    types = vcat([TLoc(n) for n in (arT + 1):(arT + tag - 1)], [t_computed.res_type])
-    return Inf_res(t_computed.arg_types, TForall(TSum(types)))
+    types = vcat([TLoc(n) for n in (arT + 1):(arT + tag - 1)], [t_computed.t_out])
+    return TTerm(t_computed.t_in, TForall(TSum(types)))
 end
 
-function infer_type_(term::EApp, ts_computed::Array{Inf_res})::Union{Inf_res,Error}
+function infer_type_(term::EApp, ts_computed::Array{TTerm})::Union{TTerm,Error}
     # First, fix TLoc's by SQUASHING THEM TO BE TTERMS.
-    # Idea: - EAbs come as TTErms (Inf_res with NO dependencies)  - ELocs come as InfRes WITH the dependency  - NONE of the inf_res have a Forall around cuz it's how it is in this mess
-    ts_computed_2 = Array{Inf_res}([ts_computed[1]])
+    # Idea: - EAbs come as TTErms (TTerm with NO dependencies)  - ELocs come as InfRes WITH the dependency  - NONE of the TTerm have a Forall around cuz it's how it is in this mess
+    ts_computed_2 = Array{TTerm}([ts_computed[1]])
     for t in ts_computed[2:end]
         fake_tterm = TForall(TTerm(TLoc(1), TLoc(2)))
-        tterm_subst = robinsonUnify(t.res_type, fake_tterm, t |> arity, fake_tterm.body |> arity; mode=imply_)
+        tterm_subst = robinsonUnify(t.t_out, fake_tterm, t |> arity, fake_tterm.body |> arity; mode=imply_)
         if tterm_subst isa Error return Error("Calling a non-function: $(t)")
         elseif tterm_subst isa ItsLiterallyAlreadyOk push!(ts_computed_2, t)
-        else push!(ts_computed_2, ass_reduc(t, tterm_subst[1]))
+        else push!(ts_computed_2, ass_reduc(t, tterm_subst[1])) # t.t_out SHOULD be nothing else but a TTerm... RIGTH?
         end
     end
     # ^ Each of these still has ITS OWN TLoc's
 
     # Second, Unify the context of the TLocs:
-    prod_w_unified_args = infer_type_(EProd([]), ts_computed_2)
+    all_w_unified_args = infer_type_(EProd([]), ts_computed_2)
     # ^ REUSING the TProd inference, HACKING the fact that Term is NOT used
-    full_arity = prod_w_unified_args |> arity
+    # What comes out is a: TTerm(TProd([...]), TProd(([TTerm(), ...])))
+    full_arity = all_w_unified_args |> arity
     # ^Can i compute this in some smarter way?  # Dunno !
-    ts_computed_res, args = Array{Type_}(prod_w_unified_args.res_type.data), TProd(prod_w_unified_args.arg_types)
-    # ^ Switcharoo, TProd becomes array and array becomes TProd.. What a mess
+    args, tterms = all_w_unified_args.t_in, all_w_unified_args.t_out.data
+    # ^ ts_computed_out becomes array and args remains TProd.. What a mess
 
     # Third, actually unify all in/outs:
-    prev_out = ts_computed_res[1] # TODO fix when app is not a mess anymore
-    for i in 2:length(ts_computed_res)
-        next_in = ts_computed_res[i].t_in # YES this always exists now
+    prev_out = tterms[1] # TODO fix when app is not a mess anymore
+    for i in 2:length(tterms)
+        next_in = tterms[i].t_in # YES this always exists now
         substs =  robinsonUnify(
-            TForall(prev_out), TForall(next_in), full_arity, full_arity; unify_tlocs_ctx=false, mode=join_)
+            TForall(prev_out), TForall(next_in), full_arity, full_arity; unify_tlocs_ctx=false, mode=imply_)
         # TODO: i DONT LIKE these Foralls, it's WRONG, but, it's the only way of accessing unify_tlocs_ctx atm
         if substs isa Error
             return Error("Mismatched app: get out type $(prev_out |> pr) but required type $(next_in |> pr), with error '$(substs)'")
         elseif substs isa ItsLiterallyAlreadyOk
-            prev_out = ts_computed_res[i].t_out
+            prev_out = tterms[i].t_out
         else
             (s1, s2) = substs
             # ^ Wait.. Are you telling me, if unify_tlocs_ctx=false, s1 and s2 are ALWAYS the same ???  # # Man, this is a crazy world..
-            ts_computed_res = Array{Type_}(ts_computed_res .|> (x -> ass_reduc(x, s1)))
-            # ^ the LENGTH of ts_computed_res DOES NOT CHANGE HERE
+            tterms = ass_reduc(TProd(tterms), s1).data
+            # ^ the LENGTH of tterms DOES NOT CHANGE HERE
             # ^ Also Maybe you can SKIP updating all of them but who cares
             args = ass_reduc(args, s1) # Keep track of the Arg types, too
             full_arity = s1 |> arity
-            prev_out = ts_computed_res[i].t_out
+            prev_out = tterms[i].t_out
         end
     end
-    return Inf_res(args.data, ts_computed_res[end].t_out)
+    return TTerm(args, tterms[end].t_out)
     # Returns the OUTPUT type instead of the composed TTerm type cuz this is a mess
 end
 
 
 
 # Silly categorical-algebra-ish recursive wrapup:
-function infer_type_rec(term::ELoc)::Union{Inf_res,Error} return infer_type_(term) end
-function infer_type_rec(term::EGlob)::Union{Inf_res,Error} return infer_type_(term) end
-function infer_type_rec(term::EUnit)::Union{Inf_res,Error} return infer_type_(term) end
-function infer_type_rec(term::EAnno)::Union{Inf_res,Error}
+function infer_type_rec(term::ELoc)::Union{TTerm,Error} return infer_type_(term) end
+function infer_type_rec(term::EGlob)::Union{TTerm,Error} return infer_type_(term) end
+function infer_type_rec(term::EUnit)::Union{TTerm,Error} return infer_type_(term) end
+function infer_type_rec(term::EAnno)::Union{TTerm,Error}
     tt = infer_type_rec(term.expr)
     return (tt isa Error) ? tt : infer_type_(term, tt)
 end
-function infer_type_rec(term::EAbs)::Union{Inf_res,Error} tt = infer_type_rec(term.body); return (tt isa Error) ? tt : infer_type_(term, tt) end
-function infer_type_rec(term::EProd)::Union{Inf_res,Error}
-    tts::Array{Union{Inf_res,Error} } = infer_type_rec.(term.data)
+function infer_type_rec(term::EAbs)::Union{TTerm,Error} tt = infer_type_rec(term.body); return (tt isa Error) ? tt : infer_type_(term, tt) end
+function infer_type_rec(term::EProd)::Union{TTerm,Error}
+    tts::Array{Union{TTerm,Error} } = infer_type_rec.(term.data)
     for tt in tts if tt isa Error return tt end end
-    return infer_type_(term, Array{Inf_res}(tts))
+    return infer_type_(term, Array{TTerm}(tts))
 end
-function infer_type_rec(term::ESumTerm)::Union{Inf_res,Error} tt = infer_type_rec(term.data); return (tt isa Error) ? tt : infer_type_(term, tt) end
-function infer_type_rec(term::EBranches)::Union{Inf_res,Error}
+function infer_type_rec(term::ESumTerm)::Union{TTerm,Error} tt = infer_type_rec(term.data); return (tt isa Error) ? tt : infer_type_(term, tt) end
+function infer_type_rec(term::EBranches)::Union{TTerm,Error}
     tts = infer_type_rec.(term.ops_chances)
     for tt in tts if tt isa Error return tt end end
-    return infer_type_(term, Array{Inf_res}(tts))
+    return infer_type_(term, Array{TTerm}(tts))
 end
-function infer_type_rec(term::EApp)::Union{Inf_res,Error}
-    tts::Array{Union{Inf_res,Error}} = infer_type_rec.(term.ops_dot_ordered)
+function infer_type_rec(term::EApp)::Union{TTerm,Error}
+    tts::Array{Union{TTerm,Error}} = infer_type_rec.(term.ops_dot_ordered)
     for tt in tts if tt isa Error return tt end end
-    return infer_type_(term, Array{Inf_res}(tts))
+    return infer_type_(term, Array{TTerm}(tts))
 end
 
 
