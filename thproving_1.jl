@@ -20,10 +20,10 @@ pr_ty_red(e) = (r = e |> infer_type_rec; (r isa Error ? r : r |> (x->x.res_type)
 
 
 e1T = TSumTerm("e1", TProd([]))
-ivT = TForall(TSumTerm("iv", TProd([TLoc(1)])))
-opT = TForall(TSumTerm("op", TProd([TLoc(1), TLoc(2)])))
+ivT = TAbs(TSumTerm("iv", TProd([TLoc(1)])))
+opT = TAbs(TSumTerm("op", TProd([TLoc(1), TLoc(2)])))
 # ^ Important note: What i'm doing here, is SHAMELESSLY EXPLOITING the fact that Type_ is ALREADY recursive (So very much not consistent, im sure?)
-eqT = TForall(TSumTerm("EQ", TProd([TLoc(1), TLoc(2)]))) # This is WRONG, cuz you can say e.g. eq(eq(_,_), eq(_,_)), but this can WAIT.
+eqT = TAbs(TSumTerm("EQ", TProd([TLoc(1), TLoc(2)]))) # This is WRONG, cuz you can say e.g. eq(eq(_,_), eq(_,_)), but this can WAIT.
 e1() = e1T
 iv(e::Type_) = TApp([TProd([e]), ivT])
 op(e1::Type_, e2::Type_) = TApp([TProd([e1, e2]), opT])
@@ -38,7 +38,7 @@ eqE(e1::Expr, e2::Expr) = EAnno(EProd([e1, e2]), eqT)
 
 # TESTS/ examples:
 ee = op(iv(e1()), e1())
-TForall(op(TLoc(2), TLoc(3))) |> reduc
+TAbs(op(TLoc(2), TLoc(3))) |> reduc
 EAnno(EProd([e1E()]), iv(e1())) |> pr_ty
 ivE(e1E()) |> pr_ty
 opE(ivE(e1E()), e1E()) |> pr_ty
@@ -60,8 +60,8 @@ invsx |> pr
 invsx |> pr_ty
 invsx |> pr_ty_red
 
-nuldx = EAnno(EAbs(ELoc(1)), TForall(TTerm(op(TLoc(1), e1()), TLoc(1))))
-nulsx = EAnno(EAbs(ELoc(2)), TForall(TTerm(op(e1(), TLoc(1)), TLoc(1))))
+nuldx = EAnno(EAbs(ELoc(1)), TAbs(TTerm(op(TLoc(1), e1()), TLoc(1))))
+nulsx = EAnno(EAbs(ELoc(2)), TAbs(TTerm(op(e1(), TLoc(1)), TLoc(1))))
 nuldx |> pr_ty
 nulsx |> pr_ty
 
@@ -69,7 +69,7 @@ nulsx |> pr_ty
 proj1_1, proj2_1 = EApp([ELoc(1), EAbs(ELoc(1))]), EApp([ELoc(1), EAbs(ELoc(2))])
 assdx = EAnno(
     EAbs(opE(proj1_1, opE(proj2_1, ELoc(2)))),
-    TForall(TTerm(op(op(TLoc(1), TLoc(2)), TLoc(3)), op(TLoc(1), op(TLoc(2), TLoc(3))))))
+    TAbs(TTerm(op(op(TLoc(1), TLoc(2)), TLoc(3)), op(TLoc(1), op(TLoc(2), TLoc(3))))))
 
 e = infer_type_rec(assdx)
 # What's the problem here?

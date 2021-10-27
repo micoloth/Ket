@@ -114,7 +114,7 @@ function simplify_(t1::TProd, t2::TProd)::SimpRes
     # Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(args1.data, args2.data)])
 end
 
-function simplify_(t1::TForall, t2::TForall)::SimpRes
+function simplify_(t1::TAbs, t2::TAbs)::SimpRes
     println("Simplyfing two Foralls:")
     # FOR NOW, these will be REALLY PICKY
     if t1 == t2
@@ -200,7 +200,7 @@ usesLocs(t::TApp)::Array{Index} = unique(vcat((t.ops_dot_ordered .|> usesLocs)..
 usesLocs(t::TProd)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
 usesLocs(t::TSum)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
 usesLocs(t::TSumTerm)::Array{Index} = t.data |> usesLocs
-usesLocs(t::TForall)::Array{Index} = Array{Index}([])
+usesLocs(t::TAbs)::Array{Index} = Array{Index}([])
 usesLocs(t::TTerm)::Array{Index} = unique(vcat(t.t_in |> usesLocs, t.t_out |> usesLocs))
 function check_not_recursive(tloc::TLoc, tt::Type_)::Bool
     for v in usesLocs(tt)
@@ -209,8 +209,8 @@ function check_not_recursive(tloc::TLoc, tt::Type_)::Bool
     return true
 end
 
-get_reduc_subst(t::Array{TProd}) = TApp(vcat([t[end]], t[end - 1:-1:1] .|> (x -> TForall(x))))
-get_reduc_subst(t::Array{Type_}) = TApp(vcat([t[end]], t[end - 1:-1:1] .|> (x -> TForall(x))))
+get_reduc_subst(t::Array{TProd}) = TApp(vcat([t[end]], t[end - 1:-1:1] .|> (x -> TAbs(x))))
+get_reduc_subst(t::Array{Type_}) = TApp(vcat([t[end]], t[end - 1:-1:1] .|> (x -> TAbs(x))))
 # IMPORTANT: ALL EXCEPT (potentially) the >FIRST< should be TPRODS !!!!!
 
 # ASSOCIATIVE OPERATION to compose the above:
@@ -234,12 +234,12 @@ function get_subst_prod(tloc::TLoc, tt::Type_, current_arity::Int)::TProd
     TProd(prod)
 end
 
-function share_ctx_tlocs_names(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index)
+function share_ctx_tlocs_names(t1::TAbs, t2::TAbs, t1arity::Index, t2arity::Index)
     s1 = TProd([TLoc(i) for i in 1:t1arity])
     s2 = TProd([TLoc(i) for i in (t1arity + 1):(t1arity + t2arity)])
     TApp([s1, t1]), TApp([s2, t2])
 end
-function share_ctx_tlocs_names_and_return(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index)
+function share_ctx_tlocs_names_and_return(t1::TAbs, t2::TAbs, t1arity::Index, t2arity::Index)
     s1 = TProd([TLoc(i) for i in 1:t1arity])
     s2 = TProd([TLoc(i) for i in (t1arity + 1):(t1arity + t2arity)])
     s1, s2, TApp([s1, t1]), TApp([s2, t2])
@@ -247,7 +247,7 @@ end
 
 struct ItsLiterallyAlreadyOk end
 
-function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index; unify_tlocs_ctx::Bool = true, fail_if_prod_should_be_extended=true)::Union{Tuple{TProd,TProd},Error, ItsLiterallyAlreadyOk}
+function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Index, t2arity::Index; unify_tlocs_ctx::Bool = true, fail_if_prod_should_be_extended=true)::Union{Tuple{TProd,TProd},Error, ItsLiterallyAlreadyOk}
     # I maybe i can improve this a bit, not now tho:
 
     current_total_subst =  Array{TProd}([]) # SMART_REDUCED VERSION # (Can be a single [TProd] or the whole list)
@@ -310,22 +310,22 @@ function robinsonUnify(t1::TForall, t2::TForall, t1arity::Index, t2arity::Index;
 end
 
 # The following handles ALL THE CONFUSION ARISING FROM having or not having the Forall() at random.
-robinsonUnify(t1::TForall, t2::Type_, t1arity::Index, t2arity::Index) = robinsonUnify(t1, TForall(t2), t1arity, t2arity)
-robinsonUnify(t1::Type_, t2::TForall, t1arity::Index, t2arity::Index) = robinsonUnify(TForall(t1), t2, t1arity, t2arity)
+robinsonUnify(t1::TAbs, t2::Type_, t1arity::Index, t2arity::Index) = robinsonUnify(t1, TAbs(t2), t1arity, t2arity)
+robinsonUnify(t1::Type_, t2::TAbs, t1arity::Index, t2arity::Index) = robinsonUnify(TAbs(t1), t2, t1arity, t2arity)
 function robinsonUnify(t1::Type_, t2::Type_, t1arity::Index, t2arity::Index)
     if (t1arity == 0) && (t2arity == 0)
         return (t1 == t2) ? (TProd([]), TProd([])) : Error(" Not unifiable: $(t1) != $(t2)")
     else
-        return robinsonUnify(TForall(t1), TForall(t2), t1arity, t2arity)
+        return robinsonUnify(TAbs(t1), TAbs(t2), t1arity, t2arity)
     end
 end
 
 
 # All cases WITHOUT precomputed tarities:
-robinsonUnify(t1::TForall, t2::TForall) = robinsonUnify(t1, t2, t1.body |> arity, t2.body |> arity)
-robinsonUnify(t1::TForall, t2::Type_) = robinsonUnify(t1, TForall(t2), t1.body |> arity, t2 |> arity)
-robinsonUnify(t1::Type_, t2::TForall) = robinsonUnify(TForall(t1), t2, t1 |> arity, t2.body |> arity)
-robinsonUnify(t1::Type_, t2::Type_) = robinsonUnify(TForall(t1), TForall(t2), t1 |> arity, t2 |> arity)
+robinsonUnify(t1::TAbs, t2::TAbs) = robinsonUnify(t1, t2, t1.body |> arity, t2.body |> arity)
+robinsonUnify(t1::TAbs, t2::Type_) = robinsonUnify(t1, TAbs(t2), t1.body |> arity, t2 |> arity)
+robinsonUnify(t1::Type_, t2::TAbs) = robinsonUnify(TAbs(t1), t2, t1 |> arity, t2.body |> arity)
+robinsonUnify(t1::Type_, t2::Type_) = robinsonUnify(TAbs(t1), TAbs(t2), t1 |> arity, t2 |> arity)
 
 
 struct Inf_res
@@ -345,13 +345,13 @@ pad_elocs(elocs::Array{Type_}, max_t_arity::Int, max_length::Int)::Array{Type_} 
 
 function infer_type_(term::ELoc)::Union{Inf_res,Error}
     return Inf_res(
-        Array{Type_}([TLoc(i) for i in 1:term.n]),
-        # TForall(TLoc(term.n))
-TLoc(term.n)
+        Array{Type_}([TLoc(i) for i in 1:term.var]),
+        # TAbs(TLoc(term.var))
+TLoc(term.var)
     )
 end
 function infer_type_(term::EGlob)::Union{Inf_res,Error}
-    if term.type isa TForall return Inf_res(term.type.body)
+    if term.type isa TAbs return Inf_res(term.type.body)
     # ^ This is because Inf_res's are Naked (no Forall) for some reason- BOY will this become a mess
     else return Inf_res(term.type) end
 end
@@ -362,7 +362,7 @@ function infer_type_(term::EAnno, t_computed::Inf_res)::Union{Inf_res,Error}
     elseif substs isa ItsLiterallyAlreadyOk return Inf_res(term.type)
     end
     s1, s2 = substs
-    if term.type isa TForall
+    if term.type isa TAbs
         term_type = term.type.body # Oh fuck what am i doing
     else
         term_type = term.type
@@ -425,9 +425,9 @@ function infer_type_(term::EProd, ts_computed::Array{Inf_res})::Union{Inf_res,Er
     last_one = pop!(ts_computed)
     for ir in ts_computed
         ira, loa = ir |> arity, last_one |> arity
-        s1, s2, ir_argt, last_one_argt = share_ctx_tlocs_names_and_return(TForall(TProd(ir.arg_types)), TForall(TProd(last_one.arg_types)), ira, loa)
+        s1, s2, ir_argt, last_one_argt = share_ctx_tlocs_names_and_return(TAbs(TProd(ir.arg_types)), TAbs(TProd(last_one.arg_types)), ira, loa)
         substs =  robinsonUnify(
-            TForall(ir_argt), TForall(last_one_argt), ira+loa, ira+loa;
+            TAbs(ir_argt), TAbs(last_one_argt), ira+loa, ira+loa;
             unify_tlocs_ctx=false, fail_if_prod_should_be_extended=false)
         if substs isa Error
             return Error("ELocs typed $(ir.arg_types .|> pr) cannot be unified into ELocs typed $(last_one.arg_types .|> pr), with error '$(substs)'")
@@ -453,12 +453,12 @@ end
 function infer_type_(term::ESumTerm, t_computed::Inf_res)::Union{Inf_res,Error}
     arT, tag = t_computed |> arity, term.tag
     types = vcat([TLoc(n) for n in (arT + 1):(arT + tag - 1)], [t_computed.res_type])
-    return Inf_res(t_computed.arg_types, TForall(TSum(types)))
+    return Inf_res(t_computed.arg_types, TAbs(TSum(types)))
 end
 function infer_type_(term::EBranches, t_computed::Inf_res)::Union{Inf_res,Error}
     arT, tag = t_computed |> arity, term.tag
     types = vcat([TLoc(n) for n in (arT + 1):(arT + tag - 1)], [t_computed.res_type])
-    return Inf_res(t_computed.arg_types, TForall(TSum(types)))
+    return Inf_res(t_computed.arg_types, TAbs(TSum(types)))
 end
 
 # function infer_type_(term::EBranches, ts_computed::Array{Inf_res})::Union{Inf_res, Error}
@@ -499,7 +499,7 @@ function infer_type_(term::EApp, ts_computed::Array{Inf_res})::Union{Inf_res,Err
     # Idea: - EAbs come as TTErms (Inf_res with NO dependencies)  - ELocs come as InfRes WITH the dependency  - NONE of the inf_res have a Forall around cuz it's how it is in this mess
     ts_computed_2 = Array{Inf_res}([ts_computed[1]])
     for t in ts_computed[2:end]
-        fake_tterm = TForall(TTerm(TLoc(1), TLoc(2)))
+        fake_tterm = TAbs(TTerm(TLoc(1), TLoc(2)))
         tterm_subst = robinsonUnify(t.res_type, fake_tterm, t |> arity, fake_tterm.body |> arity)
         if tterm_subst isa Error return Error("Calling a non-function: $(t)")
         elseif tterm_subst isa ItsLiterallyAlreadyOk push!(ts_computed_2, t)
@@ -521,7 +521,7 @@ function infer_type_(term::EApp, ts_computed::Array{Inf_res})::Union{Inf_res,Err
     for i in 2:length(ts_computed_res)
         next_in = ts_computed_res[i].t_in # YES this always exists now
         substs =  robinsonUnify(
-            TForall(prev_out), TForall(next_in), full_arity, full_arity; unify_tlocs_ctx=false)
+            TAbs(prev_out), TAbs(next_in), full_arity, full_arity; unify_tlocs_ctx=false)
         # TODO: i DONT LIKE these Foralls, it's WRONG, but, it's the only way of accessing unify_tlocs_ctx atm
         if substs isa Error
             return Error("Mismatched app: get out type $(prev_out |> pr) but required type $(next_in |> pr), with error '$(substs)'")
