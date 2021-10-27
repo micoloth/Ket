@@ -316,14 +316,14 @@ t1 = TTerm(TProd([TLoc(1), TGlob("B"), TLoc(2)]), TGlob("Z"))
 t2 = TTerm(TProd([TGlob("A"), TLoc(1)]), TGlob("Z"))
 @test robinsonUnify(t1, t2; mode=imply_) isa Error
 @test test_unify_meet(t1, t2)
-@test robinsonUnify(t1, t2; mode=join_)[3] == TTerm(TProd(Type_[TGlob("A"), TGlob("B"), TLoc(1)]), TGlob("Z"))
+@test robinsonUnify(t1, t2; mode=join_)[3] == TTerm(TProd(Term[TGlob("A"), TGlob("B"), TLoc(1)]), TGlob("Z"))
 
 t1 = TTerm(TProd([TLoc(1), TGlob("B")]), TGlob("Z"))
 t2 = TTerm(TProd([TGlob("A"), TLoc(1), TLoc(2)]), TGlob("Z"))
 s1, s2 = robinsonUnify(t1, t2; mode=imply_)
 ass_reduc(t1, s1) |> pr
 ass_reduc(t2, s2) |> pr
-@test ass_reduc(t2, s2) == TTerm(TProd(Type_[TGlob("A"), TGlob("B"), TLoc(1)]), TGlob("Z"))
+@test ass_reduc(t2, s2) == TTerm(TProd(Term[TGlob("A"), TGlob("B"), TLoc(1)]), TGlob("Z"))
 @test test_unify_meet(t1, t2)
 
 t1 = TTermAuto(TTerm(TProd([TLoc(1), TLoc(2)]), TGlob("Z")), TGlob("Z"))
@@ -344,7 +344,7 @@ t2 |> pr
 s1, s2 = robinsonUnify(t1, t2; mode=imply_)
 ass_reduc(t1, s1) |> pr
 ass_reduc(t2, s2) |> pr
-@test ass_reduc(t1, s1) == TTerm(TProd(Type_[TTerm(TProd(Type_[TGlob("A"), TLoc(1)]), TGlob("Z"))]), TGlob("Z"))
+@test ass_reduc(t1, s1) == TTerm(TProd(Term[TTerm(TProd(Term[TGlob("A"), TLoc(1)]), TGlob("Z"))]), TGlob("Z"))
 @test test_unify_meet(t1, t2)
 
 
@@ -354,11 +354,11 @@ t1 = TProd([TGlob("F"), TLoc(1), TLoc(1)])
 t2 = TProd([TLoc(1), TGlob("G")])
 # simplify(DirectConstraint(t1, t2))
 test_unify_imply(t1, t2) # Yeah it's false, it's fine tho
-@test robinsonUnify(t1, t2; mode=meet_)[3] == TProd(Type_[TGlob("F"), TGlob("G"), TGlob("G")])
+@test robinsonUnify(t1, t2; mode=meet_)[3] == TProd(Term[TGlob("F"), TGlob("G"), TGlob("G")])
 
 t1 = TProd([TGlob("F"), TLoc(1), TLoc(1)])
 t2 = TProd([TLoc(1), TGlob("G")])
-@test robinsonUnify(t1, t2)[3] == TProd(Type_[TGlob("F"), TGlob("G")])
+@test robinsonUnify(t1, t2)[3] == TProd(Term[TGlob("F"), TGlob("G")])
 # # ^ SILENT DROPPING
 
 t1 = TProd([TLoc(1), TGlob("G")])
@@ -467,10 +467,10 @@ e = EAnno(ELoc(2), TGlob("A"))
 
 
 e = EProd([ELoc(2), ELoc(2)])
-@test infer_type_rec(e) == TTerm(TProd([TLoc(1), TLoc(2)]), TProd(Type_[TLoc(2), TLoc(2)]))
+@test infer_type_rec(e) == TTerm(TProd([TLoc(1), TLoc(2)]), TProd(Term[TLoc(2), TLoc(2)]))
 
 e = EProd([ELoc(2), EAnno(ELoc(2), TLoc(1))])
-@test infer_type_rec(e) == TTerm(TProd([TLoc(1), TLoc(2)]), TProd(Type_[TLoc(2), TLoc(2)]))
+@test infer_type_rec(e) == TTerm(TProd([TLoc(1), TLoc(2)]), TProd(Term[TLoc(2), TLoc(2)]))
 
 e = EProd([EGlobAuto("t"), EAnno(ELoc(1), TLoc(1))])
 infer_type_rec(e)
@@ -486,32 +486,32 @@ e = EAnno(EGlob("f", tglob), tanno)
 tt = TTermAuto(TGlob("A"), TGlob("B"))
 e = EProd([EGlob("f", tt), EGlob("g", tt)])
 e|>pr
-@test infer_type_rec(e) == TTerm(TProd([]), TProd(Type_[TTermAuto(TGlob("A"), TGlob("B")), TTermAuto(TGlob("A"), TGlob("B"))]))
+@test infer_type_rec(e) == TTerm(TProd([]), TProd(Term[TTermAuto(TGlob("A"), TGlob("B")), TTermAuto(TGlob("A"), TGlob("B"))]))
 
 tt = TAbs(TTermAuto(TLoc(1), TGlob("B")))
 e = EProd([EGlob("f", tt), EGlob("g", tt)])
-@test infer_type_rec(e) == TTerm(TProd([]), TProd(Type_[TTerm(TProd(Type_[TLoc(1)]), TGlob("B")), TTerm(TProd(Type_[TLoc(2)]), TGlob("B"))]))
+@test infer_type_rec(e) == TTerm(TProd([]), TProd(Term[TTerm(TProd(Term[TLoc(1)]), TGlob("B")), TTerm(TProd(Term[TLoc(2)]), TGlob("B"))]))
 infer_type_rec(e).t_out |> pr # == "[T1->B x T2->B]" # T2, important! GOOD
-# TProd(Type_[TTerm(TProd(Type_[TLoc(1)]), TGlob("B")), TTerm(TProd(Type_[TLoc(2)]), TGlob("B"))]) |> pr
+# TProd(Term[TTerm(TProd(Term[TLoc(1)]), TGlob("B")), TTerm(TProd(Term[TLoc(2)]), TGlob("B"))]) |> pr
 
 
 
 # Broken because it's not clear the TAbs scope:
 # e = EProd([EAnno(ELoc(1), TLoc(3)), EAnno(ELoc(1), TLoc(2)), EGlob("a", TLoc(1))])
-# @test infer_type_rec(e) == TTerm(TProd([TLoc(6)]), TProd(Type_[TLoc(6), TLoc(6)]))
+# @test infer_type_rec(e) == TTerm(TProd([TLoc(6)]), TProd(Term[TLoc(6), TLoc(6)]))
 # e = EProd([EAnno(ELoc(1), TLoc(1)), EAnno(ELoc(1), TLoc(2)), EAnno(ELoc(2), TLoc(1))])
-# @test infer_type_rec(e) == TTerm(TProd([TLoc(6), TLoc(11)]), TProd(Type_[TLoc(6), TLoc(6), TLoc(11)]))
+# @test infer_type_rec(e) == TTerm(TProd([TLoc(6), TLoc(11)]), TProd(Term[TLoc(6), TLoc(6), TLoc(11)]))
 # e = EProd([EAnno(ELoc(1), TLoc(2)), EAnno(ELoc(1), TLoc(3)), EAnno(ELoc(1), TLoc(4))])
-# @test infer_type_rec(e) == TTerm(TProd([TLoc(7)]), TProd(Type_[TLoc(7), TLoc(7), TLoc(7)]))
+# @test infer_type_rec(e) == TTerm(TProd([TLoc(7)]), TProd(Term[TLoc(7), TLoc(7), TLoc(7)]))
 
 
 
 
 e = EAbs(EProd([ELoc(2), EAnno(ELoc(1), TGlob("T"))]))
-@test infer_type_rec(e) == TTerm(TProd([]), TTerm(TProd(Type_[TGlob("T"), TLoc(1)]), TProd(Type_[TLoc(1), TGlob("T")])))
+@test infer_type_rec(e) == TTerm(TProd([]), TTerm(TProd(Term[TGlob("T"), TLoc(1)]), TProd(Term[TLoc(1), TGlob("T")])))
 
 e = EAnno(EAbs(EGlob("b", TGlob("B"))), TTermAuto(TProd([TGlob("A")]),  TGlob("B")))
-@test infer_type_rec(e) == TTerm(TProd([]), TTerm(TProd(Type_[TProd(Type_[TGlob("A")])]), TGlob("B")))
+@test infer_type_rec(e) == TTerm(TProd([]), TTerm(TProd(Term[TProd(Term[TGlob("A")])]), TGlob("B")))
 
 
 tf = EAnno(EAbs(EGlob("b", TGlob("B"))), TTermAuto(TGlob("A"),  TGlob("B")))
@@ -529,7 +529,7 @@ ea = EProd([EAnno(ELoc(1), TGlob("A"))])
 ef1 = EGlob("f", TTermAuto(TLoc(1), TGlob("B")))
 e = EAbs(EApp([ea, ef1]))
 e |> pr
-@test infer_type_rec(e) == TTerm(TProd([]), TTerm(TProd(Type_[TGlob("A")]), TGlob("B")))
+@test infer_type_rec(e) == TTerm(TProd([]), TTerm(TProd(Term[TGlob("A")]), TGlob("B")))
 infer_type_rec(e).t_out |> pr
 
 ea = EAnno(ELoc(1), TGlob("A"))
@@ -537,14 +537,14 @@ ef1 = EGlob("f", TTerm(TLoc(1), TGlob("B")))
 e = EAbs(EApp([ea, ef1]))
 e |> pr
 infer_type_rec(e).t_out |> pr
-@test infer_type_rec(e) == TTerm(TProd([]), TTerm(TProd(Type_[TGlob("A")]), TGlob("B")))
+@test infer_type_rec(e) == TTerm(TProd([]), TTerm(TProd(Term[TGlob("A")]), TGlob("B")))
 
 ea = EProd([EAnno(ELoc(1), TGlob("A"))])
 ef1 = EGlob("f", TTermAuto(TLoc(1), TProd([TGlob("B1"), TGlob("B2")])))
 ef2 = EGlob("g", TTermAuto(TGlob("B1"), TLoc(1)))
 e = EAbs(EApp([ea, ef1, ef2]))
 e |> pr
-@test infer_type_rec(e) == TTerm(TProd(Type_[]), TTerm(TProd(Type_[TGlob("A")]), TLoc(1)))
+@test infer_type_rec(e) == TTerm(TProd(Term[]), TTerm(TProd(Term[TGlob("A")]), TLoc(1)))
 # ^ I mean, unfortunately it's Not wrong ... Even if i Really wish the TLoc's wre actually shared sometimes....
 infer_type_rec(e).t_out |> pr
 
@@ -553,7 +553,7 @@ ef1 = EGlob("f", TTermAuto(TLoc(1), TProd([TGlob("B1"), TGlob("B2")])))
 ef2 = EGlob("g", TTerm(TLoc(1), TLoc(1)))
 e = EAbs(EApp([ea, ef1, ef2]))
 e|>pr
-@test infer_type_rec(e) == TTerm(TProd(Type_[]), TTerm(TProd(Type_[TGlob("A")]), TProd(Type_[TGlob("B1"), TGlob("B2")])))
+@test infer_type_rec(e) == TTerm(TProd(Term[]), TTerm(TProd(Term[TGlob("A")]), TProd(Term[TGlob("B1"), TGlob("B2")])))
 infer_type_rec(e) |> pr_ctx
 
 e = EApp([ELoc(1), EAbs(ELoc(1))])
@@ -576,7 +576,7 @@ infer_type_rec(e) |> pr_ctx  # YES my boy... YESSSS :)
 SType |> pr
 S |> pr
 infer_type_rec(S) |> pr_ctx  # YES my boy... YES :)
-@test infer_type_rec(S) == TTerm(TProd(Type_[]), TTerm(TProd(Type_[TTerm(TProd(Type_[TLoc(1)]), TTerm(TProd(Type_[TLoc(2)]), TLoc(3))), TTerm(TProd(Type_[TLoc(1)]), TLoc(2)), TLoc(1)]), TLoc(3)))
+@test infer_type_rec(S) == TTerm(TProd(Term[]), TTerm(TProd(Term[TTerm(TProd(Term[TLoc(1)]), TTerm(TProd(Term[TLoc(2)]), TLoc(3))), TTerm(TProd(Term[TLoc(1)]), TLoc(2)), TLoc(1)]), TLoc(3)))
 
 
 

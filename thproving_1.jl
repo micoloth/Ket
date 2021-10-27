@@ -22,12 +22,12 @@ pr_ty_red(e) = (r = e |> infer_type_rec; (r isa Error ? r : r |> (x->x.res_type)
 e1T = TSumTerm("e1", TProd([]))
 ivT = TAbs(TSumTerm("iv", TProd([TLoc(1)])))
 opT = TAbs(TSumTerm("op", TProd([TLoc(1), TLoc(2)])))
-# ^ Important note: What i'm doing here, is SHAMELESSLY EXPLOITING the fact that Type_ is ALREADY recursive (So very much not consistent, im sure?)
+# ^ Important note: What i'm doing here, is SHAMELESSLY EXPLOITING the fact that Term is ALREADY recursive (So very much not consistent, im sure?)
 eqT = TAbs(TSumTerm("EQ", TProd([TLoc(1), TLoc(2)]))) # This is WRONG, cuz you can say e.g. eq(eq(_,_), eq(_,_)), but this can WAIT.
 e1() = e1T
-iv(e::Type_) = TApp([TProd([e]), ivT])
-op(e1::Type_, e2::Type_) = TApp([TProd([e1, e2]), opT])
-eq(e1::Type_, e2::Type_) = TApp([TProd([e1, e2]), eqT])
+iv(e::Term) = TApp([TProd([e]), ivT])
+op(e1::Term, e2::Term) = TApp([TProd([e1, e2]), opT])
+eq(e1::Term, e2::Term) = TApp([TProd([e1, e2]), eqT])
 
 
 # You want to be able to build Expressions out of this, too:

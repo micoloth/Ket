@@ -4,7 +4,7 @@ Id = String
 Error = String
 
 abstract type Expr end
-abstract type Type_ end
+abstract type Term end
 
 ########## Expres
 
@@ -23,7 +23,7 @@ abstract type Type_ end
 
 struct EGlob <: Expr
     var::Id
-    type::Type_ # Type_ ???
+    type::Term # Term ???
 end
 struct ELoc <: Expr var::Index end
 struct EUnit <: Expr end
@@ -75,7 +75,7 @@ struct EBranches <: Expr
 end
 struct EAnno <: Expr # ANNOTATION syntax
     expr::Expr
-    type::Type_ # Type_ ???
+    type::Term # Term ???
 end
 Base.:(==)(a::EProd, b::EProd) = Base.:(==)(a.data, b.data)
 
@@ -93,36 +93,36 @@ Base.:(==)(a::EProd, b::EProd) = Base.:(==)(a.data, b.data)
 
 # Remember: (a+b) x (c+d) == axc + axd + bxc + bxd
 
-# struct TUnit <: Type_ end
-struct TTop <: Type_ end
-struct TGlob <: Type_
+# struct TUnit <: Term end
+struct TTop <: Term end
+struct TGlob <: Term
     var::Id
 end
-struct TLoc <: Type_
+struct TLoc <: Term
     var::Index
 end
-struct TAbs <: Type_
-    body::Type_ # idea: this CAN contain (type level) local variables
+struct TAbs <: Term
+    body::Term # idea: this CAN contain (type level) local variables
 end
-struct TApp <: Type_ # idk why they woudn't have this
-    ops_dot_ordered::Array{Type_}
+struct TApp <: Term # idk why they woudn't have this
+    ops_dot_ordered::Array{Term}
     # Each one must compute to a TAbs
     # Each lambda must RETURN a TPROD, but really WE WILL BE EXTREMELY GENEROUS WITH THE "TYPECHECKING"
 end
-struct TTerm <: Type_
-    t_in::Type_  # Type of input, should be a TProd.
+struct TTerm <: Term
+    t_in::Term  # Type of input, should be a TProd.
     # NOTE: This^ Only breaks if it is a TGlob, OR a TSum i guess (unless it's a TSum of TProds, that's actually the reduced form?)
-    t_out::Type_  # type of the output
+    t_out::Term  # type of the output
 end
-struct TProd <: Type_
-    data::Array{Type_}
+struct TProd <: Term
+    data::Array{Term}
 end
-struct TSum <: Type_
-    data::Array{Type_}  # THIS IS A BIG PROBLEM. Thanks i hate it!
+struct TSum <: Term
+    data::Array{Term}  # THIS IS A BIG PROBLEM. Thanks i hate it!
 end
-struct TSumTerm <: Type_
+struct TSumTerm <: Term
     tag::String  # Here, for TYPES, the tag is a string ( for now)
-    data::Type_
+    data::Term
     # SEE what's happening?? NO other struct has 2 fields like this!! This because the optional thing here is DATA.
 end
 Base.:(==)(a::TGlob, b::TGlob) = Base.:(==)(a.var, b.var)
@@ -264,28 +264,28 @@ TTermAuto(tin, tout) = TTerm(TProd([tin]), tout)
 TAppAuto(tfun, targ) = TApp([TProd([targ]), tfun])
 
 
-subst(news::Array{Type_}, t::TGlob)::Type_= t
-subst(news::Array{Type_}, t::TLoc)::Type_ = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
-subst(news::Array{Type_}, t::TTop)::Type_ = t
-subst(news::Array{Type_}, t::TTerm)::Type_ = TTerm(subst(news, t.t_in), subst(news, t.t_out))
-subst(news::Array{Type_}, t::TAbs)::Type_ = t # TAbs(subst(news, t.body))
-subst(news::Array{Type_}, t::TProd)::Type_ = TProd(t.data .|> (x->subst(news, x)))
-subst(news::Array{Type_}, t::TSum)::Type_ = TSum(t.data .|> (x->subst(news, x)))
-subst(news::Array{Type_}, t::TApp)::Type_ = TApp(t.ops_dot_ordered .|> x->subst(news, x))
-subst(news::Array{Type_}, t::TSumTerm)::Type_ = TSumTerm(t.tag, subst(news, t.data))
+subst(news::Array{Term}, t::TGlob)::Term= t
+subst(news::Array{Term}, t::TLoc)::Term = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
+subst(news::Array{Term}, t::TTop)::Term = t
+subst(news::Array{Term}, t::TTerm)::Term = TTerm(subst(news, t.t_in), subst(news, t.t_out))
+subst(news::Array{Term}, t::TAbs)::Term = t # TAbs(subst(news, t.body))
+subst(news::Array{Term}, t::TProd)::Term = TProd(t.data .|> (x->subst(news, x)))
+subst(news::Array{Term}, t::TSum)::Term = TSum(t.data .|> (x->subst(news, x)))
+subst(news::Array{Term}, t::TApp)::Term = TApp(t.ops_dot_ordered .|> x->subst(news, x))
+subst(news::Array{Term}, t::TSumTerm)::Term = TSumTerm(t.tag, subst(news, t.data))
 
-reduc(t::TGlob)::Type_ = t
-reduc(t::TLoc)::Type_ = t
-reduc(t::TTop)::Type_ = t
-reduc(t::TTerm)::Type_ = TTerm(t.t_in |> reduc, t.t_out |> reduc)
-reduc(t::TAbs)::Type_ = TAbs(reduc(t.body))
-reduc(t::TApp)::Type_ = reduc(t.ops_dot_ordered .|> reduc) # EApp is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
-reduc(t::TProd)::Type_ = TProd(t.data .|> reduc)
-reduc(t::TSum)::Type_ = TSum(t.data .|> reduc)
-reduc(t::TSumTerm)::Type_ = TSumTerm(t.tag, t.data |> reduc)
-function reduc(ops::Array{Type_})
+reduc(t::TGlob)::Term = t
+reduc(t::TLoc)::Term = t
+reduc(t::TTop)::Term = t
+reduc(t::TTerm)::Term = TTerm(t.t_in |> reduc, t.t_out |> reduc)
+reduc(t::TAbs)::Term = TAbs(reduc(t.body))
+reduc(t::TApp)::Term = reduc(t.ops_dot_ordered .|> reduc) # EApp is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
+reduc(t::TProd)::Term = TProd(t.data .|> reduc)
+reduc(t::TSum)::Term = TSum(t.data .|> reduc)
+reduc(t::TSumTerm)::Term = TSumTerm(t.tag, t.data |> reduc)
+function reduc(ops::Array{Term})
     #println("> doing the ", typeof(func),  " ", typeof(arg), " thing")
-    if ops[1] isa TAbs ops[1] = reduc(Array{Type_}([TProd([]), ops[1]])) end # this is because i still havent decided between prods and 0-arg'd lambda's.
+    if ops[1] isa TAbs ops[1] = reduc(Array{Term}([TProd([]), ops[1]])) end # this is because i still havent decided between prods and 0-arg'd lambda's.
     #^ this MIGHT VERY WELL FAIL, idk
     while (length(ops) >= 2 && ops[1] isa TProd && ops[2] isa TAbs) ops = vcat([subst(ops[1].data, ops[2].body) |> reduc], ops[3:end]) end
     # TODO: make this into a more reasonable stack
@@ -338,8 +338,8 @@ function pr(x::TApp)::String
         x.ops_dot_ordered .|> pr |> x->join(x, ".") |> (x->"[Ap $(x)]")
     end
 end
-pr(xs::Array{Type_}) = xs .|> pr
-just_pr(x::Type_) = pr(x)
+pr(xs::Array{Term}) = xs .|> pr
+just_pr(x::Term) = pr(x)
 
 
 # NOT used by the above:
@@ -352,7 +352,7 @@ arity(base::Index, t::TAbs)::Index = base # Lam(arity(base, t.body))
 arity(base::Index, t::TProd)::Index = t.data .|> (x->arity(base, x)) |> (x->maximum(x, init=0))
 arity(base::Index, t::TSum)::Index = t.data .|> (x->arity(base, x)) |> (x->maximum(x, init=0))
 arity(base::Index, t::TSumTerm)::Index = arity(base, t.data)
-arity(t::Type_)::Index = arity(0, t)
+arity(t::Term)::Index = arity(0, t)
 
 
 EGlob("x", TGlob("A"))

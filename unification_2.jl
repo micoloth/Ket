@@ -74,12 +74,12 @@ include("mylambda1.jl")
 
 abstract type Constraint end
 struct DirectConstraint <: Constraint # (->)
-    t1::Type_
-    t2::Type_
+    t1::Term
+    t2::Term
 end
 struct ReverseConstraint <: Constraint# (Meaning <-)
-    t1::Type_
-    t2::Type_
+    t1::Term
+    t2::Term
 end
 Base.:(==)(a::DirectConstraint, b::DirectConstraint) = (a.t1 == b.t1) && (a.t2 == b.t2)
 Base.:(==)(a::ReverseConstraint, b::ReverseConstraint) = (a.t1 == b.t1) && (a.t2 == b.t2)
@@ -160,19 +160,19 @@ function simplify_(t1::TSumTerm, t2::TSumTerm)::SimpRes
         Array{Constraint}([DirectConstraint(t1.data, t2.data)])
     end
 end
-function simplify_(t1::Type_, t2::TSumTerm)::SimpRes
+function simplify_(t1::Term, t2::TSumTerm)::SimpRes
     # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
     if (t1 isa TLoc) Array{Constraint}([DirectConstraint(t1, t2)])
     else Array{Constraint}([DirectConstraint(t1, t2.data)])
     end
 end
-function simplify_(t1::TSumTerm, t2::Type_)::SimpRes
+function simplify_(t1::TSumTerm, t2::Term)::SimpRes
     # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
     if (t2 isa TLoc) Array{Constraint}([DirectConstraint(t1, t2)])
     else Array{Constraint}([DirectConstraint(t1.data, t2)])
     end
 end
-function simplify_(t1::Type_, t2::Type_)::SimpRes # base case
+function simplify_(t1::Term, t2::Term)::SimpRes # base case
     if t1 == t2 Array{Constraint}([])
     elseif typeof(t1) === TLoc || typeof(t2) === TLoc Array{Constraint}([DirectConstraint(t1, t2)])
     else Error("Different: $(just_pr(t1)) is really different from $(just_pr(t2))")
@@ -202,7 +202,7 @@ usesLocs(t::TSum)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
 usesLocs(t::TSumTerm)::Array{Index} = t.data |> usesLocs
 usesLocs(t::TAbs)::Array{Index} = Array{Index}([])
 usesLocs(t::TTerm)::Array{Index} = unique(vcat(t.t_in |> usesLocs, t.t_out |> usesLocs))
-function check_not_recursive(tloc::TLoc, tt::Type_)::Bool
+function check_not_recursive(tloc::TLoc, tt::Term)::Bool
     for v in usesLocs(tt)
     if tloc.var == v return false end
     end
@@ -210,25 +210,25 @@ function check_not_recursive(tloc::TLoc, tt::Type_)::Bool
 end
 
 get_reduc_subst(t::Array{TProd}) = TApp(vcat([t[end]], t[end - 1:-1:1] .|> (x -> TAbs(x))))
-get_reduc_subst(t::Array{Type_}) = TApp(vcat([t[end]], t[end - 1:-1:1] .|> (x -> TAbs(x))))
+get_reduc_subst(t::Array{Term}) = TApp(vcat([t[end]], t[end - 1:-1:1] .|> (x -> TAbs(x))))
 # IMPORTANT: ALL EXCEPT (potentially) the >FIRST< should be TPRODS !!!!!
 
 # ASSOCIATIVE OPERATION to compose the above:
 ass_smart_reduc(t...) = (length(t) <= 1) ? (collect(t)) : ([get_reduc_subst(collect(t)) |> reduc])
 # TODO: change "[reduc()]" in "smart_reduc" !!
 ass_reduc(t::TProd ...)::TProd = (length(t) == 1) ? (t[1]) : (get_reduc_subst(collect(t)) |> reduc)
-ass_reduc(t1::Type_, ts::TProd ...)::Type_ = (length(ts) == 0) ? (t1) : (get_reduc_subst(vcat([t1], collect(ts))) |> reduc)
+ass_reduc(t1::Term, ts::TProd ...)::Term = (length(ts) == 0) ? (t1) : (get_reduc_subst(vcat([t1], collect(ts))) |> reduc)
 
 ass_reduc(c::DirectConstraint, ts::TProd ...) = DirectConstraint(ass_reduc(c.t1, ts...), ass_reduc(c.t2, ts...))
 ass_reduc(c::ReverseConstraint, ts::TProd ...) = ReverseConstraint(ass_reduc(c.t1, ts...), ass_reduc(c.t2, ts...))
 
-function get_subst_prod(tloc::TLoc, tt::Type_, current_arity::Int)::TProd
+function get_subst_prod(tloc::TLoc, tt::Term, current_arity::Int)::TProd
     # resulting_arity = current_arity - 1
     # you have ALREADY TESTED that tt does not contain tloc, that's the whole point !!!!
     prod = vcat(
-        Array{Type_}([TLoc(i) for i in 1:(tloc.var - 1)]),
-        Array{Type_}([TLoc(0)]), # Placeholder, complete nonsense, it's getting replaced
-        Array{Type_}([TLoc(i) for i in (tloc.var:current_arity - 1)])
+        Array{Term}([TLoc(i) for i in 1:(tloc.var - 1)]),
+        Array{Term}([TLoc(0)]), # Placeholder, complete nonsense, it's getting replaced
+        Array{Term}([TLoc(i) for i in (tloc.var:current_arity - 1)])
     )
     prod[tloc.var] = ass_reduc(tt, TProd(prod))
     TProd(prod)
@@ -310,9 +310,9 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Index, t2arity::Index; unify
 end
 
 # The following handles ALL THE CONFUSION ARISING FROM having or not having the Forall() at random.
-robinsonUnify(t1::TAbs, t2::Type_, t1arity::Index, t2arity::Index) = robinsonUnify(t1, TAbs(t2), t1arity, t2arity)
-robinsonUnify(t1::Type_, t2::TAbs, t1arity::Index, t2arity::Index) = robinsonUnify(TAbs(t1), t2, t1arity, t2arity)
-function robinsonUnify(t1::Type_, t2::Type_, t1arity::Index, t2arity::Index)
+robinsonUnify(t1::TAbs, t2::Term, t1arity::Index, t2arity::Index) = robinsonUnify(t1, TAbs(t2), t1arity, t2arity)
+robinsonUnify(t1::Term, t2::TAbs, t1arity::Index, t2arity::Index) = robinsonUnify(TAbs(t1), t2, t1arity, t2arity)
+function robinsonUnify(t1::Term, t2::Term, t1arity::Index, t2arity::Index)
     if (t1arity == 0) && (t2arity == 0)
         return (t1 == t2) ? (TProd([]), TProd([])) : Error(" Not unifiable: $(t1) != $(t2)")
     else
@@ -323,29 +323,29 @@ end
 
 # All cases WITHOUT precomputed tarities:
 robinsonUnify(t1::TAbs, t2::TAbs) = robinsonUnify(t1, t2, t1.body |> arity, t2.body |> arity)
-robinsonUnify(t1::TAbs, t2::Type_) = robinsonUnify(t1, TAbs(t2), t1.body |> arity, t2 |> arity)
-robinsonUnify(t1::Type_, t2::TAbs) = robinsonUnify(TAbs(t1), t2, t1 |> arity, t2.body |> arity)
-robinsonUnify(t1::Type_, t2::Type_) = robinsonUnify(TAbs(t1), TAbs(t2), t1 |> arity, t2 |> arity)
+robinsonUnify(t1::TAbs, t2::Term) = robinsonUnify(t1, TAbs(t2), t1.body |> arity, t2 |> arity)
+robinsonUnify(t1::Term, t2::TAbs) = robinsonUnify(TAbs(t1), t2, t1 |> arity, t2.body |> arity)
+robinsonUnify(t1::Term, t2::Term) = robinsonUnify(TAbs(t1), TAbs(t2), t1 |> arity, t2 |> arity)
 
 
 struct Inf_res
     # IDEA: you can ALWAYS turn this into a TTerm !
     # Other idea: this is always BARE, ie with NO Forall around. This is because it should be around BOTHthe args and the res!
-    arg_types::Array{Type_} # IDEA: you can always turn this into a TProd
-    res_type::Type_
+    arg_types::Array{Term} # IDEA: you can always turn this into a TProd
+    res_type::Term
 end
 pr(i::Inf_res) = "Given [$(join(i.arg_types .|>pr, ", "))], get $(i.res_type|>pr)"
-Inf_res(res_type::Type_) = Inf_res([], res_type)
+Inf_res(res_type::Term) = Inf_res([], res_type)
 Base.:(==)(a::Inf_res, b::Inf_res) = Base.:(==)(a.arg_types, b.arg_types) && Base.:(==)(a.res_type, b.res_type)
 ass_reduc(ir::Inf_res, t::TProd ...) = Inf_res(ass_reduc(TProd(ir.arg_types), t...).data, ass_reduc(ir.res_type, t...))
 arity(ir::Inf_res) = max(
     (length(ir.arg_types) > 0) ? (ir.arg_types .|> arity |> maximum) : 0, # Yee! Dynamic typing!!
     ir.res_type |> arity)
-pad_elocs(elocs::Array{Type_}, max_t_arity::Int, max_length::Int)::Array{Type_} = vcat(elocs, [TLoc(i + max_t_arity) for i in 1:(max_length - length(elocs))])
+pad_elocs(elocs::Array{Term}, max_t_arity::Int, max_length::Int)::Array{Term} = vcat(elocs, [TLoc(i + max_t_arity) for i in 1:(max_length - length(elocs))])
 
 function infer_type_(term::ELoc)::Union{Inf_res,Error}
     return Inf_res(
-        Array{Type_}([TLoc(i) for i in 1:term.var]),
+        Array{Term}([TLoc(i) for i in 1:term.var]),
         # TAbs(TLoc(term.var))
 TLoc(term.var)
     )
@@ -400,7 +400,7 @@ function infer_type_(term::EProd, ts_computed::Array{Inf_res})::Union{Inf_res,Er
     # but this is a hodgepodge, so that's fine.
     # @assert length(term.data) == length(ts_computed) "$(length(term.data)) != $(length(ts_computed)) in $(term.data) != $(ts_computed)"
     # ^ i REALLY WANT to have this, except that HORRIBLE HACK in infer(TApp) passes an EMPTY EPROD here...
-    if length(ts_computed) == 0 return Inf_res(Array{Type_}([]), TProd([])) end
+    if length(ts_computed) == 0 return Inf_res(Array{Term}([]), TProd([])) end
     max_eargs_length = ts_computed .|> (x -> x.arg_types |> length) |> maximum
     if max_eargs_length > 0
         padded_args = [
@@ -421,7 +421,7 @@ function infer_type_(term::EProd, ts_computed::Array{Inf_res})::Union{Inf_res,Er
 
     # IDEA: if max_eargs_length == 0, you STILL have to UNIFY the TLocs, which is currenty done by
     # JUST RUNNING robinsonUnify on the Empty prods, and using that behaviour.
-    unified_RES_types = Array{Type_}([])
+    unified_RES_types = Array{Term}([])
     last_one = pop!(ts_computed)
     for ir in ts_computed
         ira, loa = ir |> arity, last_one |> arity
@@ -439,7 +439,7 @@ function infer_type_(term::EProd, ts_computed::Array{Inf_res})::Union{Inf_res,Er
             s1s, s2s = [s1, substs[1]], [s2, substs[2]]
         end
         last_one = ass_reduc(last_one, s2s...)
-        unified_RES_types::Array{Type_} = unified_RES_types .|> (x -> ass_reduc(x, s2)) # if they BECAME EQUAL to last_one, this should work
+        unified_RES_types::Array{Term} = unified_RES_types .|> (x -> ass_reduc(x, s2)) # if they BECAME EQUAL to last_one, this should work
         push!(unified_RES_types, ass_reduc(ir.res_type, s1s...))
     end
 
@@ -448,7 +448,7 @@ function infer_type_(term::EProd, ts_computed::Array{Inf_res})::Union{Inf_res,Er
 end
 
 function infer_type_(term::EAbs, t_computed::Inf_res)::Union{Inf_res,Error}
-    return Inf_res(Array{Type_}([]), TTerm(TProd(t_computed.arg_types), t_computed.res_type))
+    return Inf_res(Array{Term}([]), TTerm(TProd(t_computed.arg_types), t_computed.res_type))
 end
 function infer_type_(term::ESumTerm, t_computed::Inf_res)::Union{Inf_res,Error}
     arT, tag = t_computed |> arity, term.tag
@@ -513,7 +513,7 @@ function infer_type_(term::EApp, ts_computed::Array{Inf_res})::Union{Inf_res,Err
     # ^ REUSING the TProd inference, HACKING the fact that Term is NOT used
     full_arity = prod_w_unified_args |> arity
     # ^Can i compute this in some smarter way?  # Dunno !
-    ts_computed_res, args = Array{Type_}(prod_w_unified_args.res_type.data), TProd(prod_w_unified_args.arg_types)
+    ts_computed_res, args = Array{Term}(prod_w_unified_args.res_type.data), TProd(prod_w_unified_args.arg_types)
     # ^ Switcharoo, TProd becomes array and array becomes TProd.. What a mess
 
     # Third, actually unify all in/outs:
@@ -530,7 +530,7 @@ function infer_type_(term::EApp, ts_computed::Array{Inf_res})::Union{Inf_res,Err
         else
             (s1, s2) = substs
             # ^ Wait.. Are you telling me, if unify_tlocs_ctx=false, s1 and s2 are ALWAYS the same ???  # # Man, this is a crazy world..
-            ts_computed_res = Array{Type_}(ts_computed_res .|> (x -> ass_reduc(x, s1)))
+            ts_computed_res = Array{Term}(ts_computed_res .|> (x -> ass_reduc(x, s1)))
             # ^ the LENGTH of ts_computed_res DOES NOT CHANGE HERE
             # ^ Also Maybe you can SKIP updating all of them but who cares
             args = ass_reduc(args, s1) # Keep track of the Arg types, too
