@@ -1,4 +1,6 @@
 
+include("BidirectionalChancesStructure10.jl")
+
 abstract type StackableBoid end
 
 
@@ -18,15 +20,15 @@ empty(s::StackableChance)::Bool = s.what === nothing
 
 
 struct StackableFinishedSyntax <: StackableBoid
-    whatFinished::SyntaxInst
+    whatFinished::SyntaxInstObj
 	from::Int
 	to::Int
+    function StackableFinishedSyntax(whatFinished::SyntaxInstObj, from::Int, to::Int)
+        @assert !(whatFinished isa SyntaxInstStruct) || !isempty(whatFinished.list)
+        return new(whatFinished, from, to)
+    end
 end
-function StackableFinishedSyntax(whatFinished::SyntaxInst, from::Int, to::Int)
-    @assert !(whatFinished isa SyntaxInstStruct) || !isempty(whatFinished.list)
-    return StackableFinishedSyntax(whatFinished, from, to)
-end
-getP(s::StackableFinishedSyntax) = getP(s.whatFinished)
+getP(s::StackableFinishedSyntax) = getP(s.whatFinished.s)
 empty(s::StackableFinishedSyntax)::Bool = false
 
 # int getFrom() { return from; }
@@ -43,14 +45,15 @@ getP(s::StackableObject) = getP(s.whatFinished)
 empty(s::StackableObject)::Bool = false
 
 
-struct StackOfChances
+mutable struct StackOfChances
     stack::Array{Tuple{Real, StackableBoid}} # This was a multimap
 end
+StackOfChances() = StackOfChances([])
 
 
 function getBest!(s::StackOfChances)::Union{Nothing, StackableBoid}
     if isempty(s.stack) return nothing
-    else if !empty(s.stack[end][2])
+    elseif !empty(s.stack[end][2])
         obj = s.stack[end][2]
         s.stack = s.stack[1:(end-1)]
         return obj
@@ -61,6 +64,7 @@ function getBest!(s::StackOfChances)::Union{Nothing, StackableBoid}
 end
 peekBestScore(s::StackOfChances)= (!isempty(s.stack)) ? s.stack[end][1] : -1
 function insert!(s::StackOfChances, p::Real, obj::StackableBoid)
-    push!(s.stack(p, obj))
+    push!(s.stack, (p, obj))
     sort!(s.stack; by= x->x[1], rev=true)
 end
+

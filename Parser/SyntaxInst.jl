@@ -1,13 +1,14 @@
 
 include("Syntaxes.jl")
+include("STSP_Types.jl")
 
 abstract type SyntaxInst end
 abstract type Accepted_SynatxInst_type <: SyntaxInst end
 # ^ SyntaxInstObject, SyntaxInstReference, SyntaxInstNativeString <: Accepted_SynatxInst_type;
-abstract type SyntaxInstProductOwning <: SyntaxInst end
+abstract type SyntaxInstProduct <: SyntaxInst end
 
 wouldFit(si::SyntaxInst, s::SyntaxCore)::Bool = si.name == s
-
+getName(s::SyntaxInst) = s.name
 
 struct SyntaxInstTerm <: SyntaxInst
     name::SyntaxTerm
@@ -52,19 +53,19 @@ end
 
 struct SyntaxInstChoice <: SyntaxInst
     name::SyntaxChoice
-    flag::int
+    flag::Int
     choice::SyntaxInst
     PofThisAndBelowGivenBelow::Real #//that is, the CONJUGATE, that works as a posterior, UP TO HERE
 end
 
-struct SyntaxInstStruct <: SyntaxInstProductOwning
+mutable struct SyntaxInstStruct <: SyntaxInstProduct
     name::SyntaxStruct
     list::Array{SyntaxInst}
     PofThisAndBelowGivenBelow::Real #  //that is, the CONJUGATE, that works as a posterior, UP TO HERE
     # //std::optional<ATermBuilder> meetedReferences =std::nullopt;
 end
 
-struct SyntaxInstStrip <: SyntaxInstProductOwning
+mutable struct SyntaxInstStrip <: SyntaxInstProduct
     name::SyntaxStrip
     list::Array{SyntaxInst}  #//So... SHOULDNT THESE BE OF A >cONSTANT< >tYPE< SOMEHOW??? <<<
     PofThisAndBelowGivenBelow::Real #//that is, the CONJUGATE, that works as a posterior, UP TO HERE
@@ -77,18 +78,18 @@ getP(s::SyntaxInstReference)::Real = s.P
 getP(s::SyntaxInstNativeString)::Real = s.P
 getP(s::SyntaxInstObject)::Real = s.PofObjectAndBelowGivenBelow
 getP(s::SyntaxInstField)::Real = s.PofThisAndBelowGivenBelow
-getP(s::SyntaxInstChoice)::Real = s.PofObjectAndBelowGivenBelow
+getP(s::SyntaxInstChoice)::Real = s.PofThisAndBelowGivenBelow
 getP(s::SyntaxInstStruct)::Real = s.PofThisAndBelowGivenBelow
 getP(s::SyntaxInstStrip)::Real = s.PofThisAndBelowGivenBelow
 
-print(s::SyntaxInstTerm)::String = getString(s.name)
-print(s::SyntaxInstReference)::String = s.text
-print(s::SyntaxInstNativeString)::String = s.text
-print(s::SyntaxInstObject)::String = getString(s.syntax)
-print(s::SyntaxInstField)::String = print(s.objectFound)
-print(s::SyntaxInstChoice)::String = "($(string(s.flag)): $(s.choice |> print))"
-print(s::SyntaxInstStruct)::String = join(s.list .|> print, " ")
-print(s::SyntaxInstStrip)::String = "(" * join(s.list .|> print, " ") * ")"
+trace(s::SyntaxInstTerm)::String = getString(s.name)
+trace(s::SyntaxInstReference)::String = s.text
+trace(s::SyntaxInstNativeString)::String = s.text
+trace(s::SyntaxInstObject)::String = getString(s.syntax)
+trace(s::SyntaxInstField)::String = trace(s.objectFound)
+trace(s::SyntaxInstChoice)::String = "($(string(s.flag)): $(s.choice |> trace))"
+trace(s::SyntaxInstStruct)::String = join(s.list .|> trace, " ")
+trace(s::SyntaxInstStrip)::String = "(" * join(s.list .|> trace, " ") * ")"
 
 deepEqual(s::SyntaxInstTerm, other::SyntaxInst)::Bool = other isa SyntaxInstTerm && s.name == other.name
 deepEqual(s::SyntaxInstReference, other::SyntaxInst)::Bool = other isa SyntaxInstReference && s.type == other.type && s.name == other.name
@@ -103,8 +104,8 @@ deepEqual(s::SyntaxInstStrip, other::SyntaxInst)::Bool = other isa SyntaxInstStr
 
 
 
-function push!(s::SyntaxInstStruct, obj::SyntaxInst, index::Int, marginalOfObjName::Real)
-    if !(index == length(s.list) && wouldFit(obj, s.name.list[index])) throw(DomainError("freganiente")) end
+function push_struct!(s::SyntaxInstStruct, obj::SyntaxInst, index::Int, marginalOfObjName::Real)
+    if !(index == length(s.list) && wouldFit(obj, s.name.list[index+1])) throw(DomainError("freganiente")) end
     # ^ //this part is for testing: cuz, u are SUPPOSED TO KNOW WAT YOU'RE DOING
     # //also, now this is DOUBLE BAD because would_fit CAN get expensive (so maybe not call it at random?)
     push!(s.list, obj)
@@ -112,7 +113,7 @@ function push!(s::SyntaxInstStruct, obj::SyntaxInst, index::Int, marginalOfObjNa
     s.PofThisAndBelowGivenBelow *= (getP(obj) / marginalOfObjName);
 end
 function insert_front!(s::SyntaxInstStruct, obj::SyntaxInst, index::Int, marginalOfObjName::Real)
-    if !(index == length(s.name.list) - length(s.list) - 1 && wouldFit(obj, s.name.list[index])) throw(DomainError("freganiente")) end
+    if !(index == length(s.name.list) - length(s.list) - 1 && wouldFit(obj, s.name.list[index+1])) throw(DomainError("freganiente")) end
     # ^ //this part is for testing: cuz, u are SUPPOSED TO KNOW WAT YOU'RE DOING
     # //also, now this is DOUBLE BAD because would_fit CAN get expensive (so maybe not call it at random?)
     s.list = vcat(s.list, [obj])
@@ -121,14 +122,14 @@ function insert_front!(s::SyntaxInstStruct, obj::SyntaxInst, index::Int, margina
 end
 
 
-function push!(s::SyntaxInstStrip, obj::SyntaxInst, index::Int, marginalOfObjName::Real)
+function push_struct!(s::SyntaxInstStrip, obj::SyntaxInst, index::Int, marginalOfObjName::Real)
     # //I HONESTLY CANT BE BOTHERED
     push!(s.list, obj);
     # //SEE SyntaxInstStruct FOR HOW THIS SHOULD BE WORKING
     # //and, also: update prob here, please:  >>>again, HOPEFULLY THIS IS NOT COMPLETELY WRONG::<<
     s.PofThisAndBelowGivenBelow *= (getP(obj) / marginalOfObjName);
 end
-function insert_front(s::SyntaxInstStrip, obj::SyntaxInst, index::Int, marginalOfObjName::Real)
+function insert_front!(s::SyntaxInstStrip, obj::SyntaxInst, index::Int, marginalOfObjName::Real)
     # //idem^
     s.list = vcat(s.list, [obj])
     # //idem^^

@@ -1,6 +1,7 @@
 
+include("Structure10.jl")
 
-text = "ff:(A->B)-> B  where ff (  g  )  =  g  (  a )  eval ff ( h ) "
+# text = "ff:(A->B)-> B  where ff (  g  )  =  g  (  a )  eval ff ( h ) "
 
 struct Substit
 	oldFrom::Int
@@ -10,11 +11,12 @@ struct Substit
 end
 getOld(ss::Substit) = (ss.oldFrom, ss.oldTo)
 
-struct RandomParser10
+mutable struct RandomParser10
     inputText::String
 	inputVec::Array{String}
     structure::Structure10
 end
+RandomParser10() = RandomParser10("", [], Structure10())
 
 
 parse(prs::RandomParser10, s::String) = updateInput(prs, s)
@@ -22,22 +24,22 @@ function updateInput(prs::RandomParser10, newText::String)
     if (prs.inputText == newText) return end
     prs.inputText = newText
     newVec = getTextVector(newText)
-    s::Substit = getSubstit(newVec, inputVec)  # to Not included
+    s::Substit = getSubstit(newVec, prs.inputVec)  # to Not included
     if (s.oldTo <= s.oldFrom && s.newTo <= s.newFrom) return end
-    inputVec = newVec
-    prs.structure.inputVec= inputVec
+    prs.inputVec = newVec
+    prs.structure.inputVec= prs.inputVec
     updateStructure(prs, s)
 end
 
 function matchTerminals(prs::RandomParser10, from_::Int, end_::Int)  # # [..)
-	for i in from_:end_
-		t = prs.structure.posteriorsStructure.getTerminal(inputVec[i]) # TODO CHECK what the type of this is !!!! Should be a Pair, at least
-		if (t[1]) prs.structure.insertTerminal(i, i+1, t[1], t[2]) end
+	for i in from_:(end_-1)
+		t = getTerminal(prs.structure.posteriorsStructure, prs.inputVec[i+1]) # TODO CHECK what the type of this is !!!! Should be a Pair, at least
+		if (t[1] !== nothing) insertTerminal(prs.structure, i, i+1, t[1], t[2]) end
     end
 end
 
 function updateStructure(prs::RandomParser10, s::Substit)
-	reshape_struct(prs.structure, s.oldFrom, s.oldTo, s.newTo - s.newFrom) # TODO reshape-> reshape_struct, check everything's ok
+	reshape(prs.structure, s.oldFrom, s.oldTo, s.newTo - s.newFrom) # TODO reshape-> reshape_struct, check everything's ok
 	matchTerminals(prs, s.newFrom, s.newTo)#, { newVec.begin() + s.newFrom,newVec.begin() + s.newTo })
 	trace(prs.structure)
 	doTheBestYouCan(prs.structure)
@@ -60,12 +62,12 @@ function getSubstit(newVec::Array{String}, oldVec::Array{String})::Substit
 	for i in 1:min(length(newVec), length(oldVec))
 		if (newVec[i] != oldVec[i]) break end
     end
-	oldFrom = i
-	newFrom = i
+	oldFrom = min(length(newVec), length(oldVec))
+	newFrom = min(length(newVec), length(oldVec))
 	for i in 1:min(length(newVec), length(oldVec))
 		if (newVec[length(newVec) - i] != oldVec[length(oldVec) - i]) break end
     end
-	oldTo = length(oldVec) - i
-	newTo = length(newVec) - i
+	oldTo = length(oldVec) - min(length(newVec), length(oldVec))
+	newTo = length(newVec) - min(length(newVec), length(oldVec))
 	return Substit(oldFrom, oldTo, newFrom, newTo)
 end

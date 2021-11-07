@@ -26,21 +26,21 @@ struct Temp_TypeInt <: Temp_Type
 	obj::Int
 end
 
-# bool  Temp_Type::operator==(VariantTypes t)const { return t == obj; }
-# bool  Temp_Type::operator==(Temp_Type t)const { return t.obj == obj; }
-# bool  Temp_Type::operator!=(Temp_Type t)const { return t.obj != obj; }
-# bool Temp_Type::operator==(Temp_TypeBase* t)const { return std::holds_alternative<Temp_TypeBase*>(obj) && t == std::get<Temp_TypeBase*>(obj); }
-# bool Temp_Type::operator==(Temp_TypeFunc* t)const { return std::holds_alternative<Temp_TypeFunc*>(obj) && t == std::get<Temp_TypeFunc*>(obj); }
-# bool Temp_Type::operator==(Temp_TypeSum* t)const { return std::holds_alternative<Temp_TypeSum*>(obj) && t == std::get<Temp_TypeSum*>(obj); }
-# bool Temp_Type::operator==(Temp_TypeProd* t)const { return std::holds_alternative<Temp_TypeProd*>(obj) && t == std::get<Temp_TypeProd*>(obj); }
+# Bool  Temp_Type::operator==(VariantTypes t)const { return t == obj; }
+# Bool  Temp_Type::operator==(Temp_Type t)const { return t.obj == obj; }
+# Bool  Temp_Type::operator!=(Temp_Type t)const { return t.obj != obj; }
+# Bool Temp_Type::operator==(Temp_TypeBase* t)const { return std::holds_alternative<Temp_TypeBase*>(obj) && t == std::get<Temp_TypeBase*>(obj); }
+# Bool Temp_Type::operator==(Temp_TypeFunc* t)const { return std::holds_alternative<Temp_TypeFunc*>(obj) && t == std::get<Temp_TypeFunc*>(obj); }
+# Bool Temp_Type::operator==(Temp_TypeSum* t)const { return std::holds_alternative<Temp_TypeSum*>(obj) && t == std::get<Temp_TypeSum*>(obj); }
+# Bool Temp_Type::operator==(Temp_TypeProd* t)const { return std::holds_alternative<Temp_TypeProd*>(obj) && t == std::get<Temp_TypeProd*>(obj); }
 
 
 
 
-# std::string trace(bool topLevel =true) const;
-# std::string trace(bool topLevel = true) const { return name; }
-# std::string trace(bool topLevel = true) const { return first.trace(topLevel) + "->" + second.trace(topLevel); }
-# std::string trace(bool topLevel=true) const
+# std::string trace(Bool topLevel =true) const;
+# std::string trace(Bool topLevel = true) const { return name; }
+# std::string trace(Bool topLevel = true) const { return first.trace(topLevel) + "->" + second.trace(topLevel); }
+# std::string trace(Bool topLevel=true) const
 # {
 #     if (!topLevel) { return "aSumType"; }
 #     std::string s = "(";
@@ -51,7 +51,7 @@ end
 #     s.pop_back();
 #     return s += ")";
 # }
-# std::string trace(bool topLevel = true) const
+# std::string trace(Bool topLevel = true) const
 # {
 #     if (!topLevel) { return "aProdType"; }
 
@@ -63,6 +63,6 @@ end
 #     s.pop_back();
 #     return s += ")";
 # }
-# std::string Temp_Type::trace(bool topLevel) const { return std::visit([&](auto t)->std::string {return t->trace(topLevel); }, obj); }
+# std::string Temp_Type::trace(Bool topLevel) const { return std::visit([&](auto t)->std::string {return t->trace(topLevel); }, obj); }
 
 

@@ -1,3 +1,4 @@
+include("STSP_Types.jl")
 
 abstract type SyntaxCore end
 abstract type SyntaxProduct <: SyntaxCore end
@@ -46,18 +47,18 @@ function getPossibleNexts(s::SyntaxStruct, last::SyntaxCore, to::Int)::Array{Syn
 	elseif (last != s.list[to])
 		throw(DomainError("oi: s.list[$(to)] = $(s.list[to]) was expected to be $(last)"))
 	else
-		return Array{SyntaxCore}([s.list[to]])
+		return Array{SyntaxCore}([s.list[to+1]])
     end
 end
 function getPossiblePreviouses(s::SyntaxStruct, first::SyntaxCore, from::Int)::Array{SyntaxCore}
     # STARTS FROM 0  #//from INCLUDED, === index of FIRST USED (i.e. first)
-    @assert !(to >= length(s.list) + 1 || to < 0) "bad: index in getPossiblePreviouses was to=$(to), list length $( length(s.list) )"
+    @assert !(from >= length(s.list) + 1 || from < 0) "bad: index in getPossiblePreviouses was from=$(from), list length $( length(s.list) )"
 	if (from == 0)
 		return Array{SyntaxCore}([])
 	elseif (from == length(s.list))
 		return Array{SyntaxCore}([s.list[end]])
-	elseif (first != list[from+1])
-		throw(DomainError("oi: s.list[$(from+1)] = $(s.list[from+1]) was expected to be $(last)"))
+	elseif (first != s.list[from+1])
+		throw(DomainError("oi: s.list[$(from+1)] = $(s.list[from+1]) was expected to be $(first)"))
 	else
 		return Array{SyntaxCore}([s.list[from]])
     end

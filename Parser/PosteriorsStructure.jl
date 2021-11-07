@@ -1,3 +1,4 @@
+include("SyntaxInst.jl")
 
 struct SomeChancewIndex{T}
     chance::T
@@ -20,7 +21,7 @@ struct PosteriorStucture2
 	PofChoices::Dict{SyntaxChoice, Array{Real}}
 	# //should they be unnormalized within each one SyntaxChoice* ??
 
-	epsilon::Real = 0.01
+	# epsilon::Real = 0.01
 end
 function updateCaches(ps::PosteriorStucture2)
     # //for (auto s : marginalsUnn)
@@ -31,7 +32,7 @@ function updateMap(ps::PosteriorStucture2, obj::SyntaxInst)
     return
 end
 
-function getBestPosteriors(ps::PosteriorStucture2, SyntaxCore* child)  #Dict{float, SyntaxCore*>
+function getBestPosteriors(ps::PosteriorStucture2, child::SyntaxCore)  #Dict{float, SyntaxCore*>
     # Dict{float, SyntaxCore*> res;
     # for (auto parentChance : allSyntaxes)
     # {
@@ -49,18 +50,27 @@ P_Type = Array{Tuple{Real, Tuple{SyntaxCore, Int}}} # std::multimap<float, std::
 struct PosteriorsStructure
 
 	posteriorsBaked::Dict{SyntaxCore, P_Type} #  //pB[Child][PosteriorProb]=Parent
-
 	marginals::Dict{SyntaxCore, Real}
 	choicesLikelyhood::Dict{SyntaxChoice, Dict{SyntaxCore, Real}} # //cL[Parent][Child]=Likelyhood
-	tripLambdas::Dict{SyntaxStrip, Real} #  //sL[Strip]=Lambda
+	stripLambdas::Dict{SyntaxStrip, Real} #  //sL[Strip]=Lambda
 	bindings::Dict{SyntaxCore, Array{Temp_Type}}
-	allSyntaxes::Dict{String, SyntaxCoreOwning}
-	epsilon::Real = 0.00
+	allSyntaxes::Dict{String, SyntaxCore}
+	epsilon::Real
 end
+
+PosteriorsStructure() = PosteriorsStructure(
+    Dict{SyntaxCore, P_Type}(),
+    Dict{SyntaxCore, Real}(),
+    Dict{SyntaxChoice, Dict{SyntaxCore, Real}}(), # //cL[Parent][Child]=Likelyhood
+    Dict{SyntaxStrip, Real}(), #  //sL[Strip]=Lambda
+    Dict{SyntaxCore, Array{Temp_Type}}(),
+    Dict{String, SyntaxCore}(),
+    0.0
+    )
 
 getSyntax(ps::PosteriorsStructure, s::String)::SyntaxCore = ps.allSyntaxes[s]
 
-function addSyntax!(ps::PosteriorsStructure, s::String, obj::SyntaxCoreOwning)
+function addSyntax!(ps::PosteriorsStructure, s::String, obj::SyntaxCore)
     ps.allSyntaxes[s] =obj
 end
 
@@ -72,8 +82,12 @@ end
 function initializeChoices(ps::PosteriorsStructure)
     for (n, s) in ps.allSyntaxes
         if s isa SyntaxChoice
-            for ss in getChoices(s)
-                ps.choicesLikelyhood[s][ss] = 1.0 / length(getChoices(s))
+            for ss in s.list
+                if !(s in keys(ps.choicesLikelyhood))
+                    ps.choicesLikelyhood[s] = Dict{SyntaxCore, Real}(ss=> 1.0 / length(s.list))
+                else
+                    ps.choicesLikelyhood[s][ss] = 1.0 / length(s.list)
+                end
             end
         end
     end
@@ -87,30 +101,35 @@ end
 #     end
 # end
 
+function push_dict(d, key, elem)
+    if !(key in keys(d))
+        d[key] = P_Type([elem])
+    else
+        push!(d[key][ss], elem)
+    end
+end
+
 function initializePosteriors(ps::PosteriorsStructure)
-    for (n, s) in ps.allSyntaxes
-        if s isa SyntaxStruct
-            parent::SyntaxStruct = s
-            for (i, child) in enumerate(getObjs(parent))
-                posterior::Real = ps.marginals[parent] / marginals[child]
-                push!(ps.posteriorsBaked[child], (posterior, (parent,i)))
+    for (n, parent) in ps.allSyntaxes
+        if parent isa SyntaxStruct
+            for (i, child) in enumerate(parent.list)
+                posterior::Real = ps.marginals[parent] / ps.marginals[child]
+                push_dict(ps.posteriorsBaked, child, (posterior, (parent,i-1)))
             end
-        elseif s isa SyntaxChoice
-            parent::SyntaxChoice = s
-            for (i, child) in enumerate(getChoices(parent))
+        elseif parent isa SyntaxChoice
+            for (i, child) in enumerate(parent.list)
                 posterior::Real = ps.marginals[parent] / ps.marginals[child] * ps.choicesLikelyhood[parent][child]
-                push!(ps.posteriorsBaked[child], (posterior, (parent,i)))
+                push_dict(ps.posteriorsBaked, child, (posterior, (parent,i-1)))
             end
-        elseif s isa SyntaxStrip
-            parent::SyntaxStrip = s
+        elseif parent isa SyntaxStrip
             # //for (auto child : parent->)
             # //{
-            # //	float posterior = marginals[SyntaxCore{ parent }] / marginals[child] * choicesLikelyhood[parent][child];
-            # //	posteriorsBaked[child].emplace(posterior, parent);
+            # //	float posterior = ps.marginals[SyntaxCore{ parent }] / ps.marginals[child] * choicesLikelyhood[parent][child];
+            # //	posteriorsBaked[child].emplace(posterior, parent);  -1 !!!!!!!!
             # //}
         end
     end
-    sort!(ps.posteriorsBaked; by=(x->x[1]))
+    # sort!(ps.posteriorsBaked; by=(x->x[1]))
 end
 
 getMarginal(ps::PosteriorsStructure, s::SyntaxCore) = ps.marginals[s]
@@ -118,14 +137,10 @@ getMarginal(ps::PosteriorsStructure, s::SyntaxCore) = ps.marginals[s]
 
 function getAllSyntaxProductsWithIndexFor(ps::PosteriorsStructure, s::SyntaxCore)::Array{SomeChancewIndex{SyntaxProduct}}
     v = Array{SomeChancewIndex{SyntaxProduct}}([])
-    for (p, (synt, idx)) in ps.posteriorsBaked[s]
+    for (p, (synt, idx)) in get(ps.posteriorsBaked, s, [])
         if p > ps.epsilon
-            res_synt::SyntaxProduct
-            if synt isa SyntaxStruct res_synt = SyntaxProduct(synt)
-            elseif synt isa SyntaxStrip res_synt = SyntaxProduct(synt)
-            else continue end
-
-            push!(v, SomeChancewIndex{SyntaxProduct}(res_synt, idx, p))
+            if !(synt isa SyntaxProduct) continue end
+            push!(v, SomeChancewIndex{SyntaxProduct}(synt, idx, p))
         end
     end
     return v
@@ -133,7 +148,7 @@ end
 
 function getAllSyntaxChoicesWithIndexFor(ps::PosteriorsStructure, s::SyntaxCore)::Array{SomeChancewIndex{SyntaxChoice}}
     v = Array{SomeChancewIndex{SyntaxChoice}}([])
-    for (p, (synt, idx)) in ps.posteriorsBaked[s]
+    for (p, (synt, idx)) in get(ps.posteriorsBaked, s, [])
         if p > ps.epsilon && synt isa SyntaxChoice
             push!(v, SomeChancewIndex{SyntaxChoice}(synt, idx, p))
         end
@@ -143,15 +158,15 @@ end
 
 function getAllSyntaxBindingsFor(ps::PosteriorsStructure, s::SyntaxCore)::Array{someOtherReturn}
     v = Array{someOtherReturn}([])
-    for i in ps.bindings[s]
+    for i in get(ps.bindings, s,[])
         push!(v, someOtherReturn(s, i, 1 )) # //im pushing THE LIKELYHOOD in now just because
         # //i mean, Just because every syntax is only owned by one type^^ .
     end
     return v
 end
 
-function getTerminal(ps::PosteriorsStructure, s::String)::Tuple{SyntaxTerm, Real}
-    t = get!(ps.allSyntaxes, s, nothing)
+function getTerminal(ps::PosteriorsStructure, s::String)::Tuple{Union{SyntaxTerm, Nothing}, Real}
+    t::Union{SyntaxTerm, Nothing} = get(ps.allSyntaxes, s, nothing)
     if (t !==nothing && t isa SyntaxTerm)
         return (t, getMarginal(ps, t))
     else
@@ -160,6 +175,6 @@ function getTerminal(ps::PosteriorsStructure, s::String)::Tuple{SyntaxTerm, Real
 end
 
 function getBindings(ps::PosteriorsStructure, s::SyntaxCore)::Array{Temp_Type}
-    ts = get!(ps.bindings, s, nothing)
+    ts = get(ps.bindings, s, nothing)
     return (ts !== nothing) ? ts : Array{Temp_Type}([])
 end
