@@ -14,13 +14,15 @@ mutable struct HangingChance10
 	POfThisIfGoingForward::Real
 	POfThisIfGoingBackward::Real
 end
-HangingChance10(
+function HangingChance10(
     chance::SyntaxProduct, object::SyntaxInst, indexInChance::Int,
-    length::Int, marginalOfChance::Real, MarginalOfCurrObjName::Real) = HangingChance10(
+    length::Int, marginalOfChance::Real, MarginalOfCurrObjName::Real)
+    HangingChance10(
         Array{HangingChance10}([]), Array{HangingChance10}([]),
         chance, object, indexInChance, length, marginalOfChance, MarginalOfCurrObjName,
         getP(object) / marginalOfChance, getP(object) / marginalOfChance,
     )
+end
 
 getTo(hc::HangingChance10, from::Int) = from + hc.length
 getFrom(hc::HangingChance10, to::Int) = to - hc.length
@@ -33,13 +35,13 @@ hasJustBegun(hc::HangingChance10)::Bool = getPossiblePreviouses(hc.chance, getNa
 
 
 
-struct SyntaxInstObj
+struct SyntaxInstOwner
     s::SyntaxInst
     involvedChances::Array{HangingChance10}
 end
-SyntaxInstObj(s::SyntaxInst) = SyntaxInstObj(s, Array{HangingChance10}([]))
-trace(sio::SyntaxInstObj) = trace(sio.s)
-getName(obj::SyntaxInstObj) = getName(obj.s)
+SyntaxInstOwner(s::SyntaxInst) = SyntaxInstOwner(s, Array{HangingChance10}([]))
+trace(sio::SyntaxInstOwner) = trace(sio.s)
+getName(obj::SyntaxInstOwner) = getName(obj.s)
 
 
 make_SyntaxInstProduct(s::SyntaxStruct, p::Real)  = SyntaxInstStruct(s, [], p)
@@ -73,6 +75,19 @@ function getFinalObjsFromEnd(hc::HangingChance10)::Array{SizeWBuild}
     return buildswSizes
 end
 
+function find_linked_prev_chances_that_are_beginning(hc::HangingChance10, from_of_hc::Int)::Array{Tuple{HangingChance10, Int}}
+    @assert !(!isempty(hc.previouses) && hasJustBegun(hc)) "Just in case- please remove this at some point"
+    if isempty(hc.previouses) && hasJustBegun(hc)
+        return Array{Tuple{HangingChance10, Int}}([(hc, from_of_hc)])
+    else
+        linked_prev_chances_that_are_beginning = Array{Tuple{HangingChance10, Int}}([])
+        for p in hc.previouses
+                append!(linked_prev_chances_that_are_beginning, find_linked_prev_chances_that_are_beginning(p, from_of_hc - p.length))
+        end
+    end
+    return linked_prev_chances_that_are_beginning
+end
+
 
 # //this one, COULD BE BETTER
 function getFinalObjsFromStart(hc::HangingChance10)::Array{SizeWBuild}
@@ -83,7 +98,7 @@ function getFinalObjsFromStart(hc::HangingChance10)::Array{SizeWBuild}
         return tempList
     else
         buildswSizes = Array{SizeWBuild}([])
-        for p in hc.previouses
+        for p in hc.nexts
             # if p #  // btw "if (p)", SHOULD HAVE BEEN CHECKED ALREADY!!.
                 append!(buildswSizes,getFinalObjsFromStart(p))
             # end
@@ -95,6 +110,20 @@ function getFinalObjsFromStart(hc::HangingChance10)::Array{SizeWBuild}
     end
     return buildswSizes
 end
+
+function find_linked_next_chances_that_are_end(hc::HangingChance10, to_of_hc::Int)::Array{Tuple{HangingChance10, Int}}
+    @assert !(!isempty(hc.nexts) && hasEnded(hc)) "Just in case- please remove this at some point"
+    if isempty(hc.nexts) && hasEnded(hc)
+        return Array{Tuple{HangingChance10, Int}}([(hc, to_of_hc)])
+    else
+        linked_next_chance_that_is_end = Array{Tuple{HangingChance10, Int}}([])
+        for p in hc.nexts
+                append!(linked_next_chance_that_is_end, find_linked_next_chances_that_are_end(p, to_of_hc + p.length))
+        end
+    end
+    return linked_next_chance_that_is_end
+end
+
 
 
 
@@ -120,7 +149,7 @@ end
 
 isThisStep(hc::HangingChance10, c::SyntaxProduct, index::Int)::Bool = (c == hc.chance && hc.indexInChance == index)
 
-function makeNextOutOfThisWith(hc::HangingChance10, newObj::SyntaxInstObj, size::Int, marginalOfNewobjName::Real)::Union{HangingChance10, Nothing}
+function makeNextOutOfThisWith(hc::HangingChance10, newObj::SyntaxInstOwner, size::Int, marginalOfNewobjName::Real)::Union{HangingChance10, Nothing}
     # //next line finds needed HangingChance (**) in current it.involvedChances <<. 		//RIGHT NOW, THE ASSUMPTION IS THERES _ONLY_ _ONE_ .
     iter = filter((t->isThisStep(t, hc.chance, hc.indexInChance + 1)), newObj.involvedChances)
     @assert length(iter) < 2 "Should be only one needed HangingChance (**) in current it.involvedChances, not $(iter)"
@@ -130,7 +159,7 @@ function makeNextOutOfThisWith(hc::HangingChance10, newObj::SyntaxInstObj, size:
         # //UPDATE: this SHOULD be done inside linkWithThisNext!. Dont trust it too much tho
         return nothing
     else
-        temp = HangingChance10(hc.chance, newObj, hc.indexInChance + 1, size, hc.marginalOfChance, marginalOfNewobjName) #//,newobj.P * qualcosa??
+        temp = HangingChance10(hc.chance, newObj.s, hc.indexInChance + 1, size, hc.marginalOfChance, marginalOfNewobjName) #//,newobj.P * qualcosa??
         push!(newObj.involvedChances, temp)
         linkWithThisNext!(hc, temp)
         # //THERE IS ROOM FOR UPDATING currentPOfThisChanceToBeConsidered HERE --
@@ -140,7 +169,7 @@ function makeNextOutOfThisWith(hc::HangingChance10, newObj::SyntaxInstObj, size:
 end
 
 
-function makePrevOutOfThisWith(hc::HangingChance10, newObj::SyntaxInstObj, size::Int, marginalOfNewobjName::Real)::Union{HangingChance10, Nothing}
+function makePrevOutOfThisWith(hc::HangingChance10, newObj::SyntaxInstOwner, size::Int, marginalOfNewobjName::Real)::Union{HangingChance10, Nothing}
     # //next line finds needed HangingChance (**) in current it.involvedChances <<. 		//RIGHT NOW, THE ASSUMPTION IS THERES _ONLY_ _ONE_ .
     iter = filter((t->isThisStep(t, hc.chance, hc.indexInChance - 1)), newObj.involvedChances)
     @assert length(iter) < 2 "Should be only one needed HangingChance (**) in current it.involvedChances, not $(iter)"
@@ -150,7 +179,7 @@ function makePrevOutOfThisWith(hc::HangingChance10, newObj::SyntaxInstObj, size:
         #     //UPDATE: this SHOULD be done inside linkWithThisPrevious!. Dont trust it too much tho
         return nothing
     else
-        temp = HangingChance10(hc.chance, newObj, hc.indexInChance - 1, size, hc.marginalOfChance, marginalOfNewobjName) #//,newobj.P * qualcosa??
+        temp = HangingChance10(hc.chance, newObj.s, hc.indexInChance - 1, size, hc.marginalOfChance, marginalOfNewobjName) #//,newobj.P * qualcosa??
         push!(newObj.involvedChances, temp)
         linkWithThisPrevious!(hc, temp)
         # //THERE IS ROOM FOR UPDATING currentPOfThisChanceToBeConsidered HERE
@@ -161,11 +190,11 @@ end
 
 function getOneLongFieldNext(hc:: HangingChance10, s::SyntaxCore)::Union{HangingChance10, Nothing}
     iter = filter((t->(t.length==1 && getName(t.object) ==s)), hc.nexts)
-    return length(iter) == 0 ? nothing : iter[i]
+    return length(iter) == 0 ? nothing : iter[1]
 end
 function getOneLongFieldPrev(hc:: HangingChance10, s::SyntaxCore)::Union{HangingChance10, Nothing}
     iter = filter((t->(t.length==1 && getName(t.object) ==s)), hc.previouses)
-    return length(iter) == 0 ? nothing : iter[i]
+    return length(iter) == 0 ? nothing : iter[1]
 end
 
 

@@ -37,32 +37,14 @@ end
 
 
 
-# std::string trace(Bool topLevel =true) const;
-# std::string trace(Bool topLevel = true) const { return name; }
-# std::string trace(Bool topLevel = true) const { return first.trace(topLevel) + "->" + second.trace(topLevel); }
-# std::string trace(Bool topLevel=true) const
-# {
-#     if (!topLevel) { return "aSumType"; }
-#     std::string s = "(";
-#     for (auto i : objs)
-#         s += i.second.trace(false) + " + ";
-#     s.pop_back();
-#     s.pop_back();
-#     s.pop_back();
-#     return s += ")";
-# }
-# std::string trace(Bool topLevel = true) const
-# {
-#     if (!topLevel) { return "aProdType"; }
-
-#     std::string s = "(";
-#     for (auto i : objs)
-#         s += i.second.trace(false) + " x ";
-#     s.pop_back();
-#     s.pop_back();
-#     s.pop_back();
-#     return s += ")";
-# }
-# std::string Temp_Type::trace(Bool topLevel) const { return std::visit([&](auto t)->std::string {return t->trace(topLevel); }, obj); }
+trace(s::Temp_TypeBase, topLevel::Bool = true)::String = s.name
+trace(s::Temp_TypeFunc, topLevel::Bool = true)::String = trace(s.first, topLevel) * "->" * trace(s.second, topLevel)
+trace(s::Temp_TypeSum, topLevel::Bool = true)::String = if (!topLevel) "aSumType"
+	else "(" * join([trace(i.second, false) for i in s.objs], " + ") * ")"
+	end
+trace(s::Temp_TypeProd, topLevel::Bool = true)::String =if (!topLevel) "aProdType"
+else "(" * join([trace(i.second, false) for i in s.objs], " x ") * ")"
+end
+trace(s::Temp_TypeInt, topLevel::Bool = true)::String = string(s.obj)
 
 

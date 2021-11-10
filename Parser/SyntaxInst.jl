@@ -85,9 +85,9 @@ getP(s::SyntaxInstStrip)::Real = s.PofThisAndBelowGivenBelow
 trace(s::SyntaxInstTerm)::String = getString(s.name)
 trace(s::SyntaxInstReference)::String = s.text
 trace(s::SyntaxInstNativeString)::String = s.text
-trace(s::SyntaxInstObject)::String = getString(s.syntax)
+trace(s::SyntaxInstObject)::String = "FOUND{"*trace(s.syntax)*"}"
 trace(s::SyntaxInstField)::String = trace(s.objectFound)
-trace(s::SyntaxInstChoice)::String = "($(string(s.flag)): $(s.choice |> trace))"
+trace(s::SyntaxInstChoice)::String = "[<$(string(s.flag))>: $(s.choice |> trace)]"
 trace(s::SyntaxInstStruct)::String = join(s.list .|> trace, " ")
 trace(s::SyntaxInstStrip)::String = "(" * join(s.list .|> trace, " ") * ")"
 
@@ -99,8 +99,8 @@ deepEqual(s::SyntaxInstField, other::SyntaxInst)::Bool = other isa SyntaxInstFie
 # // LOL THIS WILL BE WRONG IN THE FUTURE ^
 # //LOL GOOD LUCK WITH FINDING THIS BUG, ALSO
 deepEqual(s::SyntaxInstChoice, other::SyntaxInst)::Bool = other isa SyntaxInstChoice && other.name == s.name && other.flag == s.flag && other.choice == s.choice
-deepEqual(s::SyntaxInstStruct, other::SyntaxInst)::Bool = other isa SyntaxInstStruct && s.name == other.name && all([deepEqual(i1, i2) for (i1, i2) in zip(s, other)])
-deepEqual(s::SyntaxInstStrip, other::SyntaxInst)::Bool = other isa SyntaxInstStrip && s.name == other.name && all([deepEqual(i1, i2) for (i1, i2) in zip(s, other)])
+deepEqual(s::SyntaxInstStruct, other::SyntaxInst)::Bool = other isa SyntaxInstStruct && s.name == other.name && all([deepEqual(i1, i2) for (i1, i2) in zip(s.list, other.list)])
+deepEqual(s::SyntaxInstStrip, other::SyntaxInst)::Bool = other isa SyntaxInstStrip && s.name == other.name && all([deepEqual(i1, i2) for (i1, i2) in zip(s.list, other.list)])
 
 
 
@@ -116,7 +116,7 @@ function insert_front!(s::SyntaxInstStruct, obj::SyntaxInst, index::Int, margina
     if !(index == length(s.name.list) - length(s.list) - 1 && wouldFit(obj, s.name.list[index+1])) throw(DomainError("freganiente")) end
     # ^ //this part is for testing: cuz, u are SUPPOSED TO KNOW WAT YOU'RE DOING
     # //also, now this is DOUBLE BAD because would_fit CAN get expensive (so maybe not call it at random?)
-    s.list = vcat(s.list, [obj])
+    s.list = vcat([obj], s.list)
     # //UPDATE PROB HERE, PLEASE: >>HOPEFULLY THIS IS NOT COMPLETELY WRONG::<<
     s.PofThisAndBelowGivenBelow *= (getP(obj) / marginalOfObjName);
 end
@@ -131,7 +131,7 @@ function push_struct!(s::SyntaxInstStrip, obj::SyntaxInst, index::Int, marginalO
 end
 function insert_front!(s::SyntaxInstStrip, obj::SyntaxInst, index::Int, marginalOfObjName::Real)
     # //idem^
-    s.list = vcat(s.list, [obj])
+    s.list = vcat([obj], s.list)
     # //idem^^
     s.PofThisAndBelowGivenBelow *= (getP(obj) / marginalOfObjName);
 end

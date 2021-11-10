@@ -20,10 +20,10 @@ empty(s::StackableChance)::Bool = s.what === nothing
 
 
 struct StackableFinishedSyntax <: StackableBoid
-    whatFinished::SyntaxInstObj
+    whatFinished::SyntaxInstOwner
 	from::Int
 	to::Int
-    function StackableFinishedSyntax(whatFinished::SyntaxInstObj, from::Int, to::Int)
+    function StackableFinishedSyntax(whatFinished::SyntaxInstOwner, from::Int, to::Int)
         @assert !(whatFinished isa SyntaxInstStruct) || !isempty(whatFinished.list)
         return new(whatFinished, from, to)
     end
@@ -37,7 +37,7 @@ empty(s::StackableFinishedSyntax)::Bool = false
 # int empty() { return 0; }
 
 struct StackableObject <: StackableBoid
-    whatFinished::SyntaxInstObject
+    whatObject::SyntaxInstObject
     from::Int
     to::Int
 end

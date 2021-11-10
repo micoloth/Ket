@@ -15,7 +15,7 @@ ScopedTypeInference() = ScopedTypeInference([])
 function can_be_a(sci::ScopedTypeInference, request::Temp_Type, chance::Temp_Type)::Bool
     if (request == chance) return true
     elseif request isa Temp_TypeSum
-        for c in request.data
+        for c in values(request.objs)
             if can_be_a(sci, c, chance) return true end
         end
     end
@@ -32,7 +32,7 @@ mutable struct Structure10
     posteriorsStructure::PosteriorsStructure
 
 	# //use this: stack.insert(obj->getP(), sSyntaxInstObjectNamedtd::move(obj));
-	# //and this: addFinished(from, to, std::move(SyntaxInstObj{ std::make_unique<SyntaxInstTerm>(chance, posteriorsStructure.getMarginal(chance)) }));
+	# //and this: addFinished(from, to, std::move(SyntaxInstOwner{ std::make_unique<SyntaxInstTerm>(chance, posteriorsStructure.getMarginal(chance)) }));
 end
 
 Structure10() = Structure10(FinishedsStructure10(), ChancesStructure10(), StackOfChances(), ScopedTypeInference(), [], PosteriorsStructure())
@@ -48,19 +48,42 @@ end
 
 function processObjectFound(S::Structure10, chanceF::StackableObject)
     obj::SyntaxInstObject = chanceF.whatObject
-    println( "having object: " , obj|>getType|>trace , " at " , chanceF.from , "-" , chanceF.to - 1 , " (included)")
+    println( "having object: " , obj.name|>trace , " at " , chanceF.from , "-" , chanceF.to - 1 , " (included)")
 
     # //auto& v = finisheds.at(chanceF.from, chanceF.to);
     # //if (std::any_of(v.begin(), v.end(), [&obj](auto& t) {return obj.deepEqual(t.getPointer()); })) { return; }
     # //^ THE IDEA WAS _EXACTLY_ NOT TO HAVE TO DO THIS ...............................................................
 
-    margOfObjName::Real = getP(obj.s) # //JESUS, WHAT A FUCKING MESS.............................................
+    # margOfObjName::Real = getP(obj.name) # //JESUS, WHAT A FUCKING MESS.............................................
 
     allPotentialPreviouses = objsWhereFromOfNextShouldBe(S.hangings, chanceF.from)
+    allPotentialNexts = objsWhereToOfPrevShouldBe(S.hangings, chanceF.to)
+    if obj|>trace == "FOUND{[<1>: A - > B]}"
+        println("Heyo")
+        fundeclSynt = S.posteriorsStructure.allSyntaxes["funcDefAndDecl_S"]
+        allPotentialPreviouses = filter((x->x.chance == fundeclSynt), allPotentialPreviouses)
+        allPotentialPreviouses|> length
+        allPotentialPreviouses[1] |> getWhatNeedNext .|> getString
+        allPotentialPreviouses[1].object|>trace
+
+
+        allPotentialNexts = filter((x->x.chance == fundeclSynt), allPotentialNexts)
+        allPotentialNexts|> length
+        allPotentialNexts[1] |> getWhatNeedBefore .|> getString
+        allPotentialNexts[1].object|>trace
+
+        # filter(x->x[2] == obj.name, [(n, t) for (n, t) in TypeSums]) .|> x->x[2]
+        filter(x->x == obj.name, vcat(values(S.posteriorsStructure.bindings)...))
+        can_be_a(S.scopedTypeInference, (allPotentialPreviouses[1] |> getWhatNeedNext)[1].type, obj.name)
+
+    end
+    if chanceF.from == 0 && chanceF.to==6
+        println("K, explain.....")
+    end
     for thingy::HangingChance10 in allPotentialPreviouses
         for possibleNeeded in getWhatNeedNext(thingy)
             # // here, ALL TEMPORARYNESS HAS BEEN DOWNLOADED INTO S.scopedTypeInference.can_be_a() ...... THINK ABOUT THIS BOI!!!!
-            if possibleNeeded isa SyntaxField && can_be_a(S.scopedTypeInference, getType(possibleNeeded), getType(obj))
+            if possibleNeeded isa SyntaxField && can_be_a(S.scopedTypeInference, getType(possibleNeeded), obj.name)
                 forward_addObjfoundAsChance(S, possibleNeeded, obj, thingy, chanceF.from, chanceF.to, getMarginal(S.posteriorsStructure, possibleNeeded))
             end
         end
@@ -69,7 +92,7 @@ function processObjectFound(S::Structure10, chanceF::StackableObject)
     for thingy::HangingChance10 in objsWhereToOfPrevShouldBe(S.hangings, chanceF.to)
         for possibleNeeded in getWhatNeedBefore(thingy)
             # // here, ALL TEMPORARYNESS HAS BEEN DOWNLOADED INTO S.scopedTypeInference.can_be_a() ...... THINK ABOUT THIS BOI!!!!
-            if possibleNeeded isa SyntaxField && can_be_a(scopedTypeInference, getType(possibleNeeded), getType(obj))
+            if possibleNeeded isa SyntaxField && can_be_a(S.scopedTypeInference, getType(possibleNeeded), obj.name)
                 backward_addObjfoundAsChance(S, possibleNeeded, obj, thingy, chanceF.from, chanceF.to, getMarginal(S.posteriorsStructure, possibleNeeded))
             end
         end
@@ -77,7 +100,7 @@ function processObjectFound(S::Structure10, chanceF::StackableObject)
 end
 
 function processFinishedSyntax(S::Structure10, chanceF::StackableFinishedSyntax)
-    obj::SyntaxInstObj = chanceF.whatFinished
+    obj::SyntaxInstOwner = chanceF.whatFinished
     println( "having synt: " , obj|>getName|>getString , " at " , chanceF.from , "-" , chanceF.to - 1 , " (included)")
 
     if at(S.finisheds, chanceF.from, chanceF.to) .|> (x->deepEqual(obj.s, x.s)) |> any return end
@@ -96,6 +119,11 @@ function processFinishedSyntax(S::Structure10, chanceF::StackableFinishedSyntax)
     end
     # //idem^
     allPotentialNexts = objsWhereToOfPrevShouldBe(S.hangings, chanceF.to)
+    if chanceF.from == 1 && chanceF.to==5
+        println("K, explain.....")
+        S.posteriorsStructure.allSyntaxes["functionType_S_Par"] in (allPotentialNexts.|>(x->x.chance))
+    end
+    S.posteriorsStructure.allSyntaxes["functionType_S_Par"] in (allPotentialNexts.|>(x->x.chance))
     for thingy::HangingChance10 in allPotentialNexts
         if needsBefore(thingy, getName(obj)) # //there ARE _IS_ _A_ _ISSUES_ here.....
             temp = makePrevOutOfThisWith(thingy, obj, chanceF.to - chanceF.from, margOfObjName)
@@ -103,7 +131,9 @@ function processFinishedSyntax(S::Structure10, chanceF::StackableFinishedSyntax)
         end
     end
 
-    for thingy::SomeChancewIndex{SyntaxProduct} in getAllSyntaxProductsWithIndexFor(S.posteriorsStructure, getName(obj))
+    allSyntProds = getAllSyntaxProductsWithIndexFor(S.posteriorsStructure, getName(obj))
+    S.posteriorsStructure.allSyntaxes["functionType_S_Par"] in (allSyntProds.|>(x->x.chance))
+    for thingy::SomeChancewIndex{SyntaxProduct} in allSyntProds
         iter = filter(t->isThisStep(t, thingy.chance, thingy.index), obj.involvedChances)
         if length(iter) == 0
             ttt = HangingChance10(thingy.chance, obj.s, thingy.index, chanceF.to - chanceF.from, thingy.P, margOfObjName)
@@ -114,30 +144,34 @@ function processFinishedSyntax(S::Structure10, chanceF::StackableFinishedSyntax)
 
     for thingy::HangingChance10 in createdProductChances #//the prev 3 steps go here
         insert!(S.stack, thingy.POfThisIfGoingForward + thingy.POfThisIfGoingBackward, StackableChance(thingy, chanceF.from, chanceF.to, true, true))
+        for (linked_prev_chance_that_is_beginning, from_) in find_linked_prev_chances_that_are_beginning(thingy, chanceF.from)
+            for b in getFinalObjsFromStart(linked_prev_chance_that_is_beginning)
+                insert!(S.stack, getP(b.sp), StackableFinishedSyntax(SyntaxInstOwner(b.sp), from_, from_ + b.l))
+            end
+        end
     end
 
     for thingy::SomeChancewIndex{SyntaxChoice} in getAllSyntaxChoicesWithIndexFor(S.posteriorsStructure, getName(obj))
         # //THIS IS IMPORTANT:
         actualP::Real = thingy.P * getP(chanceF)
 
-        temp1 = SyntaxInstObj(SyntaxInstChoice(thingy.chance, thingy.index, obj.s, actualP))
+        temp1 = SyntaxInstOwner(SyntaxInstChoice(thingy.chance, thingy.index, obj.s, actualP))
         temp2 = StackableFinishedSyntax(temp1, chanceF.from, chanceF.to)
         pp = getP(temp2)
         insert!(S.stack, pp, temp2)
     end
 
     for thingy::someOtherReturn in getAllSyntaxBindingsFor(S.posteriorsStructure, getName(obj))
-        temp1 = SyntaxInstObject(gettypeThatHasSynt(thingy), obj.s, getP(thingy.whatFinished))
+        temp1 = SyntaxInstObject(gettypeThatHasSynt(thingy), obj.s, thingy.P)
 
         # //here, you MIGHT WANT TO DO THIS:
         temp2 = StackableObject(temp1, chanceF.from, chanceF.to)
-        pp = getP(temp2.whatFinished)
+        pp = getP(temp2.whatObject)
         insert!(S.stack, pp, temp2)
 
         # //Except, i'm SKIPPING PROPAGATING FINISHED TYPES as for now, too see what happens- SO::
         # //what you get is,
-        # //finisheds.add(chanceF.from, chanceF.to, SyntaxInstObj{ std::move(temp1) });//to EXCLUDED,
-        # // ^^ - NOT.
+        add(S.finisheds, chanceF.from, chanceF.to, SyntaxInstOwner(temp1))  #//to EXCLUDED,
     end
     add(S.finisheds, chanceF.from, chanceF.to, obj) # //to EXCLUDED
 end
@@ -146,20 +180,35 @@ function forward_addObjfoundAsChance(S::Structure10, what_field::SyntaxField, ob
     temp1 = SyntaxInstField(what_field, objectFound, 0.5)
     # //first comment: LOL, you HERE is where computing the P GETS SERIOUS.......
     # //second comment: Note the nice symmetry with below.
-    temp2 = SyntaxInstObj(temp1) # Useless, i'd say
-    temp3 = makeNextOutOfThisWith(hChance, temp2, objfound_to - objfound_from, PMarginal) #  // well, i THINK it's co???
-    if temp3!==nothing insert!(S.stack, temp3.POfThisIfGoingForward, StackableChance(temp3 ,objfound_from,objfound_to, true, false)) end # //wait.. But what good does temp->prob even do here then
+    temp2 = SyntaxInstOwner(temp1) # Useless, i'd say
     add(S.finisheds, objfound_from, objfound_to, temp2) # //u are goddam right, it DOESNT go into the stack //i see we all agree on this rn
+
+    temp3 = makeNextOutOfThisWith(hChance, temp2, objfound_to - objfound_from, PMarginal) #  // well, i THINK it's co???
+    if temp3===nothing return end
+    insert!(S.stack, temp3.POfThisIfGoingForward, StackableChance(temp3 ,objfound_from,objfound_to, true, false)) # //wait.. But what good does temp->prob even do here then
+
+    for (linked_prev_chance_that_is_beginning, from_) in find_linked_prev_chances_that_are_beginning(temp3, objfound_from)
+        for b in getFinalObjsFromStart(linked_prev_chance_that_is_beginning)
+            insert!(S.stack, getP(b.sp), StackableFinishedSyntax(SyntaxInstOwner(b.sp), from_, from_ + b.l))
+        end
+    end
 end
 
 function backward_addObjfoundAsChance(S::Structure10, what_field::SyntaxField, objectFound::SyntaxInstObject, hChance::HangingChance10, objfound_from::Int, objfound_to::Int, PMarginal::Real)
     temp1 = SyntaxInstField(what_field, objectFound, 0.5)
     # //first comment: LOL, you HERE is where computing the P GETS SERIOUS.......
     # //second comment: Note the nice symmetry with below.
-    temp2 = SyntaxInstObj(temp1) # Useless, i'd say
-    temp3 = makeNextOutOfThisWith(hChance, temp2, objfound_to - objfound_from, PMarginal) #  // well, i THINK it's co???
-    if temp3!==nothing insert!(S.stack, temp3.POfThisIfGoingForward, StackableChance(temp3 ,objfound_from,objfound_to, false, true )) end #wait.. But what good does temp->prob even do here then
+    temp2 = SyntaxInstOwner(temp1) # Useless, i'd say
+    temp3 = makePrevOutOfThisWith(hChance, temp2, objfound_to - objfound_from, PMarginal) #  // well, i THINK it's co???
     add(S.finisheds, objfound_from, objfound_to, temp2) # //u are goddam right, it DOESNT go into the stack //i see we all agree on this rn
+    if temp3===nothing return end
+    insert!(S.stack, temp3.POfThisIfGoingForward, StackableChance(temp3 ,objfound_from,objfound_to, false, true ))  #wait.. But what good does temp->prob even do here then
+
+    for (linked_next_chance_that_is_end, to_) in find_linked_next_chances_that_are_end(temp3, objfound_to)
+        for b in getFinalObjsFromEnd(linked_next_chance_that_is_end)
+            insert!(S.stack, getP(b.sp), StackableFinishedSyntax(SyntaxInstOwner(b.sp), to_ - b.l, to_))
+        end
+    end
 end
 
 function processChance(S::Structure10, chance::StackableChance)
@@ -167,7 +216,7 @@ function processChance(S::Structure10, chance::StackableChance)
     addEnding(S.hangings, chance.what, chance.from)
     if (chance.goForward && !hasEnded(chance.what) && chance.to < size(S))
         for (it, to_) in EverythingBeginningAt(S.finisheds, UInt(chance.to))
-            # idea: it::SyntaxInstObj, but it was wrapped in a IterableForElementsStartingFrom/ CustomIterForward that had a getTo() method...
+            # idea: it::SyntaxInstOwner, but it was wrapped in a IterableForElementsStartingFrom/ CustomIterForward that had a getTo() method...
             if needsNext(chance.what, getName(it)) #//COULD BE SLIGTHY FASTER (but uglier)  //maybe there are still _IS_ _A_ issues here ?
                 # //ponder on the fact that if you are here, it's prolly
                 # //NOT ??
@@ -195,30 +244,34 @@ function processChance(S::Structure10, chance::StackableChance)
 
         # //careful here:
         for possibleNeeded in getWhatNeedNext(chance.what)
-            if possibleNeeded isa SyntaxField && getOneLongFieldNext(!chance.what, possibleNeeded)===nothing # TODO: is this right? Or should be ! ?
+            if possibleNeeded isa SyntaxField && getOneLongFieldNext(chance.what, possibleNeeded)===nothing && !occursin(S.inputVec[chance.to+1], "()[]-><{}:=.,;:") # TODO: is this right? Or should be ! ?
                 # // do i need th second check? Actually: What does it even do, i wonder?
                 temp1 = SyntaxInstReference(getType(possibleNeeded), S.inputVec[chance.to+1], 0.5)
                 # //first comment: LOL, you HERE is where computing the P GETS SERIOUS.......
                 temp2 = SyntaxInstField(possibleNeeded, temp1, 0.5)
                 # //second comment: possibly even more serious
-                temp5 = makeNextOutOfThisWith(chance.what, temp2, 1, getMarginal(S.posteriorsStructure, possibleNeeded))
+                temp4 = SyntaxInstOwner(temp2)
+                temp5 = makeNextOutOfThisWith(chance.what, temp4, 1, getMarginal(S.posteriorsStructure, possibleNeeded))
 
                 if (temp5!==nothing) insert!(S.stack, temp5.POfThisIfGoingForward, StackableChance(temp5 ,chance.to,chance.to + 1, true, false)) end
                 # //wait.. But what good does temp->prob even do here then^^
-                add(S.finisheds, chance.to, chance.to + 1, temp2)
+                add(S.finisheds, chance.to, chance.to + 1, temp4)
                 # //not only this does not go into the stack(as an AlreadyFinished)-- I DON'T WANT TO PUT IT INTO THE FINISHED EITHER..... //
             # // else{ something different, if you would ever need the bASICsTING}
             end
         end
     elseif hasEnded(chance.what)
         for b in getFinalObjsFromEnd(chance.what)
-            insert!(S.stack, getP(b.sp), StackableFinishedSyntax(SyntaxInstObj(b.sp), chance.to - b.l, chance.to))
+            if b.sp|>trace == "B > - A"
+                println("heh")
+            end
+            insert!(S.stack, getP(b.sp), StackableFinishedSyntax(SyntaxInstOwner(b.sp), chance.to - b.l, chance.to))
         end
     end
 
     if chance.goBackward && !hasJustBegun(chance.what) && chance.from > 0
         for (it, from_) in EverythingEndingAt(S.finisheds, UInt(chance.from))
-            # idea: it::SyntaxInstObj, but it was wrapped in a IterableForElementsWhatev/ CustomIterBack that had a getTo() method...
+            # idea: it::SyntaxInstOwner, but it was wrapped in a IterableForElementsWhatev/ CustomIterBack that had a getTo() method...
             if needsBefore(chance.what, getName(it)) #//COULD BE SLIGTHY FASTER (but uglier)   //maybe there are still _IS_ _A_ issues here ?
                 # //ponder on the fact that if you are here, it's prolly
                 # //NOT ??
@@ -246,15 +299,15 @@ function processChance(S::Structure10, chance::StackableChance)
         # //if (finisheds.at(chance.from - 1, chance.from).empty() || !std::holds_alternative<std::unique_ptr<SyntaxInstTerm>>(finisheds.at(chance.from - 1, chance.from).front().get()))//temporary, rn should be fine tho
         # //{
         for possibleNeeded in getWhatNeedBefore(chance.what)
-            if possibleNeeded isa SyntaxField && getOneLongFieldNext(chance.what, possibleNeeded) ===nothing
+            if possibleNeeded isa SyntaxField && getOneLongFieldPrev(chance.what, possibleNeeded) ===nothing && !occursin(S.inputVec[chance.from], "()[]-><{}:=.,;:")
                 # // do i need th second check? Actually: What does it even do, i wonder?
                 temp0 = possibleNeeded
                 temp1 = SyntaxInstReference(getType(temp0), S.inputVec[chance.from], 0.5)
                 # //first comment: LOL, you HERE is where computing the P GETS SERIOUS.......
                 temp2 = SyntaxInstField(temp0, temp1, 0.5)
                 # //second comment: possibly even more serious
-                temp4 = temp2
-                temp5 = makePrevOutOfThisWith(chance.what, temp4, 1, S.posteriorsStructure.getMarginal(possibleNeeded))
+                temp4 = SyntaxInstOwner(temp2)
+                temp5 = makePrevOutOfThisWith(chance.what, temp4, 1, getMarginal(S.posteriorsStructure, possibleNeeded))
                 if (temp5 !== nothing) insert!(S.stack, temp5.POfThisIfGoingBackward, StackableChance(temp5, chance.from - 1, chance.from, false, true)) end
                 # //wait.. But what good does temp->prob even do here then^^
                 add(S.finisheds, chance.from - 1, chance.from, temp4)
@@ -264,7 +317,10 @@ function processChance(S::Structure10, chance::StackableChance)
         end
     elseif hasJustBegun(chance.what)
         for b in getFinalObjsFromStart(chance.what)
-            stack.insert(getP(b.sp), StackableFinishedSyntax(SyntaxInstObj(b.sp), chance.from, chance.from + b.l))
+            if b.sp|>trace == "B > - A"
+                println("heh")
+            end
+            insert!(S.stack, getP(b.sp), StackableFinishedSyntax(SyntaxInstOwner(b.sp), chance.from, chance.from + b.l))
         end
     end
 end
@@ -272,7 +328,7 @@ end
 getBestTotalFound(S::Structure10) = getBestTotalFound(S.finisheds)
 
 function insertTerminal(S::Structure10, from::Int, to::Int, what::SyntaxTerm, P::Real)
-    temp1 = SyntaxInstObj(SyntaxInstTerm(what, P))
+    temp1 = SyntaxInstOwner(SyntaxInstTerm(what, P))
     temp2 = StackableFinishedSyntax(temp1, from,to)
     if size(S) < to
         ss = size(S)
@@ -286,6 +342,10 @@ end
 process_(S::Structure10, t::StackableChance) = processChance(S, t)
 process_(S::Structure10, t::StackableFinishedSyntax) = processFinishedSyntax(S, t)
 process_(S::Structure10, t::StackableObject) = processObjectFound(S, t)
+
+printt(s::StackableChance) = "$(s.from) to $(s.to): Chance for $(getString(s.what.chance)), current: $(trace(s.what.object))"
+printt(s::StackableFinishedSyntax) = "$(s.from) to $(s.to): Finished $(trace(s.whatFinished.s))"
+printt(s::StackableObject) = "$(s.from) to $(s.to): Found: $(trace(s.whatObject.syntax))"
 
 function doTheBestYouCan(S::Structure10)
     goOn = true

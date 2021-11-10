@@ -105,7 +105,7 @@ function push_dict(d, key, elem)
     if !(key in keys(d))
         d[key] = P_Type([elem])
     else
-        push!(d[key][ss], elem)
+        push!(d[key], elem)
     end
 end
 
@@ -137,6 +137,9 @@ getMarginal(ps::PosteriorsStructure, s::SyntaxCore) = ps.marginals[s]
 
 function getAllSyntaxProductsWithIndexFor(ps::PosteriorsStructure, s::SyntaxCore)::Array{SomeChancewIndex{SyntaxProduct}}
     v = Array{SomeChancewIndex{SyntaxProduct}}([])
+    if s == ps.allSyntaxes["funcDefAndDecl_type"]
+        println("Buaaa")
+    end
     for (p, (synt, idx)) in get(ps.posteriorsBaked, s, [])
         if p > ps.epsilon
             if !(synt isa SyntaxProduct) continue end

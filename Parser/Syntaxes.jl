@@ -45,7 +45,7 @@ function getPossibleNexts(s::SyntaxStruct, last::SyntaxCore, to::Int)::Array{Syn
 	elseif (to == 0)
 		return Array{SyntaxCore}([s.list[1]])
 	elseif (last != s.list[to])
-		throw(DomainError("oi: s.list[$(to)] = $(s.list[to]) was expected to be $(last)"))
+		throw(DomainError("oi: s.list[$(to)] = $(s.list[to]) was expected to be $(last).\n\nThis in the context of s.list $(s.list.|>getString)"))
 	else
 		return Array{SyntaxCore}([s.list[to+1]])
     end
@@ -58,7 +58,7 @@ function getPossiblePreviouses(s::SyntaxStruct, first::SyntaxCore, from::Int)::A
 	elseif (from == length(s.list))
 		return Array{SyntaxCore}([s.list[end]])
 	elseif (first != s.list[from+1])
-		throw(DomainError("oi: s.list[$(from+1)] = $(s.list[from+1]) was expected to be $(first)"))
+		throw(DomainError("oi: s.list[$(from+1)] = $(s.list[from+1]) was expected to be $(first).\n\nThis in the context of s.list $(s.list.|>getString)"))
 	else
 		return Array{SyntaxCore}([s.list[from]])
     end

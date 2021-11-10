@@ -35,7 +35,7 @@ include("SyntaxInst.jl")
 # //INCLUDING, a HangingChance10 struct
 
 
-M_it = Array{Array{Array{SyntaxInstObj}}}
+M_it = Array{Array{Array{SyntaxInstOwner}}}
 
 struct CustomIterForward
 	from::UInt
@@ -51,14 +51,14 @@ struct IterableForElementsStartingFrom
 end
 Base.IteratorSize(::Type{IterableForElementsStartingFrom}) = Base.SizeUnknown()
 
-function Base.iterate(ifes::IterableForElementsStartingFrom, it::CustomIterForward)::Union{Nothing, Tuple{Tuple{SyntaxInstObj, Int}, CustomIterForward }}
+function Base.iterate(ifes::IterableForElementsStartingFrom, it::CustomIterForward)::Union{Nothing, Tuple{Tuple{SyntaxInstOwner, Int}, CustomIterForward }}
    if it == CustomIterForward(ifes.from, UInt(length(ifes.matrix[ifes.from+1])), UInt(length(ifes.matrix[ifes.from+1][end]))) nothing
    else
     ((ifes.matrix[it.from+1][it.pos2][it.i+1], it.from + it.pos2 + 1),
      makeFull(ifes.matrix, CustomIterForward(it.from, it.pos2, it.i+1)))
    end
 end
-function Base.iterate(ifes::IterableForElementsStartingFrom)::Union{Nothing, Tuple{Tuple{SyntaxInstObj, Int}, CustomIterForward }}
+function Base.iterate(ifes::IterableForElementsStartingFrom)::Union{Nothing, Tuple{Tuple{SyntaxInstOwner, Int}, CustomIterForward }}
     return Base.iterate(ifes, makeFull(ifes.matrix, CustomIterForward(ifes.from, 1, 0)))
 end
 
@@ -81,18 +81,18 @@ end
 getFrom(it::CustomIterBackward) = it.from
 
 struct IterableForElementsEndingAt
-	matrix::Array{Array{Array{SyntaxInstObj}}}
+	matrix::Array{Array{Array{SyntaxInstOwner}}}
 	to::UInt
 end
 Base.IteratorSize(::Type{IterableForElementsEndingAt}) = Base.SizeUnknown()
 
-function Base.iterate(ifee::IterableForElementsEndingAt, it::CustomIterBackward)::Union{Nothing, Tuple{Tuple{SyntaxInstObj, Int}, CustomIterBackward }}
+function Base.iterate(ifee::IterableForElementsEndingAt, it::CustomIterBackward)::Union{Nothing, Tuple{Tuple{SyntaxInstOwner, Int}, CustomIterBackward }}
    if it == CustomIterBackward(ifee.to - 1, ifee.to, UInt(ifee.matrix[ifee.to][1]|>length)) nothing
    else ((ifee.matrix[it.from+1][it.to-it.from][it.i+1], it.from),
          makeFull(ifee.matrix, CustomIterBackward(it.from, it.to, it.i+1)))
    end
 end
-function Base.iterate(ifee::IterableForElementsEndingAt)::Union{Nothing, Tuple{Tuple{SyntaxInstObj, Int}, CustomIterBackward }}
+function Base.iterate(ifee::IterableForElementsEndingAt)::Union{Nothing, Tuple{Tuple{SyntaxInstOwner, Int}, CustomIterBackward }}
     return Base.iterate(ifee, makeFull(ifee.matrix, CustomIterBackward(0, ifee.to, 0)))
 end
 
@@ -105,7 +105,7 @@ end
 
 
 mutable struct FinishedsStructure10  # //SubstringStructureByMatrix
-    matrix::Array{Array{Array{SyntaxInstObj}}}
+    matrix::Array{Array{Array{SyntaxInstOwner}}}
 end
 
 
@@ -113,21 +113,21 @@ end
 function nullify(FS::FinishedsStructure10, startFrom::Int, stopFrom::Int, startTo::Int, stopTo::Int)  # //to EXCLUDED
     for i in startFrom:(stopFrom-1)
         for j in max(startTo, i):(stopTo-1)
-            set(FS, i, j+1, Array{SyntaxInstObj}([]))
+            set(FS, i, j+1, Array{SyntaxInstOwner}([]))
         end
     end
 end
 function increase(FS::FinishedsStructure10, pos::Int, howMuch::Int)  # //to EXCLUDED
     for i in 0:(pos-1)
         for j in 0:(howMuch-1)
-            # FS.matrix[i+1].insert(matrix[i+1].begin() + (pos - i), Array{SyntaxInstObj}([]));
-            FS.matrix[i+1] = vcat(FS.matrix[i+1][1:(pos - i)],  [Array{SyntaxInstObj}([])], FS.matrix[i+1][(pos - i+1):end])
+            # FS.matrix[i+1].insert(matrix[i+1].begin() + (pos - i), Array{SyntaxInstOwner}([]));
+            FS.matrix[i+1] = vcat(FS.matrix[i+1][1:(pos - i)],  [Array{SyntaxInstOwner}([])], FS.matrix[i+1][(pos - i+1):end])
         end
     end
     L = length(FS.matrix )
     for i in 0:(howMuch-1)
-        tt = Array{Array{SyntaxInstObj}}(undef, L+ 1 + i - pos)
-        for i in 1:length(tt) tt[i] = Array{SyntaxInstObj}([]) end
+        tt = Array{Array{SyntaxInstOwner}}(undef, L+ 1 + i - pos)
+        for i in 1:length(tt) tt[i] = Array{SyntaxInstOwner}([]) end
         FS.matrix = vcat(FS.matrix[1:(pos)],  [tt], FS.matrix[pos+1:end])
     end
 end
@@ -141,17 +141,17 @@ function remove(FS::FinishedsStructure10, from::Int, to::Int) #//to EXCLUDED
 end
 
 FinishedsStructure10() = FinishedsStructure10(0)
-function FinishedsStructure10(singletons::Array{SyntaxInstObj})::FinishedsStructure10
+function FinishedsStructure10(singletons::Array{SyntaxInstOwner})::FinishedsStructure10
     FS = FinishedsStructure10(length(singletons))
     for (i, s) in enumerate(singletons) push!(FS.matrix[i][1], s) end
     FS
 end
 function FinishedsStructure10(rows::Int)::FinishedsStructure10
-    FS = Array{Array{Array{SyntaxInstObj}}}(undef, rows)
+    FS = Array{Array{Array{SyntaxInstOwner}}}(undef, rows)
     for i in 1:length(FS)
-        FS[i] = Array{Array{SyntaxInstObj}}(undef, rows-i+1)
+        FS[i] = Array{Array{SyntaxInstOwner}}(undef, rows-i+1)
         for j in 1:length(FS[i])
-            FS[i][j] = Array{SyntaxInstObj}([])
+            FS[i][j] = Array{SyntaxInstOwner}([])
         end
     end
     FinishedsStructure10(FS)
@@ -160,7 +160,7 @@ end
 size(FS::FinishedsStructure10)::Int = length(FS.matrix)
 
 
-at(FS::FinishedsStructure10, from::Int, to::Int)::Array{SyntaxInstObj} = FS.matrix[from+1][(to-1)-from+1] # //to EXCLUDED
+at(FS::FinishedsStructure10, from::Int, to::Int)::Array{SyntaxInstOwner} = FS.matrix[from+1][(to-1)-from+1] # //to EXCLUDED
 function set(FS::FinishedsStructure10, from::Int, to::Int, what)
     FS.matrix[from+1][(to-1)-from+1] = what  # //to EXCLUDED
 end
@@ -184,7 +184,9 @@ end
 function trace(FS::FinishedsStructure10)
     for i in 1:(FS.matrix|>length)
         for j in 1:(FS.matrix[i]|>length)
-            print("($(i-1),$(i+j-1)) $(join(FS.matrix[i][j] .|> trace, " ")) ")
+            if length(FS.matrix[i][j])>0
+                print("($(i-1),$(i+j-1)) $(join(FS.matrix[i][j] .|> trace, " || ")) ")
+            end
         end
         println("")
     end
@@ -193,7 +195,7 @@ EverythingBeginningAt(FS::FinishedsStructure10, from::UInt) = IterableForElement
 EverythingEndingAt(FS::FinishedsStructure10, to::UInt) = IterableForElementsEndingAt(FS.matrix, to)  #//to EXCLUDED??-- it's the BEGINNING OF THE NEXT .
 
 
-function getBestTotalFound(FS::FinishedsStructure10)::Union{SyntaxInstObj, Nothing}
+function getBestTotalFound(FS::FinishedsStructure10)::Union{SyntaxInstOwner, Nothing}
     if (length(FS.matrix) == 0) nothing
     elseif (at(FS, 0, length(FS.matrix)) |> length == 0) # //WROONG   # ??????
         nothing
