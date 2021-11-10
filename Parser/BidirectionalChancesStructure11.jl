@@ -37,9 +37,7 @@ hasJustBegun(hc::HangingChance10)::Bool = getPossiblePreviouses(hc.chance, getNa
 
 struct SyntaxInstOwner
     s::SyntaxInst
-    involvedChances::Array{HangingChance10}
 end
-SyntaxInstOwner(s::SyntaxInst) = SyntaxInstOwner(s, Array{HangingChance10}([]))
 trace(sio::SyntaxInstOwner) = trace(sio.s)
 getName(obj::SyntaxInstOwner) = getName(obj.s)
 
@@ -167,9 +165,8 @@ function chancesNeedingThisNext(cs::ChancesStructure10, from_of_si::Int, si::Syn
     res = Array{HangingChance10}([])
     if from_of_si == 0 return res end #// Excluded, BUT UNCHECKED
     for hc in cs.endings[from_of_si]
-        if needsNext(hc, si.s.name) && (si.involvedChances .|> (x->!isThisStep(x, hc.chance, hc.indexInChance + 1)) |> all)
-            # BOY i wish i could get rid of this si.involvedChances bs...
-            #//there ARE _IS_ _A_ _ISSUES_ here.....
+        if needsNext(hc, si.s.name)
+            #//there ARE _IS_ _A_ _ISSUES_ here.....   ???
             push!(res, hc)
         end
     end
@@ -179,8 +176,7 @@ function chancesNeedingThisPreviously(cs::ChancesStructure10, to_of_si::Int, si:
     res = Array{HangingChance10}([])
     if to_of_si == length(cs.beginnings) return res end #// Excluded, BUT UNCHECKED
     for hc in cs.beginnings[to_of_si+1]
-        if needsBefore(hc, si.s.name) && (si.involvedChances .|> (x->!isThisStep(x, hc.chance, hc.indexInChance - 1)) |> all)
-            # BOY i wish i could get rid of this si.involvedChances bs...
+        if needsBefore(hc, si.s.name)
             #//there ARE _IS_ _A_ _ISSUES_ here..... ???
             push!(res, hc)
         end

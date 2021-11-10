@@ -45,7 +45,6 @@ end
 
 function makeNewNextFromSynt(hc_prev::HangingChance10, newObj::SyntaxInstOwner, size::Int, marginalOfNewobjName::Real)::HangingChance10
     new_hc = HangingChance10(hc_prev.chance, newObj.s, hc_prev.indexInChance + 1, size, hc_prev.marginalOfChance, marginalOfNewobjName) #//,newobj.P * qualcosa??
-    push!(newObj.involvedChances, new_hc)
     linkWithThisNext!(hc_prev, new_hc)
     # //THERE IS ROOM FOR UPDATING currentPOfThisChanceToBeConsidered HERE --
     #     //UPDATE: this SHOULD be done inside linkWithThisNext!. Dont trust it too much tho
@@ -53,7 +52,6 @@ function makeNewNextFromSynt(hc_prev::HangingChance10, newObj::SyntaxInstOwner, 
 end
 function makeNewPrevFromSynt(hc_next::HangingChance10, newObj::SyntaxInstOwner, size::Int, marginalOfNewobjName::Real)::HangingChance10
     new_hc = HangingChance10(hc_next.chance, newObj.s, hc_next.indexInChance - 1, size, hc_next.marginalOfChance, marginalOfNewobjName) #//,newobj.P * qualcosa??
-    push!(newObj.involvedChances, new_hc)
     linkWithThisPrevious!(hc_next, new_hc)
     # //THERE IS ROOM FOR UPDATING currentPOfThisChanceToBeConsidered HERE
     #     //UPDATE: this SHOULD be done inside linkWithThisPrevious!. Dont trust it too much tho
@@ -128,9 +126,11 @@ function processFinishedSyntax(S::Structure11, chanceF::StackableFinishedSyntax)
     obj::SyntaxInstOwner = chanceF.whatFinished
     println( "having synt: " , obj|>getName|>getString , " at " , chanceF.from , "-" , chanceF.to - 1 , " (included)")
 
-    if at(S.finisheds, chanceF.from, chanceF.to) .|> (x->deepEqual(obj.s, x.s)) |> any
-        throw(DomainError("OK THIS ACTUALLY ACTUALLY HAPPENEDDDD"))
-        return
+    for x in at(S.finisheds, chanceF.from, chanceF.to)
+        if deepEqual(obj.s, x.s)
+            # throw(DomainError("OK THIS ACTUALLY ACTUALLY HAPPENEDDDD: $(obj.s|>trace),     $(x.s|>trace)"))
+            return
+        end
     end
     # //^ THE IDEA WAS _EXACTLY_ NOT TO HAVE TO DO THIS ...............................................................
 
