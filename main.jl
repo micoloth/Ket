@@ -80,17 +80,17 @@ cs = get_cs();
 
 ########## Parsing 1: Parse "+"
 
-# s10 = Structure10()
-# addSyntax!(s10.posteriorsStructure, "+", SyntaxTerm("+"))
-# initializeMarginals(s10.posteriorsStructure)
-# initializeChoices(s10.posteriorsStructure)
-# initializePosteriors(s10.posteriorsStructure)
-# # initializeStrips(s10.posteriorsStructure)
+s10 = Structure11()
+addSyntax!(s10.posteriorsStructure, "+", SyntaxTerm("+"))
+initializeMarginals(s10.posteriorsStructure)
+initializeChoices(s10.posteriorsStructure)
+initializePosteriors(s10.posteriorsStructure)
+# initializeStrips(s10.posteriorsStructure)
 
-# # insertTerminal(s10, 0,1,SyntaxTerm("+"), 1)
-# # s10.finisheds|>trace
-# # doTheBestYouCan(s10)
-# # s10.finisheds|>trace
+insertTerminal(s10, 0,1,SyntaxTerm("+"), 1)
+s10.finisheds|>trace
+doTheBestYouCan(s10)
+s10.finisheds|>trace
 
 
 # rp = RandomParser10("", [], s10)
@@ -101,7 +101,7 @@ cs = get_cs();
 
 ########## Parsing 2: Parse "->"
 
-s10 = Structure10()
+s10 = Structure11()
 
 SyntaxTerms = Dict{String, SyntaxTerm}()
 SyntaxFields = Dict{String, SyntaxField}()
@@ -126,12 +126,11 @@ initializeChoices(s10.posteriorsStructure)
 initializePosteriors(s10.posteriorsStructure)
 
 
-# text = "->"
+text = "->"
 
 # rp = RandomParser10("", [], s10);
 # parse(rp, text)  # OOf
 # rp.structure|>trace
-# rp.structure.hangings.beginnings
 
 
 
@@ -142,7 +141,7 @@ initializePosteriors(s10.posteriorsStructure)
 ########## Parsing 3: Parse "T->T"
 
 function make_s10()
-    s10 = Structure10()
+    s10 = Structure11()
 
     SyntaxTerms = Dict{String, SyntaxTerm}()
     SyntaxFields = Dict{String, SyntaxField}()
@@ -355,25 +354,29 @@ function make_s10_big()
     return randomParser10
 end
 
-# randomParser10 = make_s10_big();
-# text = "(A->B)-> B";
-# parse(randomParser10, text)
+randomParser10 = make_s10_big();
+text = "(A->B)-> B";
+parse(randomParser10, text)
 
 
-# randomParser10 = make_s10_big();
-# text = "f:(A->B)-> B";
-# parse(randomParser10, text)
+randomParser10 = make_s10_big();
+text = "f:(A->B)-> B";
+parse(randomParser10, text)
 
 
-# randomParser10 = make_s10_big();
-# text = "ff (  g  )  =  g  (  a  )";
-# parse(randomParser10, text)
+randomParser10 = make_s10_big();
+text = "g  (  a  )";
+parse(randomParser10, text)
+
+randomParser10 = make_s10_big();
+text = "ff (  g  )  =  g  (  a  )";
+parse(randomParser10, text)
 
 
-# randomParser10 = make_s10_big();
-# text = "ff:A where ff (  g  )  =  a";
-# parse(randomParser10, text)
-# println("(Btw, length(inputVec) = $(length(randomParser10.inputVec)))")
+randomParser10 = make_s10_big();
+text = "ff:A where ff (  g  )  =  a";
+parse(randomParser10, text)
+println("(Btw, length(inputVec) = $(length(randomParser10.inputVec)))")
 
 randomParser10 = make_s10_big();
 text = "ff:A->B where ff (  g  )  =  a";
@@ -381,10 +384,10 @@ parse(randomParser10, text)
 println("(Btw, length(inputVec) = $(length(randomParser10.inputVec)))")
 
 
-# randomParser10 = make_s10_big();
-# text = "ff:(A->B)-> B  where ff (  g  )  =  g  (  a ) ; eval ff ( h ) ";
-# parse(randomParser10, text)
-# println("(Btw, length(inputVec) = $(length(randomParser10.inputVec)))")
+randomParser10 = make_s10_big();
+text = "ff:(A->B)-> B  where ff (  g  )  =  g  (  a ) ; eval ff ( h ) ";
+parse(randomParser10, text)
+println("(Btw, length(inputVec) = $(length(randomParser10.inputVec)))")
 
 
 # res = getBestTotalFound(randomParser10)

@@ -1,5 +1,5 @@
 
-include("Structure10.jl")
+include("Structure11.jl")
 
 # text = "ff:(A->B)-> B  where ff (  g  )  =  g  (  a )  eval ff ( h ) "
 
@@ -14,9 +14,9 @@ getOld(ss::Substit) = (ss.oldFrom, ss.oldTo)
 mutable struct RandomParser10
     inputText::String
 	inputVec::Array{String}
-    structure::Structure10
+    structure::Structure11
 end
-RandomParser10() = RandomParser10("", [], Structure10())
+RandomParser10() = RandomParser10("", [], Structure11())
 
 
 parse(prs::RandomParser10, s::String) = updateInput(prs, s)
