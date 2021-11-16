@@ -96,7 +96,7 @@ reduc(t::TApp)::Term = reduc(Array{Term}(t.ops_dot_ordered .|> reduc)) # TApp is
 reduc(t::TProd)::Term = TProd(t.data .|> reduc)
 reduc(t::TSum)::Term = TSum(t.data .|> reduc)
 reduc(t::TSumTerm)::Term = TSumTerm(t.tag, t.tag_name, t.data |> reduc)
-reduc(t::TAnno)::Term = TAnno(t.expr |> reduc, t.type)
+reduc(t::TAnno; reduc_type=false)::Term = TAnno(t.expr |> reduc, reduc_type ? (t.type|>reduc) : t.type)
 reduc(t::TBranches)::Term = TBranches(t.ops_chances .|> reduc)
 function reduc(ops::Array{Term})::Term
     #println("> doing the ", typeof(func),  " ", typeof(arg), " thing")
@@ -173,9 +173,9 @@ pr_E(x::TTop)::String = "T"
 # pr_E(x::TApp)::String = "(" * pr_E(x.arg) * " ." * pr_E(x.func) *")" # join(x.func .|> pr_E, ".")
 pr_E(x::TAbs)::String = "/{$(pr_E(x.body))}"
 pr_E(x::TProd)::String = "[$(join(x.data .|> pr_E, ", "))]"
-pr_E(x::TSumTerm)::String = "$(x.tag)_$(pr_E(x.data))"
+pr_E(x::TSumTerm)::String = "$(x.tag_name)_$(pr_E(x.data))"
 pr_E(x::TBranches)::String = "{" * (["$(i)_-->$(e|>pr_E)" for (i,e) in enumerate(x.ops_chances)] |> (s->join(s, ", "))) * ")"
-pr_E(x::TAnno)::String = "$(pr_E(x.expr)):$(pr_E(x.type))"
+pr_E(x::TAnno)::String = "$(pr_E(x.expr)):$(pr_T(x.type))"
 function pr_E(x::TApp)::String
     if length(x.ops_dot_ordered) == 2
         arg, func = x.ops_dot_ordered[1], x.ops_dot_ordered[2]
@@ -190,6 +190,7 @@ function pr_E(x::TApp)::String
 end
 
 pr(x) = pr_T(x)
+pr_ctx(i::TTerm) = "Given [$(join(i.t_in.data .|>pr, ", "))], get $(i.t_out|>pr)"
 
 
 # NOT used by the above:

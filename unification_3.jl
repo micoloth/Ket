@@ -15,7 +15,7 @@
 # What is the meaning of the "NTHG" function ????
 
 
-include("mylambda1_dep.jl")
+include("mylambda1.jl")
 
 
 abstract type Constraint end
@@ -124,7 +124,7 @@ function meetjoin_rec_unify_(t1::TTerm, t2::TTerm, do_meet)::Union{Error, MeetJo
 end
 
 function meetjoin_rec_unify_(t1::TSumTerm, t2::TSumTerm, do_meet)::Union{Error, MeetJoin_rec_res}
-    if t1.tag != t2.tag Error("For now, you can NEVER unify different tags: $(t1.tag) != $(t2.tag)")
+    if t1.tag != t2.tag Error("For now, you can NEVER unify different tags: $(t1.tag_name) != $(t2.tag_name)")
     else
         res = meetjoin_rec_unify_(t1.data, t2.data, do_meet) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
         if res isa Error return res end
@@ -223,7 +223,7 @@ end
 
 function imply_unify_(t1::TSumTerm, t2::TSumTerm)::SimpRes
     if t1.tag != t2.tag
-        Error("For now, you can NEVER unify different tags: $(t1.tag) != $(t2.tag)")
+        Error("For now, you can NEVER unify different tags: $(t1.tag_name) != $(t2.tag_name)")
     else
         Array{Constraint}([DirectConstraint(t1.data, t2.data)])
     end
@@ -471,7 +471,6 @@ robinsonUnify(t1::Term, t2::Term; unify_tlocs_ctx::Bool = true, mode::Unify_mode
 
 # IMPORTANT: I'm using TTerm's for carrying around contexts, but PLEASE make sure it's always TTerm OF A TPROD...
 
-pr_ctx(i::TTerm) = "Given [$(join(i.t_in.data .|>pr, ", "))], get $(i.t_out|>pr)"
 TTermEmpty(res_type::Term) = TTerm(TProd([]), res_type)
 
 function infer_type_(term::TLoc)::Union{TTerm,Error}
@@ -629,3 +628,4 @@ function infer_type_rec(term::TApp)::Union{TTerm,Error}
 end
 
 
+# *unification*, thproving_1.jl, mylambda1_dep.jl
