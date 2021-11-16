@@ -98,9 +98,9 @@ trace(s::SyntaxInstStruct)::String = join(s.list .|> trace, " ")
 trace(s::SyntaxInstStrip)::String = "(" * join(s.list .|> trace, " ") * ")"
 
 deepEqual(s::SyntaxInstTerm, other::SyntaxInst)::Bool = other isa SyntaxInstTerm && s.name == other.name
-deepEqual(s::SyntaxInstReference, other::SyntaxInst)::Bool = other isa SyntaxInstReference && s.type == other.type && s.name == other.name
+deepEqual(s::SyntaxInstReference, other::SyntaxInst)::Bool = other isa SyntaxInstReference && s.type === other.type && s.name == other.name
 deepEqual(s::SyntaxInstNativeString, other::SyntaxInst)::Bool = other isa SyntaxInstNativeString && s.text == other.text
-deepEqual(s::SyntaxInstObject, other::SyntaxInst)::Bool = other isa SyntaxInstObject && other.name == name && deepEqual(s.syntax, other.syntax)
+deepEqual(s::SyntaxInstObject, other::SyntaxInst)::Bool = other isa SyntaxInstObject && other.name === name && deepEqual(s.syntax, other.syntax)
 deepEqual(s::SyntaxInstField, other::SyntaxInst)::Bool = other isa SyntaxInstField && s.name == other.name
 # // LOL THIS WILL BE WRONG IN THE FUTURE ^
 # //LOL GOOD LUCK WITH FINDING THIS BUG, ALSO

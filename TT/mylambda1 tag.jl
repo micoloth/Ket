@@ -64,7 +64,7 @@ Base.:(==)(a::TLocTag, b::TLocTag) = (a.var == b.var) && (a.var_tag == b.var_tag
 Base.:(==)(a::TAbsTag, b::TAbsTag) = Base.:(==)(a.body, b.body) && all(a.var_tags .== b.var_tags)
 Base.:(==)(a::TAppTag, b::TAppTag) = all(a.ops_dot_ordered .== b.ops_dot_ordered)
 Base.:(==)(a::TTermTag, b::TTermTag) = (a.t_in == b.t_in) && (a.t_out == b.t_out)
-Base.:(==)(a::TProdTag, b::TProdTag) = all(a.data .== b.data) && all(a.tags .== b.tags)
+Base.:(==)(a::TProdTag, b::TProdTag) = (length(a.data) == length(b.data)) && all(a.data .== b.data) && all(a.tags .== b.tags)
 Base.:(==)(a::TSumTag, b::TSumTag) = Base.:(==)(a.data, b.data) && all(a.tags .== b.tags)
 Base.:(==)(a::TSumTermTag, b::TSumTermTag) = (a.data == b.data) && (a.tag == b.tag) && (a.tag_name == b.tag_name)
 Base.:(==)(a::TAnnoTag, b::TAnnoTag) = (a.expr == b.expr) && (a.type == b.type)

@@ -13,6 +13,7 @@ struct SyntaxField <: SyntaxCore
 	type::TermTag # //the TYPE OF THE OBJECT, of course (ie it requires to parse out a NEW obj che è >>:<< type<.  //// ( oppure, a new aobj who is :T where T >>isA<< type<. )
 end
 getType(s::SyntaxField) = s.type
+Base.:(==)(a::SyntaxField, b::SyntaxField) = (a.name == b.name) && (a.type === b.type)
 
 struct SyntaxChoice <: SyntaxCore
 	list::Array{SyntaxCore}
