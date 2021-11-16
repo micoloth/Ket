@@ -1,4 +1,5 @@
-include("STSP_Types.jl")
+# it REQUIRES that you included ("mylambda1_tag.jl") at Some Point!!!
+
 
 abstract type SyntaxCore end
 abstract type SyntaxProduct <: SyntaxCore end
@@ -9,7 +10,7 @@ end
 
 struct SyntaxField <: SyntaxCore
 	name::String  # //field name
-	type::Temp_Type # //the TYPE OF THE OBJECT, of course (ie it requires to parse out a NEW obj che è >>:<< type<.  //// ( oppure, a new aobj who is :T where T >>isA<< type<. )
+	type::TermTag # //the TYPE OF THE OBJECT, of course (ie it requires to parse out a NEW obj che è >>:<< type<.  //// ( oppure, a new aobj who is :T where T >>isA<< type<. )
 end
 getType(s::SyntaxField) = s.type
 

@@ -9,13 +9,13 @@ struct ScopedTypeInference #//Boi: this class, will GROW............
 # //note 1: this is the Wrong way to handle sum types
 # //note 2: yeah, a MATRIX will happen here!!
 # //note 3: this class might become a DAC !!!
-	allDefinitions::Array{Tuple{String, Temp_Type}}
+	allDefinitions::Array{Tuple{String, TermTag}}
 end
 ScopedTypeInference() = ScopedTypeInference([])
-function can_be_a(request::Temp_Type, chance::Temp_Type)::Bool
-    if (request == chance) return true
-    elseif request isa Temp_TypeSum
-        for c in values(request.objs)
+function can_be_a(request::TermTag, chance::TermTag)::Bool
+    if (request === chance) return true
+    elseif request isa TSumTag
+        for c in request.data
             if can_be_a(c, chance) return true end
         end
     end

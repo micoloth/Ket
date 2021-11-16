@@ -1,6 +1,6 @@
 
 include("Syntaxes.jl")
-include("STSP_Types.jl")
+# it REQUIRES that you included ("mylambda1_tag.jl") at Some Point!!!
 
 abstract type SyntaxInst end
 abstract type Accepted_SynatxInst_type <: SyntaxInst end
@@ -15,27 +15,33 @@ struct SyntaxInstTerm <: SyntaxInst
 	P::Real  # //I might be wrong, but this is just the marginal
 end
 
-struct SyntaxInstReference <: Accepted_SynatxInst_type
+mutable struct SyntaxInstReference <: Accepted_SynatxInst_type
     # //it's a variable.
-    # //note: the name of a STSPtype is the USE OF A GLOBALLY DEFINED VARIABLE
+    # //note: the name of a Term is the USE OF A GLOBALLY DEFINED VARIABLE # (Will i have to fix this?)
     # //note: a variable definition CONTAINS A VARIABLE (i.e., the name.)
-	type::Temp_Type # //it contains THE TYPE OF THE VAR YOU ARE JUST REFERENCING
+	type::TermTag # //it contains THE TYPE OF THE VAR YOU ARE JUST REFERENCING
 	text::String #
 	P::Real # //What is this, really? I contains the likelyhood of type being represented by a free variable, and the similarity of the sentence maybe?
+    inferred_obj::Union{Nothing, TAnnoTag, Error} # This HAS BEEN BUIT UP ALREADY. BUT, it still has Holes ot Type variables ofc!! Also: it CAN be an Errored one!!
 end
+SyntaxInstReference(type, text, P) = SyntaxInstReference(type, text, P, nothing)
 
-struct SyntaxInstNativeString <: Accepted_SynatxInst_type
+mutable struct SyntaxInstNativeString <: Accepted_SynatxInst_type
     # //it's a string
 	text::String
 	P::Real # //What is this, really? Prob a constant? Or >>1<<?
+    inferred_obj::Union{Nothing, TAnnoTag, Error} # This HAS BEEN BUIT UP ALREADY. BUT, it still has Holes ot Type variables ofc!! Also: it CAN be an Errored one!!
 end
+SyntaxInstNativeString(text, P) = SyntaxInstNativeString(text, P, nothing)
 
-struct SyntaxInstObject <: Accepted_SynatxInst_type
+mutable struct SyntaxInstObject <: Accepted_SynatxInst_type
     # //a syntax that results in a obj
-    name::Temp_Type
+    name::TermTag # This is THE TYPE OF THE OBJ YOU JUST FOUND
     syntax::SyntaxInst  # //it is THE SYNTAX THAT OBJECT IS USING
     PofObjectAndBelowGivenBelow::Real #//it's the P of the fact that syntax meant object, times P of syntax and stuff.
+    inferred_obj::Union{Nothing, TAnnoTag, Error} # This HAS BEEN BUIT UP ALREADY. BUT, it still has Holes ot Type variables ofc!! Also: it CAN be an Errored one!!
 end
+SyntaxInstObject(name, syntax, PofObjectAndBelowGivenBelow) = SyntaxInstObject(name, syntax, PofObjectAndBelowGivenBelow, nothing)
 
 # //note: i'm doing so that now, same SyntaxInst form with two different >FIELD >NAMES are different SyntaxInstCores.
 # //		AT THIS POINT I BASICALLY HAVE NO IDEA WHAT I'M DOING

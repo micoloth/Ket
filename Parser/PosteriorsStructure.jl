@@ -8,7 +8,7 @@ end
 
 struct someOtherReturn
 	syntax::SyntaxCore
-	type::Temp_Type
+	type::TermTag
 	P::Real
 end
 gettypeThatHasSynt(r::someOtherReturn) = r.type
@@ -47,13 +47,13 @@ end
 
 P_Type = Array{Tuple{Real, Tuple{SyntaxCore, Int}}} # std::multimap<float, std::pair<SyntaxCore, int>>
 
-struct PosteriorsStructure
+mutable struct PosteriorsStructure
 
 	posteriorsBaked::Dict{SyntaxCore, P_Type} #  //pB[Child][PosteriorProb]=Parent
 	marginals::Dict{SyntaxCore, Real}
 	choicesLikelyhood::Dict{SyntaxChoice, Dict{SyntaxCore, Real}} # //cL[Parent][Child]=Likelyhood
 	stripLambdas::Dict{SyntaxStrip, Real} #  //sL[Strip]=Lambda
-	bindings::Dict{SyntaxCore, Array{Temp_Type}}
+	bindings::Dict{SyntaxCore, Array{TermTag}}
 	allSyntaxes::Dict{String, SyntaxCore}
 	epsilon::Real
 end
@@ -63,7 +63,7 @@ PosteriorsStructure() = PosteriorsStructure(
     Dict{SyntaxCore, Real}(),
     Dict{SyntaxChoice, Dict{SyntaxCore, Real}}(), # //cL[Parent][Child]=Likelyhood
     Dict{SyntaxStrip, Real}(), #  //sL[Strip]=Lambda
-    Dict{SyntaxCore, Array{Temp_Type}}(),
+    Dict{SyntaxCore, Array{TermTag}}(),
     Dict{String, SyntaxCore}(),
     0.0
     )
@@ -174,7 +174,7 @@ function getTerminal(ps::PosteriorsStructure, s::String)::Tuple{Union{SyntaxTerm
     end
 end
 
-function getBindings(ps::PosteriorsStructure, s::SyntaxCore)::Array{Temp_Type}
+function getBindings(ps::PosteriorsStructure, s::SyntaxCore)::Array{TermTag}
     ts = get(ps.bindings, s, nothing)
-    return (ts !== nothing) ? ts : Array{Temp_Type}([])
+    return (ts !== nothing) ? ts : Array{TermTag}([])
 end
