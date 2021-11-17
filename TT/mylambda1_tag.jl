@@ -22,7 +22,7 @@ struct TGlobTag <: TermTag
     type::TermTag # If this is a Type, write TypeUniverse
 end
 struct TLocTag <: TermTag
-    # var::Index # It DOESNT have an index for now- because you DONT know the order!
+    var::Index # It DOESNT have an index for now- because you DONT know the order!
     var_tag::Id # REPETITION of the var name in the func declaration
 end
 struct TAbsTag <: TermTag
@@ -77,28 +77,30 @@ Base.:(==)(a::TSumTag, b::TSumTag) = Base.:(==)(a.data, b.data) && all(a.tags .=
 Base.:(==)(a::TSumTermTag, b::TSumTermTag) = (a.data == b.data) && (a.tag == b.tag) && (a.tag_name == b.tag_name)
 Base.:(==)(a::TAnnoTag, b::TAnnoTag) = (a.expr == b.expr) && (a.type == b.type)
 
+TLocTag(i::Int) = TLocTag(i, string(i))
+TGlobTag(var::Id) = TGlobTag(var, TypeUniverseTag())
+TGlobAutoTag(var::Id) = TGlobTag(var, TGlobTag(uppercase(var)))
+TAbsTag(body::TermTag) = TAbsTag(body, [string(i) for i in 1:arity(body)])
 TSumTag(v::Array{TermTag}) = TSumTag(v, [string(i) for i in 1:length(v)])
 TProdTag(v::Array{TermTag}) = TProdTag(v, [string(i) for i in 1:length(v)])
 TBranchesTag(v::Array{TermTag}) = TBranchesTag(v, [string(i) for i in 1:length(v)])
 TFunAutoTag(tin, tout) = TTermTag(tin, tout)
-TTermAutoTag(tin, tout) = TTermTag(TProdTag([tin]), tout)
+TTermAutoTag(tin, tout) = TTermTag(TProdTag(Array{TermTag}([tin])), tout)
 TAppAutoTag(tfun, targ) = TAppTag(Array{TermTag}([TProdTag(Array{TermTag}([targ])), tfun]))
 TAppSwitchTag(func, args) = TAppTag([args, func])
-TGlobTag(var::Id) = TGlobTag(var, TypeUniverseTag())
-TGlobAutoTag(var::Id) = TGlobTag(var, TGlobTag(uppercase(var)))
 
 
-detag(t::TGlobTag) = TGlobTag(t.var, detag(t.type))
-detag(t::TLocTag) = TLocTag(t.var)
-detag(t::TAbsTag) = TAbsTag(detag(t.body))
-detag(t::TAppTag) = TAppTag(detag.(t.ops_dot_ordered))
-detag(t::TTermTag) = TTermTag(detag(t.t_in), detag(t.t_out))
-detag(t::TProdTag) = TProdTag(detag.(t.data))
-detag(t::TSumTag) = TSumTag(detag.(t.data))
-detag(t::TSumTermTag) = TSumTermTag(detag(t.data), t.tag, t.tag_name)
-detag(t::TAnnoTag) = TAnnoTag(detag(t.expr), detag(t.type))
+# detag(t::TGlobTag) = TGlobTag(t.var, detag(t.type))
+# detag(t::TLocTag) = TLocTag(t.var)
+# detag(t::TAbsTag) = TAbsTag(detag(t.body))
+# detag(t::TAppTag) = TAppTag(detag.(t.ops_dot_ordered))
+# detag(t::TTermTag) = TTermTag(detag(t.t_in), detag(t.t_out))
+# detag(t::TProdTag) = TProdTag(detag.(t.data))
+# detag(t::TSumTag) = TSumTag(detag.(t.data))
+# detag(t::TSumTermTag) = TSumTermTag(detag(t.data), t.tag, t.tag_name)
+# detag(t::TAnnoTag) = TAnnoTag(detag(t.expr), detag(t.type))
 
-reduc(t::TermTag) = reduc(detag(t))
+# reduc(t::TermTag) = reduc(detag(t))
 
 
 trace(s::TGlobTag, topLevel::Bool = true)::String = s.var
@@ -124,6 +126,8 @@ subst(news::Dict{Id, TermTag}, t::TSumTermTag)::TermTag = TSumTermTag(t.tag, t.t
 subst(news::Dict{Id, TermTag}, t::TAnnoTag)::TermTag = TAnnoTag(subst(news, t.expr), t.type)
 subst(news::Dict{Id, TermTag}, t::TBranchesTag)::TermTag = TBranchesTag(t.ops_chances .|> x->subst(news, x), t.tags) # Just like TAppTag, This should have No effect being all TAbsTag's, but just in case.
 subst(news::Dict{Id, TermTag}, t::TLocTag)::TermTag = if (t.var_tag in keys(news)) news[t.var_tag] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
+subst(news::Dict{Id, TermTag}, t::TermTagwError)::TermTag = TermTagwError(subst(news, t.term), t.error)
+# subst(news::Array{Term}, t::TLoc)::Term = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
 
 reduc(t::TGlobTag)::TermTag = t
 reduc(t::TLocTag)::TermTag = t
@@ -156,6 +160,7 @@ function reduc(ops::Array{TermTag})::TermTag
     # TODO: DEFINITELY possible: Boy this is a mess, tidy upp your PRIMITIVES man !!!
     return length(ops) >= 2 ? TAppTag(ops) : ops[1]
 end
+reduc(t::TermTagwError)::TermTag = TermTagwError(reduc(t.term), t.error)
 
 
 pr_T(x::TGlobTag)::String = "$(x.var)"
@@ -238,20 +243,50 @@ pr_ctx(i::TTermTag) = "Given [$(join(i.t_in.data .|>pr, ", "))], get $(i.t_out|>
 
 
 # NOT used by the above:
-arity_(t::TGlobTag)::Set{String}= Set{String}([])
-arity_(t::TLocTag)::Set{String} = Set{String}([t.var_tag])
-arity_(t::TTopTag)::Set{String} = Set{String}([])
-arity_(t::TAppTag)::Set{String} = t.ops_dot_ordered .|> arity_ |> (x->union(x...))
-arity_(t::TTermTag)::Set{String} = [t.t_in, t.t_out] .|> arity_ |> (x->union(x...))
-arity_(t::TAbsTag)::Set{String} = Set{String}([]) # Lam(arity_(base, t.body))
-arity_(t::TProdTag)::Set{String} = t.data .|> arity_ |> (x->union(x...))
-arity_(t::TSumTag)::Set{String} = t.data .|> arity_ |> (x->union(x...))
-arity_(t::TSumTermTag)::Set{String} = arity_(t.data)
-arity_(t::TAnnoTag)::Set{String} = arity_(t.expr)
-arity_(t::TBranchesTag)::Set{String} = t.ops_chances .|> arity_ |> (x->union(x...))
-arity_(t::TSumTermTag)::Set{String} = arity_(t.data)
-arity_(t::TermTagwError)::Set{String} = arity_(t.term)
-arity(t::TermTag)::Index = arity_(t) |> length
+arity_set_(t::TGlobTag)::Set{String}= Set{String}([])
+arity_set_(t::TLocTag)::Set{String} = Set{String}([t.var_tag])
+arity_set_(t::TTopTag)::Set{String} = Set{String}([])
+arity_set_(t::TAppTag)::Set{String} = t.ops_dot_ordered .|> arity_set_ |> (x->union(x...))
+arity_set_(t::TTermTag)::Set{String} = [t.t_in, t.t_out] .|> arity_set_ |> (x->union(x...))
+arity_set_(t::TAbsTag)::Set{String} = Set{String}([]) # Lam(arity_set_(base, t.body))
+arity_set_(t::TProdTag)::Set{String} = t.data .|> arity_set_ |> (x->union(x...))
+arity_set_(t::TSumTag)::Set{String} = t.data .|> arity_set_ |> (x->union(x...))
+arity_set_(t::TSumTermTag)::Set{String} = arity_set_(t.data)
+arity_set_(t::TAnnoTag)::Set{String} = arity_set_(t.expr)
+arity_set_(t::TBranchesTag)::Set{String} = t.ops_chances .|> arity_set_ |> (x->union(x...))
+arity_set_(t::TSumTermTag)::Set{String} = arity_set_(t.data)
+arity_set_(t::TermTagwError)::Set{String} = arity_set_(t.term)
+arity_set(t::TermTag)::Index = arity_set_(t) |> length
+
+arity(base::Index, t::TGlobTag)::Index= base
+arity(base::Index, t::TLocTag)::Index = max(base, t.var)
+arity(base::Index, t::TTopTag)::Index = base
+arity(base::Index, t::TAppTag)::Index = t.ops_dot_ordered .|> (x->arity(base, x)) |> maximum
+arity(base::Index, t::TTermTag)::Index = [t.t_in, t.t_out] .|> (x->arity(base, x)) |> maximum
+arity(base::Index, t::TAbsTag)::Index = base # Lam(arity(base, t.body))
+arity(base::Index, t::TProdTag)::Index = t.data .|> (x->arity(base, x)) |> (x->maximum(x, init=0))
+arity(base::Index, t::TSumTag)::Index = t.data .|> (x->arity(base, x)) |> (x->maximum(x, init=0))
+arity(base::Index, t::TSumTermTag)::Index = arity(base, t.data)
+arity(base::Index, t::TAnnoTag)::Index = arity(base, t.expr)
+arity(base::Index, t::TBranchesTag)::Index = t.ops_chances .|> (x->arity(base, x)) |> maximum
+arity(base::Index, t::TSumTermTag)::Index = arity(base, t.data)
+arity(t::TermTag)::Index = arity(0, t)  #max(arity(0, t), arity_set(t))
+arity(base::Index, t::TermTagwError)::Index = arity(base, t.term)  #max(arity(0, t), arity_set(t))
+
+
+has_errors(t::TGlobTag)::Bool= false
+has_errors(t::TLocTag)::Bool = false
+has_errors(t::TTopTag)::Bool = false
+has_errors(t::TAppTag)::Bool = t.ops_dot_ordered .|> has_errors |> any
+has_errors(t::TTermTag)::Bool = [t.t_in, t.t_out] .|> has_errors |> any
+has_errors(t::TAbsTag)::Bool = t.body |> has_errors # Lam(has_errors(base, t.body))
+has_errors(t::TProdTag)::Bool = t.data .|> has_errors |> any
+has_errors(t::TSumTag)::Bool = t.data .|> has_errors |> any
+has_errors(t::TSumTermTag)::Bool = has_errors(t.data)
+has_errors(t::TAnnoTag)::Bool = has_errors(t.expr)
+has_errors(t::TBranchesTag)::Bool = t.ops_chances .|> has_errors |> any
+has_errors(t::TSumTermTag)::Bool = has_errors(t.data)
+has_errors(t::TermTagwError)::Bool = true
 
 
 
@@ -273,14 +308,12 @@ arity(t::TermTag)::Index = arity_(t) |> length
 # TGlobAuto   TGlobAutoTag
 # TAppSwitch   TAppSwitchTag
 
-TLocTag(i::Int) = TLocTag(string(i))
-TAbsTag(body::TermTag) = TAbsTag(body, [string(i) for i in 1:arity(body)])
 
 
 S = TAbsTag(TAppAutoTag(TAppAutoTag(TLocTag(1), TLocTag(3)), TAppAutoTag(TLocTag(2), TLocTag(3))))
 pr_E(S)
 
-reduc(TAbsTag(TAppSwitchTag(S, TProdTag(Array{TermTag}([TGlobAutoTag("f"), TGlobAutoTag("g"), TGlobAutoTag("x")]))))) |> pr
+reduc(TAbsTag(TAppSwitchTag(S, TProdTag(Array{TermTag}([TGlobAutoTag("f"), TGlobAutoTag("g"), TGlobAutoTag("x")]))))) |> pr_E
 
 f = TAbsTag(TLocTag(1))
 g = TAbsTag(TGlobAutoTag("y"))

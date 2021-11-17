@@ -40,7 +40,7 @@ reduc(c::EqConstraint) = EqConstraint(reduc(c.t1), reduc(c.t2))
 
 
 Error = String
-SimpRes = Union{Array{Constraint},Error}
+Imply_res = Union{Array{Constraint},Error}
 
 pr(c::Constraint)::String = pr(c.t1) * "==" * pr(c.t2)
 
@@ -163,7 +163,7 @@ function meetjoin_rec_unify_(t1::Term, t2::Term, do_meet)::Union{Error, MeetJoin
     end
 end
 
-function imply_unify_(t1::TApp, t2::TApp)::SimpRes
+function imply_unify_(t1::TApp, t2::TApp)::Imply_res
     if length(t1.ops_dot_ordered) != length(t2.ops_dot_ordered)
         Error("Different lambdas: $(length(t1.ops_dot_ordered)) != $(length(t2.ops_dot_ordered))")
     else
@@ -171,7 +171,7 @@ function imply_unify_(t1::TApp, t2::TApp)::SimpRes
     end
 end
 
-function imply_unify_(t1::TProd, t2::TProd)::SimpRes
+function imply_unify_(t1::TProd, t2::TProd)::Imply_res
     if length(t1.data) < length(t2.data)
         Error("Different lengths: $(length(t1.data)) < $(length(t2.data)), so you cannot even drop.")
     else
@@ -182,7 +182,7 @@ function imply_unify_(t1::TProd, t2::TProd)::SimpRes
     # Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(args1.data, args2.data)])
 end
 
-function imply_unify_(t1::TAbs, t2::TAbs)::SimpRes
+function imply_unify_(t1::TAbs, t2::TAbs)::Imply_res
     println("Simplyfing two Foralls:")
     # FOR NOW, these will be REALLY PICKY
     if t1 == t2
@@ -203,17 +203,17 @@ function imply_unify_(t1::TAbs, t2::TAbs)::SimpRes
     # end
 end
 
-function imply_unify_(t1::TTerm, t2::TTerm)::SimpRes
+function imply_unify_(t1::TTerm, t2::TTerm)::Imply_res
     Array{Constraint}([
         DirectConstraint(t1.t_out, t2.t_out),
         ReverseConstraint(t1.t_in, t2.t_in)])
 end
 
-function imply_unify_(t1::TLoc, t2::TLoc)::SimpRes
+function imply_unify_(t1::TLoc, t2::TLoc)::Imply_res
     Array{Constraint}([DirectConstraint(t1, t2)])
 end
 
-function imply_unify_(t1::TSum, t2::TSum)::SimpRes
+function imply_unify_(t1::TSum, t2::TSum)::Imply_res
     if length(t1.data) > length(t2.data)
         Error("Different lengths: $(length(t1.data)) > $(length(t2.data)), so if you are in the last case you are screwed..")
     else
@@ -221,26 +221,26 @@ function imply_unify_(t1::TSum, t2::TSum)::SimpRes
     end
 end
 
-function imply_unify_(t1::TSumTerm, t2::TSumTerm)::SimpRes
+function imply_unify_(t1::TSumTerm, t2::TSumTerm)::Imply_res
     if t1.tag != t2.tag
         Error("For now, you can NEVER unify different tags: $(t1.tag_name) != $(t2.tag_name)")
     else
         Array{Constraint}([DirectConstraint(t1.data, t2.data)])
     end
 end
-function imply_unify_(t1::Term, t2::TSumTerm)::SimpRes
+function imply_unify_(t1::Term, t2::TSumTerm)::Imply_res
     # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
     if (t1 isa TLoc) Array{Constraint}([DirectConstraint(t1, t2)])
     else Array{Constraint}([DirectConstraint(t1, t2.data)])
     end
 end
-function imply_unify_(t1::TSumTerm, t2::Term)::SimpRes
+function imply_unify_(t1::TSumTerm, t2::Term)::Imply_res
     # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
     if (t2 isa TLoc) Array{Constraint}([DirectConstraint(t1, t2)])
     else Array{Constraint}([DirectConstraint(t1.data, t2)])
     end
 end
-function imply_unify_(t1::Term, t2::Term)::SimpRes # base case
+function imply_unify_(t1::Term, t2::Term)::Imply_res # base case
     if t1 == t2 Array{Constraint}([])
     elseif typeof(t1) === TLoc || typeof(t2) === TLoc Array{Constraint}([DirectConstraint(t1, t2)])
     else Error("Different: $(pr(t1)) is really different from $(pr(t2))")
@@ -249,8 +249,8 @@ end
 
 swap(c::DirectConstraint) = ReverseConstraint(c.t2, c.t1)
 swap(c::ReverseConstraint) = DirectConstraint(c.t2, c.t1)
-imply_unify_(c::DirectConstraint)::SimpRes = imply_unify_(c.t1, c.t2)
-function imply_unify_(c::ReverseConstraint)::SimpRes
+imply_unify_(c::DirectConstraint)::Imply_res = imply_unify_(c.t1, c.t2)
+function imply_unify_(c::ReverseConstraint)::Imply_res
     res = imply_unify_(c.t2, c.t1)
     (res isa Error) ? res : (Array{Constraint}(res .|> swap))
 end
