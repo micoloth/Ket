@@ -84,7 +84,7 @@ subst(news::Array{Term}, t::TProd)::Term = TProd(t.data .|> (x->subst(news, x)))
 subst(news::Array{Term}, t::TSum)::Term = TSum(t.data .|> (x->subst(news, x)))
 subst(news::Array{Term}, t::TApp)::Term = TApp(t.ops_dot_ordered .|> x->subst(news, x))
 subst(news::Array{Term}, t::TSumTerm)::Term = TSumTerm(t.tag, t.tag_name, subst(news, t.data))
-subst(news::Array{Term}, t::TAnno)::Term = TAnno(subst(news, t.Term), t.type)
+subst(news::Array{Term}, t::TAnno)::Term = TAnno(subst(news, t.expr), t.type)
 subst(news::Array{Term}, t::TBranches)::Term = TBranches(t.ops_chances .|> x->subst(news, x)) # Just like TApp, This should have No effect being all TAbs's, but just in case.
 
 reduc(t::TGlob)::Term = t
