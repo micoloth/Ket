@@ -81,7 +81,7 @@ eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> al
 # ass_reduc(t1, s1)
 # ass_reduc(t2, s2)
 
-@testset "unification_2" begin  # COMMENT TESTS
+# @testset "unification_2" begin  # COMMENT TESTS
 
 t1 = TAppAutoTag(TGlobTag("G0"), TLocTag(1))
 t2 = TAppAutoTag(TGlobTag("G0"), TLocTag(2))
@@ -594,8 +594,25 @@ infer_type_rec(S) |> pr_ctx  # YES my boy... YES :)
 @test infer_type_rec(S) == TTermTag(TProdTag(TermTag[]), TTermTag(TProdTag(TermTag[TTermTag(TProdTag(TermTag[TLocTag(1)]), TTermTag(TProdTag(TermTag[TLocTag(2)]), TLocTag(3))), TTermTag(TProdTag(TermTag[TLocTag(1)]), TLocTag(2)), TLocTag(1)]), TLocTag(3)))
 
 
+# How inference handles WRONG THINGS:
 
-end # COMMENT TESTS
+e1 = TAnnoTag(TAbsTag(TGlobAutoTag("b")), TTermAutoTag(TGlobTag("A"), TGlobTag("B")))
+e2 = TGlobAutoTag("a")
+e = TAppAutoTag(e1, e2)
+infer_type_rec(e)|>pr
+
+e1 = TAnnoTag(TAbsTag(TGlobAutoTag("b")), TTermAutoTag(TGlobTag("A"), TGlobTag("B")))
+e2 = TGlobAutoTag("c")
+e = TAppAutoTag(e1, e2)
+infer_type_rec(e)|>pr # GREAT
+
+
+e = TProdTag([TAnnoTag(TLocTag(1), TGlobTag("A")), TProdTag([TLocTag(1), TAnnoTag(TLocTag(1), TGlobTag("A"))]), TAnnoTag(TLocTag(1), TGlobTag("B"))])
+e|> pr_E
+infer_type_rec(e)|>pr # GREAT
+
+
+# end # COMMENT TESTS
 
 
 

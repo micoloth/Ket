@@ -98,10 +98,10 @@ function meetjoin_rec_unify_(t1::TProdTag, t2::TProdTag, do_meet::Bool)::MeetJoi
 end
 
 function meetjoin_rec_unify_(t1::TSumTag, t2::TSumTag, do_meet)::MeetJoin_rec_res
-    t1l, t2l = t1.data|>length, t2.data|>length
     all_ress = [meetjoin_rec_unify_(f1, f2, do_meet) for (f1, f2) in zip(t1.data, t2.data)] # Potentially turn into a monad (not really urgent tho)
     res_types = all_ress .|> x->x.res_type
     errors = findall((x->x isa TermTagwError), res_types)
+    t1l, t2l = t1.data|>length, t2.data|>length
     if t1l != t2l && !do_meet
         additional_elems = (t1l>t2l) ? (t1.data[(t2l+1):end]) : (t2.data[(t1l+1):end])
         res_types = vcat(res_types, additional_elems)
@@ -155,8 +155,11 @@ function meetjoin_rec_unify_(t1::TSumTermTag, t2::TermTag, do_meet)::MeetJoin_re
 end
 
 function meetjoin_rec_unify_(t1::TLocTag, t2::TLocTag, do_meet)::MeetJoin_rec_res
-    MeetJoin_rec_res(
-        t2, (t1.var == t2.var) ? Array{EqConstraint}([]) : Array{EqConstraint}([EqConstraint(t1, t2)]))
+    if t1.var_tag == t2.var_tag # t1.var == t2.var
+        MeetJoin_rec_res(t2, Array{EqConstraint}([]))
+    else
+        MeetJoin_rec_res(t2, Array{EqConstraint}([EqConstraint(t1, t2)]))
+    end
 end
 
 function meetjoin_rec_unify_(t1::TermTag, t2::TermTag, do_meet)::MeetJoin_rec_res # base case
@@ -265,19 +268,9 @@ end
 # It WONT RETURN THEM, either. See above.
 
 # idea: in NO CASE x=f(x) can be solved, (if types_ are REDUCED), because we handle RecursiveTypes Differently!!
-usesLocs(t::TGlobTag)::Array{Index} = Array{Index}([])
-usesLocs(t::TLocTag)::Array{Index} = Array{Index}([t.var])
-usesLocs(t::TTopTag)::Array{Index} = Array{Index}([])
-usesLocs(t::TAppTag)::Array{Index} = unique(vcat((t.ops_dot_ordered .|> usesLocs)...))
-usesLocs(t::TProdTag)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
-usesLocs(t::TSumTag)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
-usesLocs(t::TSumTermTag)::Array{Index} = t.data |> usesLocs
-usesLocs(t::TAbsTag)::Array{Index} = Array{Index}([])
-usesLocs(t::TTermTag)::Array{Index} = unique(vcat(t.t_in |> usesLocs, t.t_out |> usesLocs))
-usesLocs(t::TermTagwError)::Array{Index} = usesLocs(t.term)
 function check_not_recursive(tloc::TLocTag, tt::TermTag)::Bool
-    for v in usesLocs(tt)
-    if tloc.var == v return false end
+    for v in usesLocsSet(tt) # THIS IS DIFFERENT IN VAR VS VAR_TAG
+    if tloc.var_tag == v return false end # THIS IS DIFFERENT IN VAR VS VAR_TAG
     end
     return true
 end
@@ -297,7 +290,7 @@ ass_reduc(c::DirectConstraint, ts::TProdTag ...) = DirectConstraint(ass_reduc(c.
 ass_reduc(c::ReverseConstraint, ts::TProdTag ...) = ReverseConstraint(ass_reduc(c.t1, ts...), ass_reduc(c.t2, ts...))
 ass_reduc(c::ErrorConstraint, ts::TProdTag ...) = ErrorConstraint(ass_reduc(c.c, ts...), c.error)
 
-function get_subst_prod(tloc::TLocTag, tt::TermTag, current_arity::Int)::TProdTag
+function get_subst_prod_OLD(tloc::TLocTag, tt::TermTag, current_arity)::TProdTag
     # resulting_arity = current_arity - 1
     # you have ALREADY TESTED that tt does not contain tloc, that's the whole point !!!!
     prod = vcat(
@@ -307,22 +300,31 @@ function get_subst_prod(tloc::TLocTag, tt::TermTag, current_arity::Int)::TProdTa
     )
     prod[tloc.var] = ass_reduc(tt, TProdTag(prod))
     TProdTag(prod)
-end
+end  # THIS IS DIFFERENT IN VAR VS VAR_TAG # TODOTODOTODOTODO
+function get_subst_prod(tloc::TLocTag, tt::TermTag, current_arity)::TProdTag
+    # resulting_arity = current_arity - 1
+    # you have ALREADY TESTED that tt does not contain tloc, that's the whole point !!!!
+    prod = TProdTag(Array{TermTag}([TLocTag(i) for i in current_arity]), Array{String}([current_arity...]))
+    pos_tt = findfirst(x->x==tloc.var_tag, prod.tags)[1]
+    prod.data[pos_tt] = ass_reduc(tt, prod)
+    prod
+end  # THIS IS DIFFERENT IN VAR VS VAR_TAG # TODOTODOTODOTODO
 
-function share_ctx_tlocs_names(t1::TAbsTag, t2::TAbsTag, t1arity::Index, t2arity::Index)
-    s1 = TProdTag(Array{TermTag}([TLocTag(i) for i in 1:t1arity]))
-    s2 = TProdTag(Array{TermTag}([TLocTag(i) for i in (t1arity + 1):(t1arity + t2arity)]))
-    TAppTag([s1, t1]), TAppTag([s2, t2])
-end
-function share_ctx_tlocs_names_get_substs(t1arity::Index, t2arity::Index)
-    s1 = TProdTag(Array{TermTag}([TLocTag(i) for i in 1:t1arity]))
-    s2 = TProdTag(Array{TermTag}([TLocTag(i) for i in (t1arity + 1):(t1arity + t2arity)]))
-    s1, s2
-end
+
+# function share_ctx_tlocs_names(t1::TAbsTag, t2::TAbsTag, t1arity::Index, t2arity::Index)
+#     s1 = TProdTag(Array{TermTag}([TLocTag(i) for i in 1:t1arity]))
+#     s2 = TProdTag(Array{TermTag}([TLocTag(i) for i in (t1arity + 1):(t1arity + t2arity)]))
+#     TAppTag([s1, t1]), TAppTag([s2, t2])
+# end
+# function share_ctx_tlocs_names_get_substs(t1arity::Index, t2arity::Index)
+#     s1 = TProdTag(Array{TermTag}([TLocTag(i) for i in 1:t1arity]))
+#     s2 = TProdTag(Array{TermTag}([TLocTag(i) for i in (t1arity + 1):(t1arity + t2arity)]))
+#     s1, s2
+# end
 
 struct ItsLiterallyAlreadyOk end
 
-function get_first_pair_of_matching_indices(v::Array{Index})
+function get_first_pair_of_matching_indices(v::Array{Id}) # TODOTODOTODOTODO This changed !!!
     for i in 1:length(v)
         for j in i+1:length(v)
             if v[i] == v[j] return (i,j) end
@@ -341,18 +343,21 @@ end
 Succeded_unif_res = Tuple{TProdTag, TProdTag, TermTag}
 Failed_unif_res = Tuple{TProdTag, TProdTag, TermTag, Array{ErrorConstraint}}
 
-function robinsonUnify(t1::TAbsTag, t2::TAbsTag, t1arity::Index, t2arity::Index; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_)::Union{Succeded_unif_res, Failed_unif_res, ItsLiterallyAlreadyOk}
+function robinsonUnify(t1::TAbsTag, t2::TAbsTag, t1arity, t2arity; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_)::Union{Succeded_unif_res, Failed_unif_res, ItsLiterallyAlreadyOk}
     there_are_errors::Bool = false
 
     # 1. Share TLocs
-    if unify_tlocs_ctx
-        current_arity = t1arity + t2arity
-        t1, t2 = share_ctx_tlocs_names(t1, t2, t1arity, t2arity)
-    else
-        # This means Sharing of names has ALREADY HAPPENED !!!
-        current_arity = max(t1arity, t2arity)
-        t1, t2 = t1.body, t2.body
-    end
+    # if unify_tlocs_ctx # THIS IS DIFFERENT IN VAR VS VAR_TAG # IS IT ENOUGH TO NOT DO THIS ???? # TODOTODOTODOTODO
+    #     current_arity = t1arity + t2arity
+    #     t1, t2 = share_ctx_tlocs_names(t1, t2, t1arity, t2arity)
+    # else
+    #     # This means Sharing of names has ALREADY HAPPENED !!!
+    #     current_arity = max(t1arity, t2arity)
+    #     t1, t2 = t1.body, t2.body
+    # end
+
+    current_arity = union(t1arity, t2arity)
+    t1, t2 = t1.body, t2.body
 
     # 2. unify term and/or produce Eqconstraints
     if mode==imply_
@@ -373,13 +378,14 @@ function robinsonUnify(t1::TAbsTag, t2::TAbsTag, t1arity::Index, t2arity::Index;
 
     # 3.1 Remove all loc-loc constraint first
     while (i=get_loc_loc_constraint(STACK)) !== nothing
-        l1, l2 = STACK[i].t1.var, STACK[i].t2.var
+        l1, l2 = parse(Int, STACK[i].t1.var_tag), parse(Int, STACK[i].t2.var_tag)
+        # ^ it WILL break if these are not Ints, which is Exactly what i want. There should be no such constraints between strings.
         deleteat!(STACK, i)
         if l1 == l2 continue end # cannot hurt can it?
         var, tt = max(l1, l2), TLocTag(min(l1, l2))
         new_subst = get_subst_prod(TLocTag(var), tt, current_arity)
         current_total_subst = Array{TProdTag}(ass_smart_reduc(current_total_subst..., new_subst))
-        current_arity = arity(current_total_subst[end]) # The beauty of this is this is Enough... I HOPE LOL
+        current_arity = usedLocsSet(current_total_subst[end]) # The beauty of this is this is Enough... I HOPE LOL
         for i in 1:length(STACK)
             STACK[i] = ass_reduc(STACK[i], new_subst)
             # ^ Really, this is the EASY way:
@@ -394,7 +400,7 @@ function robinsonUnify(t1::TAbsTag, t2::TAbsTag, t1arity::Index, t2arity::Index;
     # 3.2 This while loop is Important for Meeting, while it can be Skipped for directional case
     # POSSIBLE OPTIMIZATION: Keep the TLocs in STACK Sorted, or even in a Dict ofc
     if mode != imply_
-        while (ij = get_first_pair_of_matching_indices(STACK.|> (x->x.t1.var))) !== nothing
+        while (ij = get_first_pair_of_matching_indices(STACK.|> (x->x.t1.var_tag))) !== nothing  #TODOTODOTODOTODO changed !!  get_first_pair_of_matching_indices too !
             tloc, ct1, ct2 = STACK[ij[1]].t1, STACK[ij[1]].t2, STACK[ij[2]].t2
             deleteat!(STACK, ij[2])
             deleteat!(STACK, ij[1])
@@ -423,8 +429,9 @@ function robinsonUnify(t1::TAbsTag, t2::TAbsTag, t1arity::Index, t2arity::Index;
             continue
         elseif ct1 isa TLocTag && ct2 isa TLocTag
             # NOTE: it would be NICE if i reworked Imply_ mode so that this DOESNT happen ... println("Does locloc Still happen? Ever ????? (Here, w/ $(ct1) and $(ct2))")
+            if ct1.var_tag == ct2.var_tag continue end # cannot hurt can it?
+            throw(DomainError("This never happens.. Right.. Right?? $(ct1) required to be $(ct2)"))
             var, tt = ct1.var, ct2 # it's ARBITRARY since these names have no meaning anyway
-            if var == tt.var continue end # cannot hurt can it?
         elseif ct1 isa TLocTag
             if !check_not_recursive(ct1, ct2) push!(ERRORSTACK, ErrorConstraint(EqConstraint(ct1, ct2), Error("$(ct1) == $(ct2) is not a thing (recursive)"))); continue end
             var, tt = ct1.var, ct2
@@ -434,7 +441,7 @@ function robinsonUnify(t1::TAbsTag, t2::TAbsTag, t1arity::Index, t2arity::Index;
         end
         new_subst = get_subst_prod(TLocTag(var), tt, current_arity)
         current_total_subst = Array{TProdTag}(ass_smart_reduc(current_total_subst..., new_subst))
-        current_arity = arity(current_total_subst[end]) # The beauty of this is this is Enough... I HOPE LOL
+        current_arity = usedLocsSet(current_total_subst[end]) # The beauty of this is this is Enough... I HOPE LOL
         for i in 1:length(STACK)
             STACK[i] = ass_reduc(STACK[i], new_subst)
             # ^ Really, this is the EASY way:
@@ -453,8 +460,9 @@ function robinsonUnify(t1::TAbsTag, t2::TAbsTag, t1arity::Index, t2arity::Index;
         return Failed_unif_res([TProdTag(Array{TermTag}([])), TProdTag(Array{TermTag}([])), res_type, ERRORSTACK])
     end
     final_subst = ass_reduc(current_total_subst...)
-    subst1 = TProdTag(final_subst.data[1:t1arity])
-    subst2 = if unify_tlocs_ctx TProdTag(final_subst.data[(t1arity + 1):(t1arity + t2arity)]) else subst2 = TProdTag(final_subst.data[1:t2arity]) end
+    # subst1 = TProdTag(final_subst.data[1:t1arity])
+    # subst2 = if unify_tlocs_ctx TProdTag(final_subst.data[(t1arity + 1):(t1arity + t2arity)]) else subst2 = TProdTag(final_subst.data[1:t2arity]) end
+    subst1, subst2 = final_subst, final_subst
     res_type = if (mode == imply_) TGlobTag("O") # Why nothing: USE >>t2<< ( The Original one, NOT the Shared version)
     else ass_reduc(res_type, final_subst) end
 
@@ -465,9 +473,9 @@ function robinsonUnify(t1::TAbsTag, t2::TAbsTag, t1arity::Index, t2arity::Index;
 end
 
 # The following handles ALL THE CONFUSION ARISING FROM having or not having the Forall() at random.
-robinsonUnify(t1::TAbsTag, t2::TermTag, t1arity::Index, t2arity::Index; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_) = robinsonUnify(t1, TAbsTag(t2), t1arity, t2arity; unify_tlocs_ctx=unify_tlocs_ctx, mode=mode)
-robinsonUnify(t1::TermTag, t2::TAbsTag, t1arity::Index, t2arity::Index; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_) = robinsonUnify(TAbsTag(t1), t2, t1arity, t2arity; unify_tlocs_ctx=unify_tlocs_ctx, mode=mode)
-function robinsonUnify(t1::TermTag, t2::TermTag, t1arity::Index, t2arity::Index; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_)
+robinsonUnify(t1::TAbsTag, t2::TermTag, t1arity, t2arity; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_) = robinsonUnify(t1, TAbsTag(t2), t1arity, t2arity; unify_tlocs_ctx=unify_tlocs_ctx, mode=mode)
+robinsonUnify(t1::TermTag, t2::TAbsTag, t1arity, t2arity; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_) = robinsonUnify(TAbsTag(t1), t2, t1arity, t2arity; unify_tlocs_ctx=unify_tlocs_ctx, mode=mode)
+function robinsonUnify(t1::TermTag, t2::TermTag, t1arity, t2arity; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_)
     if (t1arity == 0) && (t2arity == 0)
         return true #(t1 == t2) ? (TProdTag([]), TProdTag([])) : Error(" Not unifiable: $(t1) != $(t2)")
     else
@@ -477,10 +485,10 @@ end
 
 
 # All cases WITHOUT precomputed tarities:
-robinsonUnify(t1::TAbsTag, t2::TAbsTag; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_) = robinsonUnify(t1, t2, t1.body |> arity, t2.body |> arity; unify_tlocs_ctx=unify_tlocs_ctx, mode=mode)
-robinsonUnify(t1::TAbsTag, t2::TermTag; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_) = robinsonUnify(t1, TAbsTag(t2), t1.body |> arity, t2 |> arity; unify_tlocs_ctx=unify_tlocs_ctx, mode=mode)
-robinsonUnify(t1::TermTag, t2::TAbsTag; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_) = robinsonUnify(TAbsTag(t1), t2, t1 |> arity, t2.body |> arity; unify_tlocs_ctx=unify_tlocs_ctx, mode=mode)
-robinsonUnify(t1::TermTag, t2::TermTag; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_) = robinsonUnify(TAbsTag(t1), TAbsTag(t2), t1 |> arity, t2 |> arity; unify_tlocs_ctx=unify_tlocs_ctx, mode=mode)
+robinsonUnify(t1::TAbsTag, t2::TAbsTag; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_) = robinsonUnify(t1, t2, t1.body |> usedLocsSet, t2.body |> usedLocsSet; unify_tlocs_ctx=unify_tlocs_ctx, mode=mode)
+robinsonUnify(t1::TAbsTag, t2::TermTag; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_) = robinsonUnify(t1, TAbsTag(t2), t1.body |> usedLocsSet, t2 |> usedLocsSet; unify_tlocs_ctx=unify_tlocs_ctx, mode=mode)
+robinsonUnify(t1::TermTag, t2::TAbsTag; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_) = robinsonUnify(TAbsTag(t1), t2, t1 |> usedLocsSet, t2.body |> usedLocsSet; unify_tlocs_ctx=unify_tlocs_ctx, mode=mode)
+robinsonUnify(t1::TermTag, t2::TermTag; unify_tlocs_ctx::Bool = true, mode::Unify_mode=join_) = robinsonUnify(TAbsTag(t1), TAbsTag(t2), t1 |> usedLocsSet, t2 |> usedLocsSet; unify_tlocs_ctx=unify_tlocs_ctx, mode=mode)
 
 
 
@@ -492,8 +500,13 @@ robinsonUnify(t1::TermTag, t2::TermTag; unify_tlocs_ctx::Bool = true, mode::Unif
 TTermEmpty(res_type::TermTag) = TTermTag(TProdTag(Array{TermTag}([])), res_type)
 
 function infer_type_(term::TLocTag)::TermTag
-    return TTermTag(TProdTag(Array{TermTag}([TLocTag(i) for i in 1:term.var])), TLocTag(term.var))  # TAbsTag(TLocTag(term.var)) was an idea i tried
-end
+    s = tryparse(Int, term.var_tag)
+    if s !== nothing
+        return TTermTag(TProdTag(Array{TermTag}([term])), term)  # TAbsTag(TLocTag(term.var)) was an idea i tried
+    else
+        return TTermTag(TProdTag(Array{TermTag}([TLocTag(i) for i in 1:term.var])), TLocTag(term.var))  # TAbsTag(TLocTag(term.var)) was an idea i tried
+    end
+end # TODOTODOTODO (but also kinda this is right)
 function infer_type_(term::TGlobTag)::TermTag
     if term.type isa TAbsTag return TTermEmpty(term.type.body)
     # ^ This is because TTermTag's are Naked (no Forall) for some reason- BOY will this become a mess
@@ -520,13 +533,14 @@ function infer_type_(term::TProdTag, ts_computed::Array{TTermTag})::TermTag # IM
     # IDEA: if max_eargs_length == 0, you STILL have to UNIFY the TLocs, which is currenty done by
     # JUST RUNNING robinsonUnify on the Empty prods, and using that behaviour.
     unified_RES_types::Array{TermTag} = Array{TermTag}([ts_computed[1].t_out])
-    args, full_arity = ts_computed[1].t_in, ts_computed[1] |> arity
+    args, full_arity = ts_computed[1].t_in, ts_computed[1] |> usedLocsSet
     all_errors = Array{ErrorConstraint}([])
     for t in ts_computed[2:end]
-        s1, s2 = share_ctx_tlocs_names_get_substs(full_arity, t |> arity)
-        args, t = ass_reduc(args, s1), ass_reduc(t, s2)
-        unified_RES_types = unified_RES_types .|> (x -> ass_reduc(x, s1))
-        full_arity = max(s1|>arity, s2|>arity)
+        # s1, s2 = share_ctx_tlocs_names_get_substs(full_arity, t |> usedLocsSet)
+        # args, t = ass_reduc(args, s1), ass_reduc(t, s2)
+        # unified_RES_types = unified_RES_types .|> (x -> ass_reduc(x, s1))
+        # TODOTODOTODO # Not sharing vars
+        full_arity = union(args|>usedLocsSet, t|>usedLocsSet)
         res = robinsonUnify(
             TAbsTag(args), TAbsTag(t.t_in), full_arity, full_arity;
             unify_tlocs_ctx=false, mode=meet_)
@@ -534,7 +548,7 @@ function infer_type_(term::TProdTag, ts_computed::Array{TTermTag})::TermTag # IM
         #     return Error("ELocs typed $(t.arg_types .|> pr) cannot be unified into ELocs typed $(args.arg_types .|> pr), with error '$(res)'")
         if res isa ItsLiterallyAlreadyOk
             push!(unified_RES_types, t.t_out)
-            full_arity = max(s1|>arity, s2|>arity)
+            full_arity = union(args|>usedLocsSet, t|>usedLocsSet)
             continue
         end
         if res isa Failed_unif_res
@@ -547,7 +561,7 @@ function infer_type_(term::TProdTag, ts_computed::Array{TTermTag})::TermTag # IM
         args = meeted
         unified_RES_types = unified_RES_types .|> (x -> ass_reduc(x, s1)) # if they BECAME EQUAL to the stuff "args" comes from, this should work.. No?
         push!(unified_RES_types, ass_reduc(t.t_out, s2))
-        full_arity = max(s1|>arity, s2|>arity) # god i HOPE this makes sense.....
+        full_arity = union(s1|>usedLocsSet, s2|>usedLocsSet) # god i HOPE this makes sense.....
     end
     res = TTermTag(args, TProdTag(Array{TermTag}(unified_RES_types)))
     if length(all_errors) > 0 # Or there's some error into res !!
@@ -559,12 +573,12 @@ function infer_type_(term::TAbsTag, t_computed::TTermTag)::TermTag
     return TTermTag(TProdTag(Array{TermTag}([])), t_computed)
 end
 function infer_type_(term::TSumTermTag, t_computed::TTermTag)::TermTag
-    arT, tag = t_computed |> arity, term.tag
+    arT, tag = t_computed |> usedLocsSet, term.tag
     types = vcat([TLocTag(n) for n in (arT + 1):(arT + tag - 1)], [t_computed.t_out])
     return TTermTag(t_computed.t_in, TAbsTag(TSumTag(types)))
 end
 function infer_type_(term::TBranchesTag, t_computed::TTermTag)::TermTag
-    arT, tag = t_computed |> arity, term.tag
+    arT, tag = t_computed |> usedLocsSet, term.tag
     types = vcat([TLocTag(n) for n in (arT + 1):(arT + tag - 1)], [t_computed.t_out])
     return TTermTag(t_computed.t_in, TAbsTag(TSumTag(types)))
 end
@@ -575,7 +589,7 @@ function infer_type_(term::TAppTag, ts_computed::Array{TTermTag})::TermTag
     ts_computed_2 = Array{TTermTag}([ts_computed[1]])
     for t in ts_computed[2:end]
         fake_tterm = TAbsTag(TTermTag(TLocTag(1), TLocTag(2)))
-        tterm_subst = robinsonUnify(t.t_out, fake_tterm, t |> arity, fake_tterm.body |> arity; mode=imply_)
+        tterm_subst = robinsonUnify(t.t_out, fake_tterm, t |> usedLocsSet, fake_tterm.body |> usedLocsSet; mode=imply_)
         # NOTE^ :  mode=imply_ doesnt even return a res_type, even less one with an error! Of course
         if tterm_subst isa Failed_unif_res return TermTagwError(TAppTag(ts_computed.|>(x->x.t_out)), Error("Calling non function: " * get_string(tterm_subst[4]))) #y'know what? Yes this is violent.. I don't care
         elseif tterm_subst isa ItsLiterallyAlreadyOk push!(ts_computed_2, t)
@@ -588,7 +602,7 @@ function infer_type_(term::TAppTag, ts_computed::Array{TTermTag})::TermTag
     all_w_unified_args = infer_type_(TProdTag(Array{TermTag}([])), ts_computed_2)
     # ^ REUSING the TProdTag inference, HACKING the fact that TermTag is NOT used
     # What comes out is a: TTermTag(TProdTag(Array{TermTag}([...])), TProdTag(Array{TermTag}(([TTermTag(), ...]))))
-    full_arity = all_w_unified_args |> arity
+    full_arity = all_w_unified_args |> usedLocsSet
     # ^Can i compute this in some smarter way?  # Dunno !
     args, tterms = all_w_unified_args.t_in, all_w_unified_args.t_out.data
     # ^ ts_computed_out becomes array and args remains TProdTag.. What a mess
@@ -611,7 +625,7 @@ function infer_type_(term::TAppTag, ts_computed::Array{TTermTag})::TermTag
             # ^ the LENGTH of tterms DOES NOT CHANGE HERE
             # ^ Also Maybe you can SKIP updating all of them but who cares
             args = ass_reduc(args, s1) # Keep track of the Arg types, too
-            full_arity = s1 |> arity
+            full_arity = s1 |> usedLocsSet
             prev_out = tterms[i].t_out
             # Error("Mismatched app: get out type $(prev_out |> pr) but required type $(next_in |> pr), with error '$()'")
         end

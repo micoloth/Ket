@@ -22,7 +22,7 @@ struct TGlobTag <: TermTag
     type::TermTag # If this is a Type, write TypeUniverse
 end
 struct TLocTag <: TermTag
-    var::Index # It DOESNT have an index for now- because you DONT know the order!
+    #var::Index # It DOESNT have an index for now- because you DONT know the order!
     var_tag::Id # REPETITION of the var name in the func declaration
 end
 struct TAbsTag <: TermTag
@@ -68,7 +68,7 @@ struct TAnnoTag <: TermTag # ANNOTATION syntax
 end
 
 Base.:(==)(a::TGlobTag, b::TGlobTag) = Base.:(==)(a.var, b.var)
-Base.:(==)(a::TLocTag, b::TLocTag) = (a.var == b.var) && (a.var_tag == b.var_tag)
+Base.:(==)(a::TLocTag, b::TLocTag) = (a.var_tag == b.var_tag) # && (a.var == b.var)
 Base.:(==)(a::TAbsTag, b::TAbsTag) = Base.:(==)(a.body, b.body) && all(a.var_tags .== b.var_tags)
 Base.:(==)(a::TAppTag, b::TAppTag) = all(a.ops_dot_ordered .== b.ops_dot_ordered)
 Base.:(==)(a::TTermTag, b::TTermTag) = (a.t_in == b.t_in) && (a.t_out == b.t_out)
@@ -77,7 +77,7 @@ Base.:(==)(a::TSumTag, b::TSumTag) = Base.:(==)(a.data, b.data) && all(a.tags .=
 Base.:(==)(a::TSumTermTag, b::TSumTermTag) = (a.data == b.data) && (a.tag == b.tag) && (a.tag_name == b.tag_name)
 Base.:(==)(a::TAnnoTag, b::TAnnoTag) = (a.expr == b.expr) && (a.type == b.type)
 
-TLocTag(i::Int) = TLocTag(i, string(i))
+TLocTag(i::Int) = TLocTag(string(i))# i,
 TGlobTag(var::Id) = TGlobTag(var, TypeUniverseTag())
 TGlobAutoTag(var::Id) = TGlobTag(var, TGlobTag(uppercase(var)))
 TAbsTag(body::TermTag) = TAbsTag(body, [string(i) for i in 1:arity(body)])
@@ -125,7 +125,7 @@ subst(news::Dict{Id, TermTag}, t::TAppTag)::TermTag = TAppTag(t.ops_dot_ordered 
 subst(news::Dict{Id, TermTag}, t::TSumTermTag)::TermTag = TSumTermTag(t.tag, t.tag_name, subst(news, t.data))
 subst(news::Dict{Id, TermTag}, t::TAnnoTag)::TermTag = TAnnoTag(subst(news, t.expr), t.type)
 subst(news::Dict{Id, TermTag}, t::TBranchesTag)::TermTag = TBranchesTag(t.ops_chances .|> x->subst(news, x), t.tags) # Just like TAppTag, This should have No effect being all TAbsTag's, but just in case.
-subst(news::Dict{Id, TermTag}, t::TLocTag)::TermTag = if (t.var_tag in keys(news)) news[t.var_tag] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
+subst(news::Dict{Id, TermTag}, t::TLocTag)::TermTag = if (t.var_tag in keys(news)) news[t.var_tag] else throw(DomainError("Undefined local var $(t.var_tag), n args given = $(length(news))" )) end
 subst(news::Dict{Id, TermTag}, t::TermTagwError)::TermTag = TermTagwError(subst(news, t.term), t.error)
 # subst(news::Array{Term}, t::TLoc)::Term = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
 
@@ -212,8 +212,7 @@ end
 pr_T(xs::Array{TermTag}) = xs .|> pr_T
 pr_T(x::TBranchesTag)::String = "{" * (["$(i)_-->$(e|>pr_T)" for (i,e) in enumerate(x.ops_chances)] |> (s->join(s, ", "))) * ")"
 pr_T(x::TAnnoTag)::String = "$(pr_E(x.expr)):$(pr_T(x.type))" # Hellloo...
-pr_T(x::TermTagwError)::String = x.error*"("*pr_T(x.term)*")"
-
+pr_T(x::TermTagwError)::String = pr_T(x.term) * " w/ error: " * x.error
 
 pr_E(x::TGlobTag)::String = "$(x.var)"
 pr_E(x::TLocTag)::String = "$(x.var_tag)"
@@ -243,35 +242,49 @@ pr_ctx(i::TTermTag) = "Given [$(join(i.t_in.data .|>pr, ", "))], get $(i.t_out|>
 
 
 # NOT used by the above:
-arity_set_(t::TGlobTag)::Set{String}= Set{String}([])
-arity_set_(t::TLocTag)::Set{String} = Set{String}([t.var_tag])
-arity_set_(t::TTopTag)::Set{String} = Set{String}([])
-arity_set_(t::TAppTag)::Set{String} = t.ops_dot_ordered .|> arity_set_ |> (x->union(x...))
-arity_set_(t::TTermTag)::Set{String} = [t.t_in, t.t_out] .|> arity_set_ |> (x->union(x...))
-arity_set_(t::TAbsTag)::Set{String} = Set{String}([]) # Lam(arity_set_(base, t.body))
-arity_set_(t::TProdTag)::Set{String} = t.data .|> arity_set_ |> (x->union(x...))
-arity_set_(t::TSumTag)::Set{String} = t.data .|> arity_set_ |> (x->union(x...))
-arity_set_(t::TSumTermTag)::Set{String} = arity_set_(t.data)
-arity_set_(t::TAnnoTag)::Set{String} = arity_set_(t.expr)
-arity_set_(t::TBranchesTag)::Set{String} = t.ops_chances .|> arity_set_ |> (x->union(x...))
-arity_set_(t::TSumTermTag)::Set{String} = arity_set_(t.data)
-arity_set_(t::TermTagwError)::Set{String} = arity_set_(t.term)
-arity_set(t::TermTag)::Index = arity_set_(t) |> length
+usedLocsSet(t::TGlobTag)::Set{String}= Set{String}([])
+usedLocsSet(t::TLocTag)::Set{String} = Set{String}([t.var_tag])
+usedLocsSet(t::TTopTag)::Set{String} = Set{String}([])
+usedLocsSet(t::TAppTag)::Set{String} = t.ops_dot_ordered .|> usedLocsSet |> (x->union(x...))
+usedLocsSet(t::TTermTag)::Set{String} = [t.t_in, t.t_out] .|> usedLocsSet |> (x->union(x...))
+usedLocsSet(t::TAbsTag)::Set{String} = Set{String}([]) # Lam(usedLocsSet(base, t.body))
+usedLocsSet(t::TProdTag)::Set{String} = t.data .|> usedLocsSet |> (x->union(x...))
+usedLocsSet(t::TSumTag)::Set{String} = t.data .|> usedLocsSet |> (x->union(x...))
+usedLocsSet(t::TSumTermTag)::Set{String} = usedLocsSet(t.data)
+usedLocsSet(t::TAnnoTag)::Set{String} = usedLocsSet(t.expr)
+usedLocsSet(t::TBranchesTag)::Set{String} = t.ops_chances .|> usedLocsSet |> (x->union(x...))
+usedLocsSet(t::TSumTermTag)::Set{String} = usedLocsSet(t.data)
+usedLocsSet(t::TermTagwError)::Set{String} = usedLocsSet(t.term)
 
-arity(base::Index, t::TGlobTag)::Index= base
-arity(base::Index, t::TLocTag)::Index = max(base, t.var)
-arity(base::Index, t::TTopTag)::Index = base
-arity(base::Index, t::TAppTag)::Index = t.ops_dot_ordered .|> (x->arity(base, x)) |> maximum
-arity(base::Index, t::TTermTag)::Index = [t.t_in, t.t_out] .|> (x->arity(base, x)) |> maximum
-arity(base::Index, t::TAbsTag)::Index = base # Lam(arity(base, t.body))
-arity(base::Index, t::TProdTag)::Index = t.data .|> (x->arity(base, x)) |> (x->maximum(x, init=0))
-arity(base::Index, t::TSumTag)::Index = t.data .|> (x->arity(base, x)) |> (x->maximum(x, init=0))
-arity(base::Index, t::TSumTermTag)::Index = arity(base, t.data)
-arity(base::Index, t::TAnnoTag)::Index = arity(base, t.expr)
-arity(base::Index, t::TBranchesTag)::Index = t.ops_chances .|> (x->arity(base, x)) |> maximum
-arity(base::Index, t::TSumTermTag)::Index = arity(base, t.data)
-arity(t::TermTag)::Index = arity(0, t)  #max(arity(0, t), arity_set(t))
-arity(base::Index, t::TermTagwError)::Index = arity(base, t.term)  #max(arity(0, t), arity_set(t))
+usesLocs(t::TGlobTag)::Array{Index} = Array{Index}([])
+usesLocs(t::TLocTag)::Array{Index} = Array{Index}([t.var])
+usesLocs(t::TTopTag)::Array{Index} = Array{Index}([])
+usesLocs(t::TAppTag)::Array{Index} = unique(vcat((t.ops_dot_ordered .|> usesLocs)...))
+usesLocs(t::TProdTag)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
+usesLocs(t::TSumTag)::Array{Index} = unique(vcat((t.data .|> usesLocs)...))
+usesLocs(t::TSumTermTag)::Array{Index} = t.data |> usesLocs
+usesLocs(t::TAbsTag)::Array{Index} = Array{Index}([])
+usesLocs(t::TTermTag)::Array{Index} = unique(vcat(t.t_in |> usesLocs, t.t_out |> usesLocs))
+usesLocs(t::TermTagwError)::Array{Index} = usesLocs(t.term)
+
+arity_var(base::Index, t::TGlobTag)::Index= base
+arity_var(base::Index, t::TLocTag)::Index = max(base, t.var)
+arity_var(base::Index, t::TTopTag)::Index = base
+arity_var(base::Index, t::TAppTag)::Index = t.ops_dot_ordered .|> (x->arity_var(base, x)) |> maximum
+arity_var(base::Index, t::TTermTag)::Index = [t.t_in, t.t_out] .|> (x->arity_var(base, x)) |> maximum
+arity_var(base::Index, t::TAbsTag)::Index = base # Lam(arity_var(base, t.body))
+arity_var(base::Index, t::TProdTag)::Index = t.data .|> (x->arity_var(base, x)) |> (x->maximum(x, init=0))
+arity_var(base::Index, t::TSumTag)::Index = t.data .|> (x->arity_var(base, x)) |> (x->maximum(x, init=0))
+arity_var(base::Index, t::TSumTermTag)::Index = arity_var(base, t.data)
+arity_var(base::Index, t::TAnnoTag)::Index = arity_var(base, t.expr)
+arity_var(base::Index, t::TBranchesTag)::Index = t.ops_chances .|> (x->arity_var(base, x)) |> maximum
+arity_var(base::Index, t::TSumTermTag)::Index = arity_var(base, t.data)
+arity_var(base::Index, t::TermTagwError)::Index = arity_var(base, t.term)
+
+
+arity_var(t::TermTag)::Index = arity_var(0, t)
+arity_set(t::TermTag)::Index = usedLocsSet(t) |> length
+arity(t::TermTag)::Index = arity_set(t)  #max(arity_var(0, t), arity_set(t)) ?????????
 
 
 has_errors(t::TGlobTag)::Bool= false
