@@ -1,6 +1,6 @@
 
 
-include("unification_3_tag.jl")
+include("unification_3.jl")
 # include("unification_2.jl")
 
 # include("TEST_unification_3.jl") # itself
@@ -83,7 +83,7 @@ eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> al
 
 @testset "unification_2" begin  # COMMENT TESTS
 
-include("unification_3_tag.jl")
+include("unification_3.jl")
 
 
 t1 = TAppAuto(TGlob("G0"), TLoc(1))

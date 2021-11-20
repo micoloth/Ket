@@ -1,6 +1,6 @@
 
 include("Syntaxes.jl")
-# it REQUIRES that you included ("mylambda1_tag.jl") at Some Point!!!
+# it REQUIRES that you included ("mylambda1.jl") at Some Point!!!
 
 abstract type SyntaxInst end
 abstract type Accepted_SynatxInst_type <: SyntaxInst end
