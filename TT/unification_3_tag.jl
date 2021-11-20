@@ -76,6 +76,7 @@ err_msg_lambdas(t1::TAbsTag, t2::TAbsTag) = "Different lambdas $(pr(t1)) != $(pr
 err_msg_sumtags(t1::TSumTermTag, t2::TSumTermTag) = "For now, you can NEVER unify different tags: $(t1.tag_name) != $(t2.tag_name)"
 err_msg_terms(t1::TermTag, t2::TermTag) = "Different: $(pr(t1)) is really different from $(pr(t2))"
 err_msg_prods(t1::TProdTag, t2::TProdTag) = "Different lengths: $(length(t1.data)) < $(length(t2.data)), so you cannot even drop."
+err_msg_prods_tags(t1::TProdTag, t2::TProdTag) = "Some tags are in second, not in first: $(t1.tags) < $(t2.tags), so you cannot even drop them."
 err_msg_sums(t1::TSumTag, t2::TSumTag) = "Different lengths: $(length(t1.data)) > $(length(t2.data)), so if you are in the last case you are screwed.."
 
 function meetjoin_rec_unify_(t1::TAppTag, t2::TAppTag, do_meet::Bool)::MeetJoin_rec_res
@@ -86,15 +87,22 @@ function meetjoin_rec_unify_(t1::TAppTag, t2::TAppTag, do_meet::Bool)::MeetJoin_
     MeetJoin_rec_res(TAppTag(all_ress .|> x->x.res_type), vcat((all_ress .|> x->x.cs)...))
 end
 
+concat_(t::TProdTag ...) = TProdTag(vcat((t .|> (x->x.data))...), vcat((t .|> (x->x.tags))...))
+
 function meetjoin_rec_unify_(t1::TProdTag, t2::TProdTag, do_meet::Bool)::MeetJoin_rec_res
     t1l, t2l = t1.data|>length, t2.data|>length
-    all_ress = [meetjoin_rec_unify_(f1, f2, do_meet) for (f1, f2) in zip(t1.data, t2.data)] # Potentially turn into a monad (not really urgent tho)
-    res_types = all_ress .|> x->x.res_type
-    if t1l != t2l && do_meet
-        additional_elems = (t1l>t2l) ? (t1.data[(t2l+1):end]) : (t2.data[(t1l+1):end])
-        res_types = vcat(res_types, additional_elems)
-    end
-    MeetJoin_rec_res(TProdTag(Array{TermTag}(res_types)), vcat((all_ress .|> x->x.cs)...))
+    shared_tags = [intersect(Set(t1.tags), Set(t2.tags))...] # To let it be ordered
+    tags_1_not_2 = [setdiff(Set(t1.tags), Set(t2.tags))...]
+    tags_2_not_1 = [setdiff(Set(t2.tags), Set(t1.tags))...]
+    shared_res = [meetjoin_rec_unify_(
+        t1.data[findfirst(x->x==tt, t1.tags)],
+        t2.data[findfirst(x->x==tt, t2.tags)],
+        do_meet) for tt in shared_tags]
+    shared_res_types = TProdTag(Array{TermTag}(shared_res .|> x->x.res_type), shared_tags)
+    res_types_1_not_2 = TProdTag(Array{TermTag}([t1.data[findfirst(x->x==tt, t1.tags)] for tt in tags_1_not_2]), tags_1_not_2)
+    res_types_2_not_1 = TProdTag(Array{TermTag}([t2.data[findfirst(x->x==tt, t2.tags)] for tt in tags_2_not_1]), tags_2_not_1)
+    res_types = concat_(shared_res_types, res_types_1_not_2, res_types_2_not_1)
+    MeetJoin_rec_res(res_types, vcat((shared_res .|> x->x.cs)...))
 end
 
 function meetjoin_rec_unify_(t1::TSumTag, t2::TSumTag, do_meet)::MeetJoin_rec_res
@@ -179,9 +187,19 @@ function imply_unify_(t1::TAppTag, t2::TAppTag)::Imply_res
 end
 
 function imply_unify_(t1::TProdTag, t2::TProdTag)::Imply_res
-    if length(t1.data) < length(t2.data) ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_prods(t1, t2)))
-    else Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(t1.data, t2.data)])
+    shared_tags = [intersect(Set(t1.tags), Set(t2.tags))...] # To let it be ordered
+    tags_1_not_2 = [setdiff(Set(t1.tags), Set(t2.tags))...]
+    tags_2_not_1 = setdiff(Set(t2.tags), Set(t1.tags))
+    if length(tags_2_not_1) > 0
+        return ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_prods_tags(t1, t2)))
     end
+    return Array{Constraint}([DirectConstraint(
+        t1.data[findfirst(x->x==tt, t1.tags)],
+        t2.data[findfirst(x->x==tt, t2.tags)])
+        for tt in shared_tags])
+    # if length(t1.data) < length(t2.data) ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_prods(t1, t2)))
+    # else Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(t1.data, t2.data)])
+    # end
     # union([imply_unify_(s1, s2) for (s1, s2) in zip(args1, args2)]...)
     # union((zip(args1, args2) .|> ((a1, a2),)->imply_unify_(a1, a2))...)
     # Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(args1.data, args2.data)])
@@ -269,7 +287,7 @@ end
 
 # idea: in NO CASE x=f(x) can be solved, (if types_ are REDUCED), because we handle RecursiveTypes Differently!!
 function check_not_recursive(tloc::TLocTag, tt::TermTag)::Bool
-    for v in usesLocsSet(tt) # THIS IS DIFFERENT IN VAR VS VAR_TAG
+    for v in usedLocsSet(tt) # THIS IS DIFFERENT IN VAR VS VAR_TAG
     if tloc.var_tag == v return false end # THIS IS DIFFERENT IN VAR VS VAR_TAG
     end
     return true
@@ -430,14 +448,16 @@ function robinsonUnify(t1::TAbsTag, t2::TAbsTag, t1arity, t2arity; unify_tlocs_c
         elseif ct1 isa TLocTag && ct2 isa TLocTag
             # NOTE: it would be NICE if i reworked Imply_ mode so that this DOESNT happen ... println("Does locloc Still happen? Ever ????? (Here, w/ $(ct1) and $(ct2))")
             if ct1.var_tag == ct2.var_tag continue end # cannot hurt can it?
-            throw(DomainError("This never happens.. Right.. Right?? $(ct1) required to be $(ct2)"))
-            var, tt = ct1.var, ct2 # it's ARBITRARY since these names have no meaning anyway
+            # throw(DomainError("This never happens.. Right.. Right?? $(ct1) required to be $(ct2)"))
+            push!(ERRORSTACK, ErrorConstraint(c, "You are asking to unify these names, which is not a thing"))
+            continue
+            # var, tt = ct1.var, ct2 # it's ARBITRARY since these names have no meaning anyway
         elseif ct1 isa TLocTag
             if !check_not_recursive(ct1, ct2) push!(ERRORSTACK, ErrorConstraint(EqConstraint(ct1, ct2), Error("$(ct1) == $(ct2) is not a thing (recursive)"))); continue end
-            var, tt = ct1.var, ct2
+            var, tt = ct1.var_tag, ct2
         elseif ct2 isa TLocTag
             if !check_not_recursive(ct2, ct1) push!(ERRORSTACK, ErrorConstraint(EqConstraint(ct2, ct1), Error("$(ct2) == $(ct1) is not a thing (recursive)"))); continue end
-            var, tt = ct2.var, ct1
+            var, tt = ct2.var_tag, ct1
         end
         new_subst = get_subst_prod(TLocTag(var), tt, current_arity)
         current_total_subst = Array{TProdTag}(ass_smart_reduc(current_total_subst..., new_subst))
@@ -501,8 +521,8 @@ TTermEmpty(res_type::TermTag) = TTermTag(TProdTag(Array{TermTag}([])), res_type)
 
 function infer_type_(term::TLocTag)::TermTag
     s = tryparse(Int, term.var_tag)
-    if s !== nothing
-        return TTermTag(TProdTag(Array{TermTag}([term])), term)  # TAbsTag(TLocTag(term.var)) was an idea i tried
+    if s === nothing
+        return TTermTag(TProdTag(Array{TermTag}([TLocTag(1)]), term.var_tag), term)  # TAbsTag(TLocTag(term.var)) was an idea i tried
     else
         return TTermTag(TProdTag(Array{TermTag}([TLocTag(i) for i in 1:term.var])), TLocTag(term.var))  # TAbsTag(TLocTag(term.var)) was an idea i tried
     end

@@ -83,12 +83,24 @@ eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> al
 
 # @testset "unification_2" begin  # COMMENT TESTS
 
-t1 = TAppAutoTag(TGlobTag("G0"), TLocTag(1))
-t2 = TAppAutoTag(TGlobTag("G0"), TLocTag(2))
-# @test simplify(t1, t2) == [DirectConstraint(TLocTag(1), TLocTag(2))]
-robinsonUnify(TAbsTag(t1), TAbsTag(t2))
-@test test_unify_imply(t1, t2)
-@test test_unify_join(t1, t2)
+# t1 = TAppAutoTag(TGlobTag("G0"), TLocTag(1))
+# t2 = TAppAutoTag(TGlobTag("G0"), TLocTag(2))
+# # @test simplify(t1, t2) == [DirectConstraint(TLocTag(1), TLocTag(2))]
+# robinsonUnify(TAbsTag(t1), TAbsTag(t2))
+# @test test_unify_imply(t1, t2)
+# @test test_unify_join(t1, t2)
+
+
+t1 = TProdTag([TLocTag(1), TGlobTag("G")], ["f", "g"])
+t2 = TProdTag([TLocTag(2), TGlobTag("F")], ["g", "f"])
+robinsonUnify(TAbsTag(t1), TAbsTag(t2))[1]|> (x->pr_T(x; is_an_arg=true))
+robinsonUnify(TAbsTag(t1), TAbsTag(t2))[2]|> (x->pr_T(x; is_an_arg=true))
+robinsonUnify(TAbsTag(t1), TAbsTag(t2))[3]|> (x->pr_T(x; is_an_arg=true))
+
+infer_type_rec(TLocTag("f"))
+
+
+
 
 t1 = TAppAutoTag(TGlobTag("G0"), TLocTag(1))
 t2 = TAppAutoTag(TGlobTag("G0"), TGlobTag("G99"))
