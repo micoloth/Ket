@@ -9,12 +9,12 @@ struct ScopedTypeInference #//Boi: this class, will GROW............
 # //note 1: this is the Wrong way to handle sum types
 # //note 2: yeah, a MATRIX will happen here!!
 # //note 3: this class might become a DAC !!!
-	allDefinitions::Array{Tuple{String, TermTag}}
+	allDefinitions::Array{Tuple{String, Term}}
 end
 ScopedTypeInference() = ScopedTypeInference([])
-function can_be_a(request::TermTag, chance::TermTag)::Bool
+function can_be_a(request::Term, chance::Term)::Bool
     if (request === chance) return true
-    elseif request isa TSumTag
+    elseif request isa TSum
         for c in request.data
             if can_be_a(c, chance) return true end
         end
@@ -178,7 +178,7 @@ function processFinishedSyntax(S::Structure11, chanceF::StackableFinishedSyntax)
     end
 
     for thingy::someOtherReturn in getAllSyntaxBindingsFor(S.posteriorsStructure, getName(obj))
-        temp1 = SyntaxInstObject(gettypeThatHasSynt(thingy), obj.s, thingy.P)
+        temp1 = SyntaxInstObject(buildTypeThatHasSyntInst(thingy, obj.s), obj.s, thingy.P)
         insert!(S.stack, getP(temp1), StackableObject(temp1, chanceF.from, chanceF.to))
         add(S.finisheds, chanceF.from, chanceF.to, SyntaxInstOwner(temp1))  #//to EXCLUDED,
     end

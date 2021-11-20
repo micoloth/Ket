@@ -8,16 +8,14 @@ end
 
 struct someOtherReturn
 	syntax::SyntaxCore
-	type::TermTag
+	builder_func::Any # Any is a (Dict{String, Union{Term,Error}}) -> Union{TAnno, Error}  lambda !!!
 	P::Real
 end
-gettypeThatHasSynt(r::someOtherReturn) = r.type
-
+buildTypeThatHasSyntInst(r::someOtherReturn, s::SyntaxInst) = r.builder_func()
 
 struct PosteriorStucture2
 	marginalsNormalizer::Real
 	marginalsUnn::Dict{SyntaxCore, Real}
-
 	PofChoices::Dict{SyntaxChoice, Array{Real}}
 	# //should they be unnormalized within each one SyntaxChoice* ??
 
@@ -53,7 +51,7 @@ mutable struct PosteriorsStructure
 	marginals::Dict{SyntaxCore, Real}
 	choicesLikelyhood::Dict{SyntaxChoice, Dict{SyntaxCore, Real}} # //cL[Parent][Child]=Likelyhood
 	stripLambdas::Dict{SyntaxStrip, Real} #  //sL[Strip]=Lambda
-	bindings::Dict{SyntaxCore, Array{TermTag}}
+    bindings::Dict{SyntaxCore, Array{Any}} # Any is a (Dict{String, Union{Term,Error}}) -> Union{TAnno, Error}  lambda !!!
 	allSyntaxes::Dict{String, SyntaxCore}
 	epsilon::Real
 end
@@ -63,7 +61,7 @@ PosteriorsStructure() = PosteriorsStructure(
     Dict{SyntaxCore, Real}(),
     Dict{SyntaxChoice, Dict{SyntaxCore, Real}}(), # //cL[Parent][Child]=Likelyhood
     Dict{SyntaxStrip, Real}(), #  //sL[Strip]=Lambda
-    Dict{SyntaxCore, Array{TermTag}}(),
+    Dict{SyntaxCore, Array{Term}}(),
     Dict{String, SyntaxCore}(),
     0.0
     )
@@ -174,7 +172,7 @@ function getTerminal(ps::PosteriorsStructure, s::String)::Tuple{Union{SyntaxTerm
     end
 end
 
-function getBindings(ps::PosteriorsStructure, s::SyntaxCore)::Array{TermTag}
+function getBindings(ps::PosteriorsStructure, s::SyntaxCore)::Array{Term}
     ts = get(ps.bindings, s, nothing)
-    return (ts !== nothing) ? ts : Array{TermTag}([])
+    return (ts !== nothing) ? ts : Array{Term}([])
 end
