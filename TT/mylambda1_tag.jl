@@ -128,7 +128,7 @@ subst(news::TProdTag, t::TAppTag)::TermTag = TAppTag(t.ops_dot_ordered .|> x->su
 subst(news::TProdTag, t::TSumTermTag)::TermTag = TSumTermTag(t.tag, t.tag_name, subst(news, t.data))
 subst(news::TProdTag, t::TAnnoTag)::TermTag = TAnnoTag(subst(news, t.expr), t.type)
 subst(news::TProdTag, t::TBranchesTag)::TermTag = TBranchesTag(t.ops_chances .|> x->subst(news, x), t.tags) # Just like TAppTag, This should have No effect being all TAbsTag's, but just in case.
-subst(news::TProdTag, t::TLocTag)::TermTag = if t.var <= length(news.data) news.data[t.var] else throw(DomainError("Undefined local var $(t.var_tag), n args given = $(length(news.data))" )) end
+subst(news::TProdTag, t::TLocTag)::TermTag = if t.var <= length(news.data) news.data[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news.data))" )) end
 subst(news::TProdTag, t::TLocStrTag)::TermTag = if (t.var_tag in keys(news.data_tags)) news.data_tags[t.var_tag] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news.data_tags))" )) end
 subst(news::TProdTag, t::TermTagwError)::TermTag = TermTagwError(subst(news, t.term), t.error)
 # subst(news::Array{Term}, t::TLoc)::Term = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
@@ -182,9 +182,9 @@ function pr_T(x::TProdTag; is_an_arg::Bool = false)::String
     #     # fields = zip(x.tags, x.data .|> pr_T) .|> ((n,t),)->n*":"*t
     #     "[$(join(x.data .|> pr_T, " x "))]"
     # end
-    dict_strs = ["$(k):$(v|>pr_T)" for (k,v) in x.data_tags]
-    dict_str = if length(dict_strs) > 0 " x $(join(dict_strs, " x "))" else "" end
-    "[$(join(x.data .|> pr_T, " x "))$(dict_str)]"
+    data_str = x.data .|> pr_T
+    dict_str = ["$(k):$(v|>pr_T)" for (k,v) in x.data_tags]
+    "[$(join(vcat(data_str, dict_str), " x "))]"
 end
 function pr_T(x::TTermTag)::String
     if x.t_in isa TTermTag
@@ -243,9 +243,9 @@ function pr_E(x::TAppTag)::String
     end
 end
 function pr_E(x::TProdTag)::String
-    dict_strs = ["$(k):$(v|>pr_T)" for (k,v) in x.data_tags]
-    dict_str = if length(dict_strs) > 0 ", $(join(dict_strs, ", "))" else "" end
-    "[$(join(x.data .|> pr_T, ", "))$(dict_str)]"
+    data_str = x.data .|> pr_T
+    dict_str = ["$(k):$(v|>pr_T)" for (k,v) in x.data_tags]
+    "[$(join(vcat(data_str, dict_str), ", "))]"
 end
 pr_E(x::TermTagwError)::String = x.error*"("*pr_E(x.term)*")"
 
@@ -262,7 +262,7 @@ usedLocsSet(t::TTopTag)::Set{String} = Set{String}([])
 usedLocsSet(t::TAppTag)::Set{String} = t.ops_dot_ordered .|> usedLocsSet |> (x->union(Set{String}([]), x...))
 usedLocsSet(t::TTermTag)::Set{String} = [t.t_in, t.t_out] .|> usedLocsSet |> (x->union(Set{String}([]), x...))
 usedLocsSet(t::TAbsTag)::Set{String} = Set{String}([]) # Lam(usedLocsSet(base, t.body))
-usedLocsSet(t::TProdTag)::Set{String} = t.data .|> usedLocsSet |> (x->union(Set{String}([]), x...))
+usedLocsSet(t::TProdTag)::Set{String} = union(Set{String}([]), (t.data .|> usedLocsSet)..., (t.data_tags |> values .|> usedLocsSet)...)
 usedLocsSet(t::TSumTag)::Set{String} = t.data .|> usedLocsSet |> (x->union(Set{String}([]), x...))
 usedLocsSet(t::TSumTermTag)::Set{String} = usedLocsSet(t.data)
 usedLocsSet(t::TAnnoTag)::Set{String} = usedLocsSet(t.expr)
@@ -275,12 +275,13 @@ usedLocs(t::TLocTag)::Array{Index} = Array{Index}([t.var])
 usedLocs(t::TLocStrTag)::Array{Index} = Array{Index}([])
 usedLocs(t::TTopTag)::Array{Index} = Array{Index}([])
 usedLocs(t::TAppTag)::Array{Index} = unique(vcat((t.ops_dot_ordered .|> usedLocs)...))
-usedLocs(t::TProdTag)::Array{Index} = unique(vcat((t.data .|> usedLocs)...))
+usedLocs(t::TProdTag)::Array{Index} = unique(vcat((t.data .|> usedLocs)..., (t.data_tags |>values .|> usedLocs)...))
 usedLocs(t::TSumTag)::Array{Index} = unique(vcat((t.data .|> usedLocs)...))
 usedLocs(t::TSumTermTag)::Array{Index} = t.data |> usedLocs
 usedLocs(t::TAbsTag)::Array{Index} = Array{Index}([])
 usedLocs(t::TTermTag)::Array{Index} = unique(vcat(t.t_in |> usedLocs, t.t_out |> usedLocs))
 usedLocs(t::TermTagwError)::Array{Index} = usedLocs(t.term)
+
 
 arity_var(base::Index, t::TGlobTag)::Index= base
 arity_var(base::Index, t::TLocTag)::Index = max(base, t.var)
@@ -289,7 +290,7 @@ arity_var(base::Index, t::TTopTag)::Index = base
 arity_var(base::Index, t::TAppTag)::Index = t.ops_dot_ordered .|> (x->arity_var(base, x)) |> maximum
 arity_var(base::Index, t::TTermTag)::Index = [t.t_in, t.t_out] .|> (x->arity_var(base, x)) |> maximum
 arity_var(base::Index, t::TAbsTag)::Index = base # Lam(arity_var(base, t.body))
-arity_var(base::Index, t::TProdTag)::Index = t.data .|> (x->arity_var(base, x)) |> (x->maximum(x, init=0))
+arity_var(base::Index, t::TProdTag)::Index = vcat((t.data .|> (x->arity_var(base, x)))..., (t.data_tags |> values .|> (x->arity_var(base, x)))...) |> (x->maximum(x, init=0))
 arity_var(base::Index, t::TSumTag)::Index = t.data .|> (x->arity_var(base, x)) |> (x->maximum(x, init=0))
 arity_var(base::Index, t::TSumTermTag)::Index = arity_var(base, t.data)
 arity_var(base::Index, t::TAnnoTag)::Index = arity_var(base, t.expr)
@@ -310,7 +311,7 @@ has_errors(t::TTopTag)::Bool = false
 has_errors(t::TAppTag)::Bool = t.ops_dot_ordered .|> has_errors |> any
 has_errors(t::TTermTag)::Bool = [t.t_in, t.t_out] .|> has_errors |> any
 has_errors(t::TAbsTag)::Bool = t.body |> has_errors # Lam(has_errors(base, t.body))
-has_errors(t::TProdTag)::Bool = t.data .|> has_errors |> any
+has_errors(t::TProdTag)::Bool = (t.data .|> has_errors |> any) || (t.data_tags |>values .|> has_errors |> any)
 has_errors(t::TSumTag)::Bool = t.data .|> has_errors |> any
 has_errors(t::TSumTermTag)::Bool = has_errors(t.data)
 has_errors(t::TAnnoTag)::Bool = has_errors(t.expr)

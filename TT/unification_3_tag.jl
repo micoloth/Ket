@@ -96,7 +96,7 @@ function meetjoin_rec_unify_(t1::TProdTag, t2::TProdTag, do_meet::Bool)::MeetJoi
     shared_tags = intersect(keys(t1.data_tags), keys(t2.data_tags)) # To let it be ordered
     tags_1_not_2 = setdiff(keys(t1.data_tags), keys(t2.data_tags))
     tags_2_not_1 = setdiff(keys(t2.data_tags), keys(t1.data_tags))
-    shared_res = Dict{Id,TermTag}(tt => meetjoin_rec_unify_(t1.data_tag[tt], t2.data_tag[tt], do_meet) for tt in shared_tags)
+    shared_res = Dict{Id,MeetJoin_rec_res}(tt => meetjoin_rec_unify_(t1.data_tags[tt], t2.data_tags[tt], do_meet) for tt in shared_tags)
     shared_res_types = Dict{Id,TermTag}(tt => shared_res[tt].res_type for tt in shared_tags)
     res_types_tags = merge(shared_res_types, subdict(t1.data_tags, tags_1_not_2), subdict(t2.data_tags, tags_2_not_1))
     res_tags_cs = vcat((values(shared_res) .|>  x -> x.cs)...)
@@ -780,6 +780,9 @@ end
 
 # Silly categorical-algebra-ish recursive wrapup:
 function infer_type_rec(term::TLocTag)::TermTag
+    return infer_type_(term)
+end
+function infer_type_rec(term::TLocStrTag)::TermTag
     return infer_type_(term)
 end
 function infer_type_rec(term::TGlobTag)::TermTag

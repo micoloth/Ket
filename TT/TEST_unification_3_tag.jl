@@ -81,7 +81,7 @@ eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> al
 # ass_reduc(t1, s1)
 # ass_reduc(t2, s2)
 
-# @testset "unification_2" begin  # COMMENT TESTS
+@testset "unification_2" begin  # COMMENT TESTS
 
 include("unification_3_tag.jl")
 
@@ -94,13 +94,12 @@ robinsonUnify(TAbsTag(t1), TAbsTag(t2))
 @test test_unify_join(t1, t2)
 
 
-# t1 = TProdTag([TLocTag(1), TGlobTag("G")], ["f", "g"])
-# t2 = TProdTag([TLocTag(2), TGlobTag("F")], ["g", "f"])
-# robinsonUnify(TAbsTag(t1), TAbsTag(t2))[1]|> (x->pr_T(x; is_an_arg=true))
-# robinsonUnify(TAbsTag(t1), TAbsTag(t2))[2]|> (x->pr_T(x; is_an_arg=true))
-# robinsonUnify(TAbsTag(t1), TAbsTag(t2))[3]|> (x->pr_T(x; is_an_arg=true))
-
-# infer_type_rec(TLocTag("f"))
+t1 = TProdTag(Dict{Id, TermTag}("f"=>TLocTag(1), "g"=>TGlobTag("G")))
+t2 = TProdTag(Dict{Id, TermTag}("g"=>TLocTag(2), "f"=>TGlobTag("F")))
+robinsonUnify(TAbsTag(t1), TAbsTag(t2))[1]|> (x->pr_T(x; is_an_arg=true))
+robinsonUnify(TAbsTag(t1), TAbsTag(t2))[2]|> (x->pr_T(x; is_an_arg=true))
+@test robinsonUnify(TAbsTag(t1), TAbsTag(t2))[3] == TProdTag(TermTag[], Dict{String, TermTag}("f" => TGlobTag("F", TypeUniverseTag()), "g" => TGlobTag("G", TypeUniverseTag())))
+@test test_unify_join(t1, t2)
 
 
 
@@ -627,7 +626,7 @@ e|> pr_E
 infer_type_rec(e)|>pr # GREAT
 
 
-# end # COMMENT TESTS
+end # COMMENT TESTS
 
 
 
