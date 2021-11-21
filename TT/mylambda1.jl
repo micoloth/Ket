@@ -129,12 +129,13 @@ subst(news::TProd, t::TSumTerm)::Term = TSumTerm(t.tag, t.tag_name, subst(news, 
 subst(news::TProd, t::TAnno)::Term = TAnno(subst(news, t.expr), t.type)
 subst(news::TProd, t::TBranches)::Term = TBranches(t.ops_chances .|> x->subst(news, x), t.tags) # Just like TApp, This should have No effect being all TAbs's, but just in case.
 subst(news::TProd, t::TLoc)::Term = if t.var <= length(news.data) news.data[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news.data))" )) end
-subst(news::TProd, t::TLocStr)::Term = if (t.var_tag in keys(news.data_tags)) news.data_tags[t.var_tag] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news.data_tags))" )) end
+subst(news::TProd, t::TLocStr)::Term = if (t.var_tag in keys(news.data_tags)) news.data_tags[t.var_tag] else throw(DomainError("Undefined local var named $(t.var_tag), n args given = $(news.data_tags)" )) end
 subst(news::TProd, t::TermwError)::Term = TermwError(subst(news, t.term), t.error)
 # subst(news::Array{Term}, t::TLoc)::Term = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
 
 reduc(t::TGlob)::Term = t
 reduc(t::TLoc)::Term = t
+reduc(t::TLocStr)::Term = t
 reduc(t::TTop)::Term = t
 reduc(t::TTerm)::Term = TTerm(t.t_in |> reduc, t.t_out |> reduc)
 reduc(t::TAbs)::Term = TAbs(reduc(t.body), t.var_tags)
@@ -189,10 +190,10 @@ end
 function pr_T(x::TTerm)::String
     if x.t_in isa TTerm
         return "(" * (x.t_in |> pr_T) * ")->" * (x.t_out|> pr_T )
-    elseif (x.t_in isa TProd && x.t_in.data |> length == 1 && x.t_in.data[1] isa TTerm)
-        return "(" * (pr_T(x.t_in; is_an_arg=true)) * ")->" * (x.t_out|> pr_T )
-    elseif (x.t_in isa TProd && x.t_in.data |> length == 1)
-        return (pr_T(x.t_in; is_an_arg=true)) * "->" * (x.t_out|> pr_T )
+    # elseif (x.t_in isa TProd && x.t_in.data |> length == 1 && x.t_in.data[1] isa TTerm)
+    #     return "(" * (pr_T(x.t_in; is_an_arg=true)) * ")->" * (x.t_out|> pr_T )
+    # elseif (x.t_in isa TProd && x.t_in.data |> length == 1)
+    #     return (pr_T(x.t_in; is_an_arg=true)) * "->" * (x.t_out|> pr_T )
     else return (x.t_in |> pr_T) * "->" *( x.t_out|> pr_T)
     end
 end
@@ -243,15 +244,16 @@ function pr_E(x::TApp)::String
     end
 end
 function pr_E(x::TProd)::String
-    data_str = x.data .|> pr_T
-    dict_str = ["$(k):$(v|>pr_T)" for (k,v) in x.data_tags]
+    data_str = x.data .|> pr_E
+    dict_str = ["$(k):$(v|>pr_E)" for (k,v) in x.data_tags]
     "[$(join(vcat(data_str, dict_str), ", "))]"
 end
 pr_E(x::TermwError)::String = x.error*"("*pr_E(x.term)*")"
 
 
 pr(x) = pr_T(x)
-pr_ctx(i::TTerm) = "Given [$(join(i.t_in.data .|>pr, ", "))], get $(i.t_out|>pr)"
+# pr_ctx(i::TTerm) = "Given [$(join(i.t_in.data .|>pr, ", "))], get $(i.t_out|>pr)"
+pr_ctx(i::TTerm) = "Given $(i.t_in |>pr), get $(i.t_out|>pr)"
 
 
 # NOT used by the above:

@@ -81,9 +81,37 @@ eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> al
 # ass_reduc(t1, s1)
 # ass_reduc(t2, s2)
 
-@testset "unification_2" begin  # COMMENT TESTS
+# @testset "unification_2" begin  # COMMENT TESTS
 
-include("unification_3.jl")
+
+# THE BUG:
+t1 = infer_type_rec(TAbs(TLocStr("1_"))).t_out
+t1|>pr
+t2 = TTerm(TLoc(1), TLoc(2))
+robinsonUnify(t1, t2)
+# Solution: ALLOW SOLVING TLOC-TLOCSTR CONSTRAINTS by SUBSTITUTING TLOC with TLOCSTR-
+# Actually, you COULD even do the Reverse, i'm just NOT doing it
+
+robinsonUnify(t1.t_out, t2.t_out)
+
+
+proj1_1 = TApp([TLocStr("1_"), TAbs(TLocStr("1_"))])
+proj1_1 |> pr_E
+infer_type_rec(proj1_1) |> pr_ctx
+infer_type_rec(proj1_1.ops_dot_ordered[1]) |>pr_ctx
+infer_type_rec(proj1_1.ops_dot_ordered[2]) |>pr_ctx
+
+
+vec_w_proj2_1 = TProd(Array{Term}([TApp([TLocStr("1_"), TAbs(TLocStr("2_"))]), TLocStr("2_")]))
+vec_w_proj2_1 |> pr_E
+infer_type_rec(vec_w_proj2_1) |> pr_ctx
+e = TProd(Array{Term}([proj1_1, vec_w_proj2_1]))
+e |> pr_E
+infer_type_rec(e) |> pr_ctx  # YES my boy... YESSSS :)
+@test infer_type_rec(e) |> pr_ctx == "Given [[T1 x T2], T3], get [T1 x [T2 x T3]]"
+
+
+
 
 
 t1 = TAppAuto(TGlob("G0"), TLoc(1))
@@ -592,14 +620,15 @@ e = TApp([TLoc(1), TAbs(TLoc(1))])
 
 proj1_1 = TApp([TLoc(1), TAbs(TLoc(1))])
 vec_w_proj2_1 = TProd(Array{Term}([TApp([TLoc(1), TAbs(TLoc(2))]), TLoc(2)]))
-proj1_1 |> pr
-vec_w_proj2_1 |> pr
+proj1_1 |> pr_E
+vec_w_proj2_1 |> pr_E
 infer_type_rec(proj1_1) |> pr_ctx
 infer_type_rec(vec_w_proj2_1) |> pr_ctx
 e = TProd(Array{Term}([proj1_1, vec_w_proj2_1]))
-e |> pr
+e |> pr_E
 infer_type_rec(e) |> pr_ctx  # YES my boy... YESSSS :)
 @test infer_type_rec(e) |> pr_ctx == "Given [[T1 x T2], T3], get [T1 x [T2 x T3]]"
+
 
 
 SType |> pr
@@ -626,7 +655,7 @@ e|> pr_E
 infer_type_rec(e)|>pr # GREAT
 
 
-end # COMMENT TESTS
+# end # COMMENT TESTS
 
 
 
