@@ -6,6 +6,18 @@ include("unification_3.jl")
 # include("TEST_unification_3.jl") # itself
 
 
+
+infer_type_rec(TAnno(TLoc(1), TGlob("A"))) |> pr_ctx
+infer_type_rec(TAnno(TLoc(1), TN())) |> pr_ctx
+infer_type_rec(TAnno(TLoc(1), TInt(3))) |> pr_ctx
+infer_type_rec(TAnno(TInt(3), TN())) |> pr_ctx
+
+
+
+t1 = TTermAuto(TLoc(1), TLoc(1))
+t2 = TTerm(TProd(Array{Term}([])), TGlobAuto("g"))
+robinsonUnify(t1, t2; mode=imply_)
+
 # TGlob   TGlob
 # TLoc   TLoc
 # TTop   TTop
@@ -616,6 +628,23 @@ infer_type_rec(e) |> pr_ctx
 e = TApp([TLoc(1), TAbs(TLoc(1))])
 @test infer_type_rec(e) |> (x->x.t_in) == TProd(Array{Term}([TProd(Array{Term}([TLoc(1)]))])) # And NOTT [TProd(Array{Term}([TLoc(1)])], plz ????
 
+
+f1 = TAbs(TProd(Array{Term}([TGlobAuto("a"), TGlobAuto("b")])))
+f2 = TAbs(TProd(Array{Term}([TLoc(2), TLoc(1)])))
+f3 = TAbs(TProd(Array{Term}([TLoc(2), TGlobAuto("c"), TLoc(1), ])))
+@test infer_type_rec(TConc([f1, f2, f3])) == TTerm(TProd(Term[], Dict{String, Term}()), TTerm(TProd(Term[], Dict{String, Term}()), TProd(Term[TGlob("A", TypeUniverse()), TGlob("C", TypeUniverse()), TGlob("B", TypeUniverse())], Dict{String, Term}())))
+infer_type_rec(TConc([f1, f2, f3])) |> pr_ctx
+
+
+f1 = TAbs(TProd(Array{Term}([TLoc(2), TGlobAuto("b")])))
+f2 = TAbs(TProd(Array{Term}([TLoc(2), TLoc(1)])))
+f3 = TAbs(TProd(Array{Term}([TLoc(2), TGlobAuto("c"), TLoc(1), ])))
+@test infer_type_rec(TConc([f1, f2, f3])) ==TTerm(TProd(Term[], Dict{String, Term}()), TTerm(TProd(Term[TLoc(1), TLoc(2)], Dict{String, Term}()), TProd(Term[TLoc(2), TGlob("C", TypeUniverse()), TGlob("B", TypeUniverse())], Dict{String, Term}())))
+
+
+f1 = TAbs(TProd(Array{Term}([TLoc(2), TGlobAuto("b")])))
+@test infer_type_rec(TConc([TLoc(1), f1])) == TTerm(TProd(Term[TTerm(TLoc(1), TProd(Term[TLoc(2), TLoc(3)], Dict{String, Term}()))], Dict{String, Term}()), TTerm(TLoc(1), TProd(Term[TLoc(3), TGlob("B", TypeUniverse())], Dict{String, Term}())))
+infer_type_rec(TConc([TLoc(1), f1])) |> pr_ctx
 
 
 proj1_1 = TApp([TLoc(1), TAbs(TLoc(1))])

@@ -64,11 +64,11 @@ Imply_res = Union{Array{Constraint},ErrorConstraint}
 pr(c::Constraint)::String = pr(c.t1) * "==" * pr(c.t2)
 
 
-#a join b  ==  a v b  ==  a<avb, b<avb  ==  a CAN BECOME a join b, b CAN BECOME a join b
+# a join b  ==  a v b  ==  a<avb, b<avb  ==  a CAN BECOME a join b, b CAN BECOME a join b
 
 struct MeetJoin_rec_res
     res_type::Term # OR would be better if each one had its own?  --> NOTE: maybe i can still template it?
-    cs::Array{EqConstraint}
+    cs::Array{Constraint}
 end
 
 err_msg_app(t1::TApp, t2::TApp) = "Different bodies: $(length(t1.ops_dot_ordered)) != $(length(t2.ops_dot_ordered))"
@@ -79,6 +79,10 @@ err_msg_prods(t1::TProd, t2::TProd) = "Different lengths: $(length(t1.data)) < $
 err_msg_prods_tags(t1::TProd, t2::TProd) = "Some tags are in second, not in first: $(keys(t1.data_tags)) < $(keys(t2.data_tags)), so you cannot even drop them."
 err_msg_sums(t1::TSum, t2::TSum) = "Different lengths: $(length(t1.data)) > $(length(t2.data)), so if you are in the last case you are screwed.."
 err_msg_tags(t1::TProd, t2::TProd) = "You cant unify var_tags: $(t1) != $(t2)."
+err_msg_intsum(t1::TIntSum, t2::TIntSum) = "Different lengths: $(length(t1.ns)) > $(length(t2.ns)), so impossible to tell if these are the same..."
+err_msg_intprod(t1::TIntProd, t2::TIntProd) = "Different lengths: $(length(t1.ns)) > $(length(t2.ns)), so impossible to tell if these are the same..."
+err_msg_append(t1::TAppend, t2::TAppend) = "Different lengths: $(length(t1.prods)) > $(length(t2.prods)), so impossible to tell if these are the same..."
+err_msg_int(t1::TInt, t2::TInt) = "$(t1.n) > $(t2.n), so as types, you really cant do this coercion.."
 
 function meetjoin_rec_unify_(t1::TApp, t2::TApp, do_meet::Bool)::MeetJoin_rec_res
     if length(t1.ops_dot_ordered) != length(t2.ops_dot_ordered)
@@ -88,12 +92,20 @@ function meetjoin_rec_unify_(t1::TApp, t2::TApp, do_meet::Bool)::MeetJoin_rec_re
     MeetJoin_rec_res(TApp(all_ress .|> x -> x.res_type), vcat((all_ress .|> x -> x.cs)...))
 end
 
+function meetjoin_rec_unify_(t1::TConc, t2::TConc, do_meet::Bool)::MeetJoin_rec_res
+    if length(t1.ops_dot_ordered) != length(t2.ops_dot_ordered)
+        return MeetJoin_rec_res(TermwError(t1, Error(err_msg_app(t1, t2))), Array{Constraint}[])
+    end
+    all_ress = [meetjoin_rec_unify_(f1, f2, do_meet) for (f1, f2) in zip(t1.ops_dot_ordered, t2.ops_dot_ordered)]
+    MeetJoin_rec_res(TConc(all_ress .|> x -> x.res_type), vcat((all_ress .|> x -> x.cs)...))
+end
+
 concat_(t::TProd...) = TProd(vcat((t .|> (x -> x.data))...), merge((t .|> (x -> x.data_tags))...))
 subdict(d::Dict{Id,Term}, keys::Set{Id}) = Dict{Id,Term}(k => d[k] for k in keys)
 
 function meetjoin_rec_unify_(t1::TProd, t2::TProd, do_meet::Bool)::MeetJoin_rec_res
     t1l, t2l = t1.data |> length, t2.data |> length
-    shared_tags = intersect(keys(t1.data_tags), keys(t2.data_tags)) # To let it be ordered
+    shared_tags = intersect(keys(t1.data_tags), keys(t2.data_tags))
     tags_1_not_2 = setdiff(keys(t1.data_tags), keys(t2.data_tags))
     tags_2_not_1 = setdiff(keys(t2.data_tags), keys(t1.data_tags))
     shared_res = Dict{Id,MeetJoin_rec_res}(tt => meetjoin_rec_unify_(t1.data_tags[tt], t2.data_tags[tt], do_meet) for tt in shared_tags)
@@ -189,6 +201,46 @@ function meetjoin_rec_unify_(t1::TLocStr, t2::TLocStr, do_meet)::MeetJoin_rec_re
     end
 end
 
+function meetjoin_rec_unify_(t1::TInt, t2::TInt, do_meet)::MeetJoin_rec_res
+    MeetJoin_rec_res(TInt(do_meet ? min(t1.n, t2.n) : max(t1.n, t2.n)), Array{Constraint}([]))
+end
+
+function meetjoin_rec_unify_(t1::TStr, t2::TStr, do_meet)::MeetJoin_rec_res
+    if t1.s == t2.s MeetJoin_rec_res(t1, Array{Constraint}([]))
+    else MeetJoin_rec_res(t1, Array{Constraint}([ErrorConstraint(EqConstraint(t1, t2), "Different strings")]))
+    end
+end
+function meetjoin_rec_unify_(t1::TN, t2::TN, do_meet)::MeetJoin_rec_res
+    MeetJoin_rec_res(TN(), Array{Constraint}([]))
+end
+function meetjoin_rec_unify_(t1::TInt, t2::TN, do_meet)::MeetJoin_rec_res
+    MeetJoin_rec_res(TN(), Array{Constraint}([])) # VERY VERY CRUCIAL !!!
+end
+function meetjoin_rec_unify_(t1::TS, t2::TS, do_meet)::MeetJoin_rec_res
+    MeetJoin_rec_res(TN(), Array{Constraint}([]))
+end
+function meetjoin_rec_unify_(t1::TIntSum, t2::TIntSum, do_meet)::MeetJoin_rec_res
+    if length(t1.ns) != length(t2.ns)
+        return MeetJoin_rec_res(TermwError(t1, Error(err_msg_intsum(t1, t2))), Array{Constraint}[])
+    end
+    all_ress = [meetjoin_rec_unify_(f1, f2, do_meet) for (f1, f2) in zip(t1.ns, t2.ns)]
+    MeetJoin_rec_res(TIntSum(all_ress .|> x -> x.res_type), vcat((all_ress .|> x -> x.cs)...))
+end
+function meetjoin_rec_unify_(t1::TIntProd, t2::TIntProd, do_meet)::MeetJoin_rec_res
+    if length(t1.ns) != length(t2.ns)
+        return MeetJoin_rec_res(TermwError(t1, Error(err_msg_intprod(t1, t2))), Array{Constraint}[])
+    end
+    all_ress = [meetjoin_rec_unify_(f1, f2, do_meet) for (f1, f2) in zip(t1.ns, t2.ns)]
+    MeetJoin_rec_res(TIntProd(all_ress .|> x -> x.res_type), vcat((all_ress .|> x -> x.cs)...))
+end
+function meetjoin_rec_unify_(t1::TAppend, t2::TAppend, do_meet)::MeetJoin_rec_res
+    if length(t1.prods) != length(t2.prods)
+        return MeetJoin_rec_res(TermwError(t1, Error(err_msg_append(t1, t2))), Array{Constraint}[])
+    end
+    all_ress = [meetjoin_rec_unify_(f1, f2, do_meet) for (f1, f2) in zip(t1.prods, t2.prods)]
+    MeetJoin_rec_res(TAppend(all_ress .|> x -> x.res_type), vcat((all_ress .|> x -> x.cs)...))
+end
+
 function meetjoin_rec_unify_(t1::Term, t2::Term, do_meet)::MeetJoin_rec_res # base case
     if t1 == t2
         MeetJoin_rec_res(t1, Array{Constraint}([]))
@@ -201,7 +253,26 @@ function meetjoin_rec_unify_(t1::Term, t2::Term, do_meet)::MeetJoin_rec_res # ba
     end
 end
 
+
+
+
+
+
+
+
+
+
+
+
 function imply_unify_(t1::TApp, t2::TApp)::Imply_res
+    if length(t1.ops_dot_ordered) != length(t2.ops_dot_ordered)
+        ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_app(t1, t2)))
+    else
+        Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(t1.ops_dot_ordered, t2.ops_dot_ordered)])
+    end
+end
+
+function imply_unify_(t1::TConc, t2::TConc)::Imply_res
     if length(t1.ops_dot_ordered) != length(t2.ops_dot_ordered)
         ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_app(t1, t2)))
     else
@@ -214,7 +285,7 @@ function imply_unify_(t1::TProd, t2::TProd)::Imply_res
         return ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_prods(t1, t2)))
     end
     cs_data = Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(t1.data, t2.data)])
-    shared_tags = intersect(keys(t1.data_tags), keys(t2.data_tags)) # To let it be ordered
+    shared_tags = intersect(keys(t1.data_tags), keys(t2.data_tags))
     if length(setdiff(keys(t2.data_tags), keys(t1.data_tags))) > 0
         return ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_prods_tags(t1, t2)))
     end
@@ -284,6 +355,41 @@ function imply_unify_(t1::TSumTerm, t2::Term)::Imply_res
         Array{Constraint}([DirectConstraint(t1.data, t2)])
     end
 end
+function imply_unify_(t1::TInt, t2::TInt)::Imply_res
+    if t1.n < t2.n ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_int(t1, t2)))
+    else Array{Constraint}([]) end
+end
+
+function imply_unify_(t1::TStr, t2::TStr)::Imply_res
+    if t1.s == t2.s Array{Constraint}([])
+    else ErrorConstraint(DirectConstraint(t1, t2), Error("Different strings"))
+    end
+end
+function imply_unify_(t1::TInt, t2::TN)::Imply_res
+    Array{Constraint}([]) # VERY VERY CRUCIAL!!!
+end
+function imply_unify_(t1::TN, t2::TN)::Imply_res
+    Array{Constraint}([])
+end
+function imply_unify_(t1::TS, t2::TS)::Imply_res
+    Array{Constraint}([])
+end
+function imply_unify_(t1::TIntSum, t2::TIntSum)::Imply_res
+    if length(t1.ns) != length(t2.ns) ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_app(t1, t2)))
+    else Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(t1.ns, t2.ns)])
+    end
+end
+function imply_unify_(t1::TIntProd, t2::TIntProd)::Imply_res
+    if length(t1.ns) != length(t2.ns) ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_app(t1, t2)))
+    else Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(t1.ns, t2.ns)])
+    end
+end
+function imply_unify_(t1::TAppend, t2::TAppend)::Imply_res
+    if length(t1.prods) != length(t2.prods) ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_app(t1, t2)))
+    else Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(t1.prods, t2.prods)])
+    end
+end
+
 function imply_unify_(t1::Term, t2::Term)::Imply_res # base case
     if t1 == t2
         Array{Constraint}([])
@@ -293,6 +399,10 @@ function imply_unify_(t1::Term, t2::Term)::Imply_res # base case
         ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_terms(t1, t2)))
     end
 end
+
+
+
+
 
 swap(c::DirectConstraint) = ReverseConstraint(c.t2, c.t1)
 swap(c::ReverseConstraint) = DirectConstraint(c.t2, c.t1)
@@ -632,6 +742,24 @@ end
 function infer_type_(term::TTop)::Term
     return TTermEmpty(TTop())
 end
+function infer_type_(term::TInt)::Term
+    return TTermEmpty(term) # ????????????????????????????????????????????
+end
+function infer_type_(term::TN)::Term
+    return TTermEmpty(TN()) # ????????????????????????????????????????????
+end
+function infer_type_(term::TStr)::Term
+    return TTermEmpty(TS())
+end
+function infer_type_(term::TS)::Term
+    return TTermEmpty(TS())
+end
+function infer_type_rec(term::TS)::Term
+    return infer_type_(term)
+end
+
+
+
 function infer_type_(term::TAnno, t_computed::TTerm)::Term # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
     substs = robinsonUnify(t_computed.t_out, term.type, mode = imply_)
     if substs isa ItsLiterallyAlreadyOk
@@ -715,27 +843,50 @@ function infer_type_(term::TBranches, t_computed::TTerm)::Term
     return TTerm(t_computed.t_in, TAbs(TSum(types)))
 end
 
-
-function infer_type_(term::TApp, ts_computed::Array{TTerm})::Term
-    # First, fix TLoc's by SQUASHING THEM TO BE TTERMS.
-    # Idea: - TAbs come as TTErms (TTerm with NO dependencies)  - ELocs come as InfRes WITH the dependency  - NONE of the TTerm have a Forall around cuz it's how it is in this mess
-    ts_computed_2 = Array{TTerm}([ts_computed[1]])
-    for t in ts_computed[2:end]
-        fake_tterm = TAbs(TTerm(TLoc(1), TLoc(2)))
-        tterm_subst = robinsonUnify(t.t_out, fake_tterm, t |> get_arity_obj, fake_tterm.body |> get_arity_obj; mode = imply_)
+function unify_funcs_to_tterms_(ts_computed)
+    ts_computed_2 = Array{TTerm}([])
+    for t in ts_computed
+        fake_tterm = TTerm(TLoc(1), TLoc(2))
+        tterm_subst = robinsonUnify(t.t_out, fake_tterm, t |> get_arity_obj, fake_tterm |> get_arity_obj; mode = imply_)
         # NOTE^ :  mode=imply_ doesnt even return a res_type, even less one with an error! Of course
         if tterm_subst isa Failed_unif_res
-            return TermwError(TApp(ts_computed .|> (x -> x.t_out)), Error("Calling non function: " * get_string(tterm_subst[4]))) #y'know what? Yes this is violent.. I don't care
+            return TermwError(TConc(ts_computed .|> (x -> x.t_out)), Error("Calling non function: " * get_string(tterm_subst[4]))) #y'know what? Yes this is violent.. I don't care
         elseif tterm_subst isa ItsLiterallyAlreadyOk
             push!(ts_computed_2, t)
         else
             push!(ts_computed_2, ass_reduc(t, tterm_subst[1])) # t.t_out SHOULD be nothing else but a TTerm... RIGTH?
         end
     end
+    ts_computed_2
+end
+function CHECK_unify_terms_to_N_(ts_computed)
+    # Checks that the TOut's are SUBTYPES of N !!!!!
+    ts_computed_2 = Array{TTerm}([])
+    for t in ts_computed
+        fake_tterm = TN()
+        tterm_subst = robinsonUnify(t.t_out, fake_tterm, t |> get_arity_obj, fake_tterm |> get_arity_obj; mode = imply_)
+        # NOTE^ :  mode=imply_ doesnt even return a res_type, even less one with an error! Of course
+        if tterm_subst isa Failed_unif_res
+            return TermwError(TConc(ts_computed .|> (x -> x.t_out)), Error("Calling non function: " * get_string(tterm_subst[4]))) #y'know what? Yes this is violent.. I don't care
+        else # Dont change bloody anything. If it can be N, IT'S OK!!!
+            push!(ts_computed_2, t) # t.t_out SHOULD be nothing else but a TTerm... RIGTH?
+        end
+    end
+    ts_computed_2
+end
+
+
+function infer_type_(term::TApp, ts_computed::Array{TTerm})::Term
+    # First, fix TLoc's by SQUASHING THEM TO BE TTERMS.
+    # Idea: - TAbs come as TTErms (TTerm with NO dependencies)  - ELocs come as InfRes WITH the dependency  - NONE of the TTerm have a Forall around cuz it's how it is in this mess
+    funcs_ts_to_tterms = unify_funcs_to_tterms_(ts_computed[2:end])
+    if funcs_ts_to_tterms isa TermwError return funcs_ts_to_tterms end  #y'know what? Yes this is violent.. I don't care
+    ts_computed_2 = vcat(Array{TTerm}([ts_computed[1]]), funcs_ts_to_tterms)
     # ^ Each of these still has ITS OWN TLoc's
 
     # Second, Unify the context of the TLocs:
     all_w_unified_args = infer_type_(TProd(Array{Term}([])), ts_computed_2)
+    # ^ Yes, believe it or not this unifies the CONTEXTS
     # ^ REUSING the TProd inference, HACKING the fact that Term is NOT used
     # What comes out is a: TTerm(TProd(Array{Term}([...])), TProd(Array{Term}(([TTerm(), ...]))))
     full_arity = all_w_unified_args |> get_arity_obj
@@ -776,6 +927,91 @@ function infer_type_(term::TApp, ts_computed::Array{TTerm})::Term
     res
 end
 
+function infer_type_(term::TConc, ts_computed::Array{TTerm})::Term
+    # First, fix TLoc's by SQUASHING THEM TO BE TTERMS.
+    # Idea: - TAbs come as TTErms (TTerm with NO dependencies)  - ELocs come as InfRes WITH the dependency  - NONE of the TTerm have a Forall around cuz it's how it is in this mess
+    ts_computed_2 = unify_funcs_to_tterms_(ts_computed)
+    if ts_computed_2 isa TermwError return ts_computed_2 end  #y'know what? Yes this is violent.. I don't care
+
+    # ^ Each of these still has ITS OWN TLoc's
+
+    # Second, Unify the context of the TLocs:
+    all_w_unified_args = infer_type_(TProd(Array{Term}([])), ts_computed_2)
+    # ^ Yes, believe it or not this unifies the CONTEXTS
+    # ^ REUSING the TProd inference, HACKING the fact that Term is NOT used
+    # What comes out is a: TTerm(TProd(Array{Term}([...])), TProd(Array{Term}(([TTerm(), ...]))))
+    full_arity = all_w_unified_args |> get_arity_obj
+    # ^Can i compute this in some smarter way?  # Dunno !
+    args, tterms = all_w_unified_args.t_in, all_w_unified_args.t_out.data
+    # ^ ts_computed_out becomes array and args remains TProd.. What a mess
+    all_errors = Array{ErrorConstraint}([])
+    # Third, actually unify all in/outs:
+    prev_out = tterms[1].t_out #  the ONLY DIFFERENCE (apart from call to unify_funcs_to_tterms_) with TApp
+    for i = 2:length(tterms)
+        next_in = tterms[i].t_in # YES this always exists now
+        substs = robinsonUnify(
+            TAbs(prev_out), TAbs(next_in), full_arity, full_arity; unify_tlocs_ctx = false, mode = imply_)
+        # : i DONT LIKE these TAbs, it's WRONG, but, it's the only way of accessing unify_tlocs_ctx atm
+        # NOTE^ :  mode=imply_ doesnt even return a res_type, even less one with an error! Of course
+        if substs isa ItsLiterallyAlreadyOk
+            prev_out = tterms[i].t_out
+        else
+            if substs isa Failed_unif_res
+                append!(all_errors, substs[4])
+            end
+            (s1, s2) = substs
+            # ^ Wait.. Are you telling me, if unify_tlocs_ctx=false, s1 and s2 are ALWAYS the same ???  # # Man, this is a crazy world..
+            tterms = ass_reduc(TProd(Array{Term}(tterms)), s1).data
+            # ^ the LENGTH of tterms DOES NOT CHANGE HERE
+            # ^ Also Maybe you can SKIP updating all of them but who cares
+            args = ass_reduc(args, s1) # Keep track of the Arg types, too
+            full_arity = s1 |> get_arity_obj
+            prev_out = tterms[i].t_out
+            # Error("Mismatched app: get out type $(prev_out |> pr) but required type $(next_in |> pr), with error '$()'")
+        end
+    end
+    res = TTerm(args, TTerm(tterms[1].t_in, tterms[end].t_out))
+    if length(all_errors) > 0
+        res = TermwError(res, Error("Type of the application don't match: " * get_string(all_errors)))
+    end
+    # Returns the OUTPUT type instead of the composed TTerm type cuz this is a mess
+    res
+end
+
+function infer_type_(term::TIntSum, ts_computed::Array{TTerm})::Term
+    # First, CHECK THAT ALL TOut's CAN be N:
+    ts_computed_2 = CHECK_unify_terms_to_N_(ts_computed)
+    if ts_computed_2 isa TermwError return ts_computed_2 end  #y'know what? Yes this is violent.. I don't care
+    # ^ Each of these still has ITS OWN TLoc's
+
+    # Second, Unify the context of the TLocs:
+    all_w_unified_args = infer_type_(TProd(Array{Term}([])), ts_computed_2)
+    # ^ Yes, believe it or not this unifies the CONTEXTS  # ^ REUSING the TProd inference, HACKING the fact that Term is NOT used
+    all_w_unified_args # Wait... Is this right ????????
+end
+function infer_type_(term::TIntProd, ts_computed::Array{TTerm})::Term
+    # First, CHECK THAT ALL TOut's CAN be N:
+    ts_computed_2 = CHECK_unify_terms_to_N_(ts_computed)
+    if ts_computed_2 isa TermwError return ts_computed_2 end  #y'know what? Yes this is violent.. I don't care
+    # ^ Each of these still has ITS OWN TLoc's
+
+    # Second, Unify the context of the TLocs:
+    all_w_unified_args = infer_type_(TProd(Array{Term}([])), ts_computed_2)
+    # ^ Yes, believe it or not this unifies the CONTEXTS  # ^ REUSING the TProd inference, HACKING the fact that Term is NOT used
+    all_w_unified_args # Wait... Is this right ????????
+end
+function infer_type_(term::TAppend, ts_computed::Array{TTerm})::Term
+    # First, CHECK THAT ALL TOut's CAN be N:
+    ts_computed_2 = CHECK_unify_terms_to_N_(ts_computed)
+    if ts_computed_2 isa TermwError return ts_computed_2 end  #y'know what? Yes this is violent.. I don't care
+    # ^ Each of these still has ITS OWN TLoc's
+
+    # Second, Unify the context of the TLocs:
+    all_w_unified_args = infer_type_(TProd(Array{Term}([])), ts_computed_2)
+    # ^ Yes, believe it or not this unifies the CONTEXTS  # ^ REUSING the TProd inference, HACKING the fact that Term is NOT used
+    all_w_unified_args # Wait... Is this right ????????
+end
+
 
 
 # Silly categorical-algebra-ish recursive wrapup:
@@ -790,6 +1026,30 @@ function infer_type_rec(term::TGlob)::Term
 end
 function infer_type_rec(term::TTop)::Term
     return infer_type_(term)
+end
+function infer_type_rec(term::TInt)::Term
+    return infer_type_(term)
+end
+function infer_type_rec(term::TStr)::Term
+    return infer_type_(term)
+end
+function infer_type_rec(term::TN)::Term
+    return infer_type_(term)
+end
+function infer_type_rec(term::TS)::Term
+    return infer_type_(term)
+end
+function infer_type_rec(term::TIntSum)::Term
+    tts::Array{Union{TTerm,Error}} = infer_type_rec.(term.ns)
+    return infer_type_(term, Array{TTerm}(tts))
+end
+function infer_type_rec(term::TIntProd)::Term
+    tts::Array{Union{TTerm,Error}} = infer_type_rec.(term.ns)
+    return infer_type_(term, Array{TTerm}(tts))
+end
+function infer_type_rec(term::TAppend)::Term
+    tts::Array{Union{TTerm,Error}} = infer_type_rec.(term.prods)
+    return infer_type_(term, Array{TTerm}(tts))
 end
 function infer_type_rec(term::TAnno)::Term # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
     tt = infer_type_rec(term.expr)
@@ -819,6 +1079,19 @@ function infer_type_rec(term::TApp)::Term # IMPORTANT: if an error comes up, THI
     # for tt in tts if tt isa Error return tt end end
     return infer_type_(term, Array{TTerm}(tts))
 end
+function infer_type_rec(term::TConc)::Term # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
+    tts::Array{Union{TTerm,Error}} = infer_type_rec.(term.ops_dot_ordered)
+    # for tt in tts if tt isa Error return tt end end
+    return infer_type_(term, Array{TTerm}(tts))
+end
+function infer_type_rec(term::TConc)::Term # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
+    tts::Array{Union{TTerm,Error}} = infer_type_rec.(term.ops_dot_ordered)
+    # for tt in tts if tt isa Error return tt end end
+    return infer_type_(term, Array{TTerm}(tts))
+end
 
 
 # *unification*, thproving_1.jl, mylambda1_dep.jl
+
+
+
