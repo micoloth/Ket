@@ -117,11 +117,11 @@ needsBefore(hc::HangingChance10, obj::SyntaxCore)::Bool = obj in getWhatNeedsBef
 needsNext(hc::HangingChance10, obj::SyntaxCore)::Bool = obj in getWhatNeedsNext(hc)
 function fields_needsBefore_obj(hc::HangingChance10, obj::SyntaxInstObject)::Array{SyntaxField}
     v =  getWhatNeedsBefore(hc)
-    return filter(x-> x isa SyntaxField && can_be_a(getType(x), obj.name), v)
+    return filter(x-> x isa SyntaxField && can_be_a(getType(x), getInferredType(obj)), v)
 end
 function fields_needsNext_obj(hc::HangingChance10, obj::SyntaxInstObject)::Array{SyntaxField}
     v = getWhatNeedsNext(hc)
-    return filter(x-> x isa SyntaxField && can_be_a(getType(x), obj.name), v)
+    return filter(x-> x isa SyntaxField && can_be_a(getType(x), getInferredType(obj)), v)
 end
 
 

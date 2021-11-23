@@ -1,7 +1,7 @@
 
 
 include("TT/unification_3.jl")
-include("TT/mylambda1 tag.jl")
+include("TT/mylambda1.jl")
 include("Parser/RandomParser10.jl")
 
 s = SyntaxTerm("+")
@@ -10,10 +10,10 @@ s = SyntaxChoice([s, s])
 si = SyntaxInstChoice(s, 0, si, 1)
 s = SyntaxStruct([s,s])
 si = SyntaxInstStruct(s, [si, si], 1)
-s = SyntaxField("first", TGlobTag("A"))
-si = SyntaxInstReference(TGlobTag("A"), "a", 1)
-si = SyntaxInstNativeString("iii", 1)
-si = SyntaxInstObject(TGlobTag("A"), si, 1)
+s = SyntaxField("first", TGlob("A"))
+si = SyntaxInstReference(TGlob("A"), "a", 1, TAnno(TLocStr("a"), TGlob("A")))
+si = SyntaxInstNativeString("iii", 1, TAnno(TStr("iii"), TS()))
+si = SyntaxInstObject(si, 1, TAnno(TGlob("A"), TypeUniverse()))
 si = SyntaxInstField(s, si, 1)
 # s = SyntaxStrip()
 # si = SyntaxInstStrip()
@@ -112,11 +112,11 @@ SyntaxFields = Dict{String, SyntaxField}()
 SyntaxChoicess = Dict{String, SyntaxChoice}()
 SyntaxStructs = Dict{String, SyntaxStruct}()
 SyntaxStrips = Dict{String, SyntaxStrip}()
-TypeBases = Dict{String, TGlobTag}()
-TypeFuncs = Dict{String, TermTag}()
-TypeSums = Dict{String, TSumTag}()
-TypeProds = Dict{String, TProdTag}()
-bindings = Dict{TermTag, SyntaxCore}()
+TypeBases = Dict{String, TGlob}()
+TypeFuncs = Dict{String, Term}()
+TypeSums = Dict{String, TSum}()
+TypeProds = Dict{String, TProd}()
+bindings = Dict{Term, SyntaxCore}()
 
 for i in ["{", "-",">"] SyntaxTerms[i] =SyntaxTerm(i) end
 SyntaxStructs["arrow"] = SyntaxStruct(Array{SyntaxCore}([SyntaxTerms["-"], SyntaxTerms[">"]]))
@@ -133,7 +133,7 @@ initializePosteriors(s10.posteriorsStructure)
 text = "->"
 
 rp = RandomParser10("", [], s10);
-parse(rp, text)  # OOf
+parse(rp, text)
 rp.structure|>trace
 
 
@@ -152,13 +152,13 @@ function make_s10()
     SyntaxChoicess = Dict{String, SyntaxChoice}()
     SyntaxStructs = Dict{String, SyntaxStruct}()
     SyntaxStrips = Dict{String, SyntaxStrip}()
-    TypeBases = Dict{String, TGlobTag}()
-    TypeFuncs = Dict{String, TermTag}()
-    TypeSums = Dict{String, TSumTag}()
-    TypeProds = Dict{String, TProdTag}()
-    bindings = Dict{TermTag, SyntaxCore}()
+    TypeBases = Dict{String, TGlob}()
+    TypeFuncs = Dict{String, Term}()
+    TypeSums = Dict{String, TSum}()
+    TypeProds = Dict{String, TProd}()
+    bindings = Dict{Term, SyntaxCore}()
 
-    function addFieldToProductWithSintaxfield(whichProduct::String, fieldName::String, whichField::TermTag)
+    function addFieldToProductWithSintaxfield(whichProduct::String, fieldName::String, whichField::Term)
         ######################### NOTE: This prod has STR NAMES associated w/ fields, ALREADY!!!
         push!(TypeProds[whichProduct].data, whichField)
         push!(TypeProds[whichProduct].tags, fieldName)
@@ -172,8 +172,8 @@ function make_s10()
     productBranchName = "functionType"
     fieldNameFirst = "first"
     FieldNameSecond = "second"
-    TypeBases[leafName] = TGlobTag(leafName)
-    TypeProds[productBranchName] = TProdTag(Array{TermTag}([]))
+    TypeBases[leafName] = TGlob(leafName)
+    TypeProds[productBranchName] = TProd(Array{Term}([]))
 
     addFieldToProductWithSintaxfield(productBranchName, fieldNameFirst, TypeBases[leafName])
     addFieldToProductWithSintaxfield(productBranchName, FieldNameSecond, TypeBases[leafName])
@@ -184,7 +184,7 @@ function make_s10()
     SyntaxChoicess["functionType_S"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["functionType_S_Par"], SyntaxStructs["functionType_S_noPar"]]))
     bindings[TypeProds["functionType"]] = SyntaxChoicess["functionType_S"] # //it HAS BEEN:  << SyntaxChoicess.getSyntaxCore("functionType_S_Par_noPar");
 
-    TypeProds["baseTypeDef"] = TProdTag(Array{TermTag}([]))
+    TypeProds["baseTypeDef"] = TProd(Array{Term}([]))
     whichProduct = "baseTypeDef"; fieldName = "BaseTypeDef_name"; whichField = TypeBases["baseTypeVariable"]
     addFieldToProductWithSintaxfield(whichProduct, fieldName, whichField)
     SyntaxStructs["BaseTypeDef_S"] = SyntaxStruct(Array{SyntaxCore}([SyntaxFields["BaseTypeDef_name"], SyntaxTerms[":"], SyntaxTerms["Type"]]))
@@ -232,12 +232,12 @@ function make_s10_big()
     SyntaxStructs = Dict{String, SyntaxStruct}()
     SyntaxStrips = Dict{String, SyntaxStrip}()
 
-    TypeBases = Dict{String, TGlobTag}()
-    TypeFuncs = Dict{String, TTermTag}()
-    TypeSums = Dict{String, TSumTag}()
-    TypeProds = Dict{String, TProdTag}()
+    TypeBases = Dict{String, TGlob}()
+    TypeFuncs = Dict{String, TTerm}()
+    TypeSums = Dict{String, TSum}()
+    TypeProds = Dict{String, TProd}()
 
-    bindings = Dict{TermTag, SyntaxCore}()
+    bindings = Dict{Term, SyntaxCore}()
 
     # //base words
     for i in ["{", "-",">",":","=","(",")",";","where","Type","eval","}"]
@@ -245,7 +245,7 @@ function make_s10_big()
     end
 
 
-    function addFieldToProductWithSintaxfield(whichProduct::String, fieldName::String, whichField::TermTag)
+    function addFieldToProductWithSintaxfield(whichProduct::String, fieldName::String, whichField::Term)
         ######################### NOTE: This prod has STR NAMES associated w/ fields, ALREADY!!!
         push!(TypeProds[whichProduct].data, whichField)
         push!(TypeProds[whichProduct].tags, fieldName)
@@ -253,11 +253,11 @@ function make_s10_big()
     end
 
     function makeNiceTreeStructure(leafName::String, productBranchName::String, sumName::String, fieldNameFirst::String, FieldNameSecond::String)
-        # //creates a nice tree that is made like this: T = A + (T x T) where A is a TGlobTag with a name
+        # //creates a nice tree that is made like this: T = A + (T x T) where A is a TGlob with a name
 
-        TypeBases[leafName] = TGlobTag(leafName)
-        TypeProds[productBranchName] = TProdTag(Array{TermTag}([]))
-        TypeSums[sumName] = TSumTag([TypeProds[productBranchName], TypeBases[leafName] ])
+        TypeBases[leafName] = TGlob(leafName)
+        TypeProds[productBranchName] = TProd(Array{Term}([]))
+        TypeSums[sumName] = TSum([TypeProds[productBranchName], TypeBases[leafName] ])
 
         ######################### NOTE: This prod has STR NAMES associated w/ fields, ALREADY!!!
         addFieldToProductWithSintaxfield(productBranchName, fieldNameFirst, TypeSums[sumName])
@@ -289,7 +289,7 @@ function make_s10_big()
     # //// ok
 
     # //base type def: syntax "A: Type" where A is the name of the type
-    TypeProds["baseTypeDef"] = TProdTag(Array{TermTag}([]))
+    TypeProds["baseTypeDef"] = TProd(Array{Term}([]))
 
     # ///ALSO I'M _REALLY_ NOT SURE ABOUT THE NEXT LINES.........................
     addFieldToProductWithSintaxfield("baseTypeDef", "BaseTypeDef_name", TypeBases["baseTypeVariable"])
@@ -299,7 +299,7 @@ function make_s10_big()
 
 
     # //term def: syntax "a: T" where a is the name of the variable and T is a type
-    TypeProds["variableTermDef"] = TProdTag(Array{TermTag}([]))
+    TypeProds["variableTermDef"] = TProd(Array{Term}([]))
 
     addFieldToProductWithSintaxfield("variableTermDef", "variableTermDef_name", TypeBases["variable"])
     addFieldToProductWithSintaxfield("variableTermDef", "variableTermDef_type", TypeSums["type"])
@@ -310,7 +310,7 @@ function make_s10_big()
 
     # //funcion definition and declaration:
     # //syntax "f: T where f(x)={t}" where f is the function name, T is a type, and t is a term.
-    TypeProds["funcDefAndDecl"] = TProdTag(Array{TermTag}([]))
+    TypeProds["funcDefAndDecl"] = TProd(Array{Term}([]))
 
     addFieldToProductWithSintaxfield("funcDefAndDecl", "funcDefAndDecl_name", TypeBases["variable"])
     addFieldToProductWithSintaxfield("funcDefAndDecl", "funcDefAndDecl_type", TypeSums["type"])
@@ -322,7 +322,7 @@ function make_s10_big()
 
 
     # //eval sentence
-    TypeProds["evalSentence"] = TProdTag(Array{TermTag}([]))
+    TypeProds["evalSentence"] = TProd(Array{Term}([]))
 
     addFieldToProductWithSintaxfield("evalSentence", "evalSentence_term", TypeSums["term"])
 
@@ -331,7 +331,7 @@ function make_s10_big()
 
 
     # //DUMB program, just for show: a program is a funcDefAndDecl, then ";", then an eval:
-    TypeProds["program"]=TProdTag(Array{TermTag}([]))
+    TypeProds["program"]=TProd(Array{Term}([]))
 
     addFieldToProductWithSintaxfield("program", "program_funcdef", TypeProds["funcDefAndDecl"])
     addFieldToProductWithSintaxfield("program", "program_eval", TypeProds["evalSentence"])
@@ -405,53 +405,47 @@ merge(Dict("1"=>1), Dict("2"=>2))
 
 collect_fields(s::SyntaxInst)
 
-collect_fields(ps::PosteriorsStructures, s::SyntaxInstTerm)::Dict{String, TermTag} = Dict{String, TermTag}()
-collect_fields(ps::PosteriorsStructures, s::SyntaxInstReference)::Dict{String, TermTag} = Dict{String, TermTag}()
-collect_fields(ps::PosteriorsStructures, s::SyntaxInstNativeString)::Dict{String, TermTag} = Dict{String, TermTag}()
-collect_fields(ps::PosteriorsStructures, s::SyntaxInstObject)::Dict{String, TermTag} = Dict{String, TermTag}()
-collect_fields(ps::PosteriorsStructures, s::SyntaxInstField)::Dict{String, TermTag} = Dict{String, TermTag}(s.name.name=>getObjFoundFromAccepted(s.objectFound; as_type=s.name.type))
-collect_fields(ps::PosteriorsStructures, s::SyntaxInstChoice)::Dict{String, TermTag} = collect_fields(ps, s.choice)
-collect_fields(ps::PosteriorsStructures, s::SyntaxInstStruct)::Dict{String, TermTag} = merge((s.list .|> (x->collect_fields(ps, x)))...)
-function collect_fields(ps::PosteriorsStructures, s::SyntaxInstStrip)::Dict{String, TermTag}
+collect_fields(s::SyntaxInstTerm)::Dict{String, Term} = Dict{String, Term}()
+collect_fields(s::SyntaxInstReference)::Dict{String, Term} = Dict{String, Term}()
+collect_fields(s::SyntaxInstNativeString)::Dict{String, Term} = Dict{String, Term}()
+collect_fields(s::SyntaxInstObject)::Dict{String, Term} = Dict{String, Term}()
+collect_fields(s::SyntaxInstField)::Dict{String, Term} = Dict{String, Term}(s.name.name=>getObjFoundFromAccepted(s.objectFound; as_type=s.name.type))
+collect_fields(s::SyntaxInstChoice)::Dict{String, Term} = collect_fields(s.choice)
+collect_fields(s::SyntaxInstStruct)::Dict{String, Term} = merge((s.list .|> (x->collect_fields(x)))...)
+function collect_fields(s::SyntaxInstStrip)::Dict{String, Term}
     throw(DomainError("When is a field ever represented by a SyntaxStrip ???"))
 end
 
-function collect_strip(ps::PosteriorsStructures, s::SyntaxInstStrip)::Dict{String, TermTag}
+function collect_strip(s::SyntaxInstStrip)::Dict{String, Term}
     @assert all([ss isa Accepted_SynatxInst_type for ss in s.list]) "Which SyntaxStrip has Syntax that are not Accepted_SynatxInst_type ..... (Him: $(s|>trace))"
     # PROBLEM: SyntaxInstStrip has this list::Array{Accepted_SynatxInst_type} (apparently), BUT,
     # since you DON'T pass through a SyntaxInstField,
     # you have ONE LESS LEVEL of indication of what you should be typechecking to !!!
-    # If you want each obj in the SyntaxInstStrip.list to typecheck to the SAME TermTag(which'd be sane), you could put that INTO THE SyntaxStrip/AND/OR/SyntaxInstStrip DIRECTLY.....
-    gof = (x->getObjFoundFromAccepted(ps, x))
-    s.list .|> gof |> x->Dict{String, TermTag}(string(i)=> t for (i, t) in enumerate(x))
+    # If you want each obj in the SyntaxInstStrip.list to typecheck to the SAME Term(which'd be sane), you could put that INTO THE SyntaxStrip/AND/OR/SyntaxInstStrip DIRECTLY.....
+    gof = (x->getObjFoundFromAccepted(x))
     # MISSING: as_type               ^
+    s.list .|> gof |> x->Dict{String, Term}(string(i)=> t for (i, t) in enumerate(x))
 end
 
-function getObjFoundFromAccepted(ps::PosteriorsStructures, s::Accepted_SynatxInst_type; as_type::TermTag)::Union{TAnno, Error}
-    if (s.inferred_obj === nothing) s.inferred_obj = buildObjFoundFromAccepted(ps, s) end
-    if s isa SyntaxInstReference
+function getObjFoundFromAccepted(s::Accepted_SynatxInst_type; as_type::Union{Nothing, Term} = nothing)::Union{TAnno, Error}
+    if s isa SyntaxInstReference && as_type !== nothing
         @assert s.type == as_type "This is only diagnostic. Ofc it is. If not, tough luck LOL"
     end
-    return s.inferred_obj # TODO:  |> transform_in<as_type>
+    return getInferredTerm(s) # TODO:  |> transform_in<as_type>
 end
 
-function buildObjFoundFromAccepted(ps::PosteriorsStructures, s::SyntaxInstReference)::Union{TAnno, Error}
-    TermTag()#TODO:make it work
-end
-function buildObjFoundFromAccepted(ps::PosteriorsStructures, s::SyntaxInstNativeString)::Union{TAnno, Error}
-    return Union{TAnno,Error}() # TODO: Create a StringTerm sruct for terms, and a strinType=TypeSumTerm("String", 2, TTop()) for the type, MAYBE???
-end
-function buildObjFoundFromAccepted(ps::PosteriorsStructures, s::SyntaxInstObject)::Union{TAnno, Error}
-    if s.syntax isa SyntaxStrip fields = s |> collect_strip
-    else fields = s |> collect_fields
-    end
-    ps.get_building_function(s.name, s.syntax.name)
-end
+getInferredTerm(s::SyntaxInstReference)::TAnno = TAnno(TLocStr(s.text), TTermAuto(s.type, s.type))
+getInferredType(s::SyntaxInstReference)::Term = TTermAuto(s.type, s.type)
+
+getInferredTerm(s::SyntaxInstNativeString)::TAnno = TAnno(TStr(s.text), TS())
+getInferredType(s::SyntaxInstNativeString)::Term = TTermEmpty(TS()) # OR TS()
+# OR, strinType=TypeSumTerm("String", 2, TTop()) for the type, MAYBE???
+
+getInferredTerm(s::SyntaxInstReference)::TAnno = s.inferred_obj
+getInferredType(s::SyntaxInstReference)::Term = s.inferred_obj.type
 
 
-function build_app(fields::Dict{String, Union{TermTag,Error}})::Union{TermTag,Error}
-    tt = infer_type_(TApp())
-end
+
 
 
 
@@ -467,9 +461,190 @@ end
 
 
 
-# # //randomParser10.getBestTotalFound.? get.{as SyntaxInstStruct->x | as _->None}.? name.display, WHICH IS OF TYPE: Action + 1, WHATEVER THIS MEANS
 
-S.posteriorsStructure.allSyntaxes["functionType_S_Par"] == obj.s.name
+
+
+function add!(dict_of_arrays, key, obj)
+    if !(key in keys(dict_of_arrays)) dict_of_arrays[key] = [obj]
+    else push!(dict_of_arrays[key], obj) end
+end
+
+
+function make_s10_new()
+
+    SyntaxTerms = Dict{String, SyntaxTerm}()
+    SyntaxFields = Dict{String, SyntaxField}()
+    SyntaxChoicess = Dict{String, SyntaxChoice}()
+    SyntaxStructs = Dict{String, SyntaxStruct}()
+    SyntaxStrips = Dict{String, SyntaxStrip}()
+
+    TypeBases = Dict{String, TGlob}()
+    TypeFuncs = Dict{String, TTerm}()
+    TypeSums = Dict{String, TSum}()
+    TypeProds = Dict{String, TProd}()
+
+    bindings = Dict{SyntaxCore, Array{Any}}() # Any is a (Dict{String, Union{Term,Error}}) -> Union{TAnno, Error}  lambda !!!
+
+    # //base words
+    for i in ["{", "-",">",":","=","(",")",";","where","Type","eval","}"]
+        SyntaxTerms[i] =SyntaxTerm(i)
+    end
+
+
+    function addFieldToProductWithSintaxfield(whichProduct::String, fieldName::String, whichField::Term)
+        ######################### NOTE: This prod has STR NAMES associated w/ fields, ALREADY!!!
+        push!(TypeProds[whichProduct].data, whichField)
+        push!(TypeProds[whichProduct].tags, fieldName)
+        SyntaxFields[fieldName] = SyntaxField(fieldName, whichField)
+    end
+
+    function makeNiceTreeStructure(leafName::String, productBranchName::String, sumName::String, fieldNameFirst::String, FieldNameSecond::String)
+        # //creates a nice tree that is made like this: T = A + (T x T) where A is a TGlob with a name
+
+        TypeBases[leafName] = TGlob(leafName)
+        TypeProds[productBranchName] = TProd(Array{Term}([]))
+        TypeSums[sumName] = TSum([TypeProds[productBranchName], TypeBases[leafName] ])
+
+        ######################### NOTE: This prod has STR NAMES associated w/ fields, ALREADY!!!
+        addFieldToProductWithSintaxfield(productBranchName, fieldNameFirst, TypeSums[sumName])
+        addFieldToProductWithSintaxfield(productBranchName, FieldNameSecond, TypeSums[sumName])
+    end
+
+
+
+
+    # // type expession: T = A + ("T -> T") where A is base type and "T -> T" is the function type
+    makeNiceTreeStructure("baseTypeVariable", "functionType", "type", "first", "second");
+
+    SyntaxStructs["functionType_S_noPar"] = SyntaxStruct(Array{SyntaxCore}([SyntaxFields["first"], SyntaxTerms["-"], SyntaxTerms[">"], SyntaxFields["second"]]))
+    SyntaxStructs["functionType_S_Par"] = SyntaxStruct(Array{SyntaxCore}([SyntaxTerms["("], SyntaxStructs["functionType_S_noPar"], SyntaxTerms[")"]]))
+    SyntaxChoicess["functionType_S"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["functionType_S_Par"], SyntaxStructs["functionType_S_noPar"]]))
+
+    build_functionType = (x::Dict{String, Union{Term,Error}}->TAnno(TTerm(x["first"], x["second"]), TypeUniverse()))
+    add!(bindings, SyntaxChoicess["functionType_S"], build_functionType) # //it HAS BEEN:  << SyntaxChoicess.getSyntaxCore("functionType_S_Par_noPar");
+
+
+
+    # # //terms expression: t = a + "t(t)" where a is a variable and t(t) is a function application
+    # makeNiceTreeStructure("variable", "funcApp", "term", "func", "arg")#//FINALLY, FUOND WHERE IT BREAKS
+    #                                                                     #	//this DOES NOT SURPRISE US
+    #                                                                     #	//this, WAS ABOUT TIME
+
+    # SyntaxStructs["funcApp_S"] = SyntaxStruct(Array{SyntaxCore}([SyntaxFields["func"], SyntaxTerms["("], SyntaxFields["arg"], SyntaxTerms[")"]]))
+    # bindings[TypeProds["funcApp"]] = SyntaxStructs["funcApp_S"]
+
+    # # //// ok
+
+    # # //base type def: syntax "A: Type" where A is the name of the type
+    # TypeProds["baseTypeDef"] = TProd(Array{Term}([]))
+
+    # # ///ALSO I'M _REALLY_ NOT SURE ABOUT THE NEXT LINES.........................
+    # addFieldToProductWithSintaxfield("baseTypeDef", "BaseTypeDef_name", TypeBases["baseTypeVariable"])
+
+    # SyntaxStructs["BaseTypeDef_S"] = SyntaxStruct(Array{SyntaxCore}([SyntaxFields["BaseTypeDef_name"], SyntaxTerms[":"], SyntaxTerms["Type"]]))
+    # bindings[TypeProds["baseTypeDef"]] = SyntaxStructs["BaseTypeDef_S"]
+
+
+    # # //term def: syntax "a: T" where a is the name of the variable and T is a type
+    # TypeProds["variableTermDef"] = TProd(Array{Term}([]))
+
+    # addFieldToProductWithSintaxfield("variableTermDef", "variableTermDef_name", TypeBases["variable"])
+    # addFieldToProductWithSintaxfield("variableTermDef", "variableTermDef_type", TypeSums["type"])
+
+    # SyntaxStructs["variableTermDef_S"] = SyntaxStruct(Array{SyntaxCore}([SyntaxFields["variableTermDef_name"], SyntaxTerms[":"], SyntaxFields["variableTermDef_type"]]))
+    # bindings[TypeProds["variableTermDef"]] = SyntaxStructs["variableTermDef_S"]
+
+
+    # # //funcion definition and declaration:
+    # # //syntax "f: T where f(x)={t}" where f is the function name, T is a type, and t is a term.
+    # TypeProds["funcDefAndDecl"] = TProd(Array{Term}([]))
+
+    # addFieldToProductWithSintaxfield("funcDefAndDecl", "funcDefAndDecl_name", TypeBases["variable"])
+    # addFieldToProductWithSintaxfield("funcDefAndDecl", "funcDefAndDecl_type", TypeSums["type"])
+    # addFieldToProductWithSintaxfield("funcDefAndDecl", "funcDefAndDecl_parameter", TypeProds["variableTermDef"])
+    # addFieldToProductWithSintaxfield("funcDefAndDecl", "funcDefAndDecl_body", TypeSums["term"])
+
+    # SyntaxStructs["funcDefAndDecl_S"] = SyntaxStruct(Array{SyntaxCore}([SyntaxFields["funcDefAndDecl_name"], SyntaxTerms[":"], SyntaxFields["funcDefAndDecl_type"], SyntaxTerms["where"], SyntaxFields["funcDefAndDecl_name"], SyntaxTerms["("], SyntaxFields["funcDefAndDecl_parameter"], SyntaxTerms[")"], SyntaxTerms["="], SyntaxFields["funcDefAndDecl_body"]]))
+    # bindings[TypeProds["funcDefAndDecl"]] = SyntaxStructs["funcDefAndDecl_S"]
+
+
+    # # //eval sentence
+    # TypeProds["evalSentence"] = TProd(Array{Term}([]))
+
+    # addFieldToProductWithSintaxfield("evalSentence", "evalSentence_term", TypeSums["term"])
+
+    # SyntaxStructs["evalSentence_S"] = SyntaxStruct(Array{SyntaxCore}([ SyntaxTerms["eval"], SyntaxFields["evalSentence_term"]]))
+    # bindings[TypeProds["evalSentence"]] = SyntaxStructs["evalSentence_S"]
+
+
+    # # //DUMB program, just for show: a program is a funcDefAndDecl, then ";", then an eval:
+    # TypeProds["program"]=TProd(Array{Term}([]))
+
+    # addFieldToProductWithSintaxfield("program", "program_funcdef", TypeProds["funcDefAndDecl"])
+    # addFieldToProductWithSintaxfield("program", "program_eval", TypeProds["evalSentence"])
+
+    # SyntaxStructs["program_S"] = SyntaxStruct(Array{SyntaxCore}([SyntaxFields["program_funcdef"], SyntaxTerms[";"], SyntaxFields["program_eval"]]))
+    # bindings[TypeProds["program"]] = SyntaxStructs["program_S"]
+
+    randomParser10 = RandomParser10()
+
+    for (name, s) in SyntaxTerms  addSyntax!(randomParser10.structure.posteriorsStructure, name, s) end
+    for (name, s) in SyntaxFields  addSyntax!(randomParser10.structure.posteriorsStructure, name, s) end
+    for (name, s) in SyntaxChoicess  addSyntax!(randomParser10.structure.posteriorsStructure, name, s) end
+    for (name, s) in SyntaxStructs  addSyntax!(randomParser10.structure.posteriorsStructure, name, s) end
+    # for (name, s) in SyntaxStrips  addSyntax!(randomParser10.structure.posteriorsStructure, name, s) end
+
+    randomParser10.structure.posteriorsStructure.bindings = bindings
+
+    initializeMarginals(randomParser10.structure.posteriorsStructure)
+    initializeChoices(randomParser10.structure.posteriorsStructure)
+    # initializeStrips(randomParser10.structure.posteriorsStructure)
+    initializePosteriors(randomParser10.structure.posteriorsStructure)
+
+    return randomParser10
+end
+
+
+randomParser10 = make_s10_new();
+text = "A->B";
+parse(randomParser10, text)
+
+randomParser10 = make_s10_new();
+text = "(A->B)-> B";
+parse(randomParser10, text)
+
+randomParser10 = make_s10_new();
+text = "g  (  a  )";
+parse(randomParser10, text)
+
+randomParser10 = make_s10_new();
+text = "ff (  g  )  =  g  (  a  )";
+parse(randomParser10, text)
+
+randomParser10 = make_s10_new();
+text = "f:(A->B)-> B";
+parse(randomParser10, text)
+
+randomParser10 = make_s10_new();
+text = "ff:A where ff (  g  )  =  a";
+parse(randomParser10, text)
+println("(Btw, length(inputVec) = $(length(randomParser10.inputVec)))")
+
+randomParser10 = make_s10_new();
+text = "ff:A->B where ff (  g  )  =  a";
+parse(randomParser10, text)
+println("(Btw, length(inputVec) = $(length(randomParser10.inputVec)))")
+
+
+randomParser10 = make_s10_new();
+text = "ff:(A->B)-> B  where ff (  g  )  =  g  (  a ) ; eval ff ( h ) ";
+parse(randomParser10, text)
+println("(Btw, length(inputVec) = $(length(randomParser10.inputVec)))")
+
+
+
+
+# # //randomParser10.getBestTotalFound.? get.{as SyntaxInstStruct->x | as _->None}.? name.display, WHICH IS OF TYPE: Action + 1, WHATEVER THIS MEANS
 
 
 

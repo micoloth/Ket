@@ -11,7 +11,13 @@ struct someOtherReturn
 	builder_func::Any # Any is a (Dict{String, Union{Term,Error}}) -> Union{TAnno, Error}  lambda !!!
 	P::Real
 end
-buildTypeThatHasSyntInst(r::someOtherReturn, s::SyntaxInst) = r.builder_func()
+function buildTypeThatHasSyntInst(r::someOtherReturn, s::SyntaxInst)
+    if s isa SyntaxInstStrip
+        r.builder_func(collect_strip(s)) # collect_strip returns a LIS OF dict_str
+    else
+        r.builder_func(collect_fields(s))
+    end
+end
 
 struct PosteriorStucture2
 	marginalsNormalizer::Real

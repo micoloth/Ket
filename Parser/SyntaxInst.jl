@@ -15,33 +15,30 @@ struct SyntaxInstTerm <: SyntaxInst
 	P::Real  # //I might be wrong, but this is just the marginal
 end
 
-mutable struct SyntaxInstReference <: Accepted_SynatxInst_type
+struct SyntaxInstReference <: Accepted_SynatxInst_type
     # //it's a variable.
     # //note: the name of a Term is the USE OF A GLOBALLY DEFINED VARIABLE # (Will i have to fix this?)
     # //note: a variable definition CONTAINS A VARIABLE (i.e., the name.)
 	type::Term # //it contains THE TYPE OF THE VAR YOU ARE JUST REFERENCING
 	text::String #
 	P::Real # //What is this, really? I contains the likelyhood of type being represented by a free variable, and the similarity of the sentence maybe?
-    inferred_obj::Union{Nothing, TAnno, Error} # This HAS BEEN BUIT UP ALREADY. BUT, it still has Holes ot Type variables ofc!! Also: it CAN be an Errored one!!
+    # inferred_term will have the very simple form TAnno(TLocStr(text), type)
 end
-SyntaxInstReference(type, text, P) = SyntaxInstReference(type, text, P, nothing)
 
-mutable struct SyntaxInstNativeString <: Accepted_SynatxInst_type
+struct SyntaxInstNativeString <: Accepted_SynatxInst_type
     # //it's a string
 	text::String
 	P::Real # //What is this, really? Prob a constant? Or >>1<<?
-    inferred_obj::Union{Nothing, TAnno, Error} # This HAS BEEN BUIT UP ALREADY. BUT, it still has Holes ot Type variables ofc!! Also: it CAN be an Errored one!!
+    # ^ This has the very simple form TAnno(TStr(text), TS())
 end
-SyntaxInstNativeString(text, P) = SyntaxInstNativeString(text, P, nothing)
 
-mutable struct SyntaxInstObject <: Accepted_SynatxInst_type
+struct SyntaxInstObject <: Accepted_SynatxInst_type
     # //a syntax that results in a obj
-    name::Term # This is THE TYPE OF THE OBJ YOU JUST FOUND
+    # name::Term # This is THE TYPE OF THE OBJ YOU JUST FOUND
     syntax::SyntaxInst  # //it is THE SYNTAX THAT OBJECT IS USING
     PofObjectAndBelowGivenBelow::Real #//it's the P of the fact that syntax meant object, times P of syntax and stuff.
-    inferred_obj::Union{Nothing, TAnno, Error} # This HAS BEEN BUIT UP ALREADY. BUT, it still has Holes ot Type variables ofc!! Also: it CAN be an Errored one!!
+    inferred_obj::TAnno # This HAS BEEN BUIT UP ALREADY. BUT, it still has Holes ot Type variables ofc!! Also: it CAN be an Errored one!!
 end
-SyntaxInstObject(name, syntax, PofObjectAndBelowGivenBelow) = SyntaxInstObject(name, syntax, PofObjectAndBelowGivenBelow, nothing)
 
 # //note: i'm doing so that now, same SyntaxInst form with two different >FIELD >NAMES are different SyntaxInstCores.
 # //		AT THIS POINT I BASICALLY HAVE NO IDEA WHAT I'M DOING
@@ -100,7 +97,7 @@ trace(s::SyntaxInstStrip)::String = "(" * join(s.list .|> trace, " ") * ")"
 deepEqual(s::SyntaxInstTerm, other::SyntaxInst)::Bool = other isa SyntaxInstTerm && s.name == other.name
 deepEqual(s::SyntaxInstReference, other::SyntaxInst)::Bool = other isa SyntaxInstReference && s.type === other.type && s.name == other.name
 deepEqual(s::SyntaxInstNativeString, other::SyntaxInst)::Bool = other isa SyntaxInstNativeString && s.text == other.text
-deepEqual(s::SyntaxInstObject, other::SyntaxInst)::Bool = other isa SyntaxInstObject && other.name === name && deepEqual(s.syntax, other.syntax)
+deepEqual(s::SyntaxInstObject, other::SyntaxInst)::Bool = other isa SyntaxInstObject && other.inferred_obj === getInferredTerm(s) && deepEqual(s.syntax, other.syntax)
 deepEqual(s::SyntaxInstField, other::SyntaxInst)::Bool = other isa SyntaxInstField && s.name == other.name
 # // LOL THIS WILL BE WRONG IN THE FUTURE ^
 # //LOL GOOD LUCK WITH FINDING THIS BUG, ALSO

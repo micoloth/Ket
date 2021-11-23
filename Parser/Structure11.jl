@@ -12,7 +12,7 @@ struct ScopedTypeInference #//Boi: this class, will GROW............
 	allDefinitions::Array{Tuple{String, Term}}
 end
 ScopedTypeInference() = ScopedTypeInference([])
-function can_be_a(request::Term, chance::Term)::Bool
+function can_be_a(request::Term, chance::Term)::Bool # These are the TYPES! ofc
     if (request === chance) return true
     elseif request isa TSum
         for c in request.data
@@ -105,7 +105,7 @@ end
 
 function processObjectFound(S::Structure11, chanceF::StackableObject)
     obj::SyntaxInstObject = chanceF.whatObject
-    println( "having object: " , obj.name|>trace , " at " , chanceF.from , "-" , chanceF.to - 1 , " (included)")
+    println( "having object: " , getInferredTerm(obj)|>pr_E , " at " , chanceF.from , "-" , chanceF.to - 1 , " (included)")
     # margOfObjName::Real = getP(obj.name) # //JESUS, WHAT A FUCKING MESS.............................................
 
     presentProductChances_goingBack = chancesNeedingThisPreviously_obj(S.hangings, chanceF.to, chanceF.whatObject)
@@ -178,7 +178,7 @@ function processFinishedSyntax(S::Structure11, chanceF::StackableFinishedSyntax)
     end
 
     for thingy::someOtherReturn in getAllSyntaxBindingsFor(S.posteriorsStructure, getName(obj))
-        temp1 = SyntaxInstObject(buildTypeThatHasSyntInst(thingy, obj.s), obj.s, thingy.P)
+        temp1 = SyntaxInstObject(obj.s, thingy.P, buildTypeThatHasSyntInst(thingy, obj.s))
         insert!(S.stack, getP(temp1), StackableObject(temp1, chanceF.from, chanceF.to))
         add(S.finisheds, chanceF.from, chanceF.to, SyntaxInstOwner(temp1))  #//to EXCLUDED,
     end
