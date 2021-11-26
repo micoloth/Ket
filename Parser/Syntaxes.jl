@@ -33,7 +33,7 @@ struct SyntaxStrip <: SyntaxProduct
 end
 
 getString(s::SyntaxTerm)::String = s.name
-getString(s::SyntaxField)::String = "#F{$(s.name):$(s.type|>trace)}"  # //gets FIELD name
+getString(s::SyntaxField)::String = "#F{$(s.name):$(s.type|>pr_T)}"  # //gets FIELD name
 getString(s::SyntaxChoice)::String = "#C(" * join(s.list .|> getString, " or ") * ")"
 getString(s::SyntaxStruct)::String = join(s.list .|> getString, " ")
 getString(s::SyntaxStrip)::String = "#S[$(s.before|>getString) $(s.object|>getString) $(s.comma |> getString) $(s.after |> getString)]"

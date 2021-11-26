@@ -11,9 +11,10 @@ struct someOtherReturn
 	builder_func::Any # Any is a (Dict{String, Union{Term,Error}}) -> Union{TAnno, Error}  lambda !!!
 	P::Real
 end
-function buildTypeThatHasSyntInst(r::someOtherReturn, s::SyntaxInst)
+function buildTypeThatHasSyntInst(r::someOtherReturn, s::SyntaxInst)::TAnno
     if s isa SyntaxInstStrip
         r.builder_func(collect_strip(s)) # collect_strip returns a LIS OF dict_str
+        # TODO
     else
         r.builder_func(collect_fields(s))
     end

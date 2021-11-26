@@ -11,8 +11,8 @@ si = SyntaxInstChoice(s, 0, si, 1)
 s = SyntaxStruct([s,s])
 si = SyntaxInstStruct(s, [si, si], 1)
 s = SyntaxField("first", TGlob("A"))
-si = SyntaxInstReference(TGlob("A"), "a", 1, TAnno(TLocStr("a"), TGlob("A")))
-si = SyntaxInstNativeString("iii", 1, TAnno(TStr("iii"), TS()))
+si = SyntaxInstReference(TGlob("A"), "a", 1)
+si = SyntaxInstNativeString("iii", 1)
 si = SyntaxInstObject(si, 1, TAnno(TGlob("A"), TypeUniverse()))
 si = SyntaxInstField(s, si, 1)
 # s = SyntaxStrip()
@@ -138,7 +138,74 @@ rp.structure|>trace
 
 
 
+########## Parsing 3: Parse "A->B"
 
+function make_s10()
+    s10 = Structure11()
+
+    SyntaxTerms = Dict{String, SyntaxTerm}()
+    SyntaxFields = Dict{String, SyntaxField}()
+    SyntaxChoicess = Dict{String, SyntaxChoice}()
+    SyntaxStructs = Dict{String, SyntaxStruct}()
+    SyntaxStrips = Dict{String, SyntaxStrip}()
+    TypeBases = Dict{String, TGlob}()
+    TypeFuncs = Dict{String, Term}()
+    TypeSums = Dict{String, TSum}()
+    TypeProds = Dict{String, TProd}()
+    bindings = Dict{Term, SyntaxCore}()
+
+    for i in ["{", "-",">", ")", "("] SyntaxTerms[i] =SyntaxTerm(i) end
+    SyntaxStructs["arrow"] = SyntaxStruct(Array{SyntaxCore}([SyntaxTerms["-"], SyntaxTerms[">"]]))
+    SyntaxChoicess["arrow_S"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["arrow"]]))
+
+    SyntaxFields["typearrow_first"] = SyntaxField("first", TypeUniverse())
+    SyntaxFields["typearrow_second"] = SyntaxField("second", TypeUniverse())
+
+    SyntaxStructs["typearrow_par"] = SyntaxStruct([SyntaxTerms["("], SyntaxFields["typearrow_first"], SyntaxStructs["arrow"], SyntaxFields["typearrow_second"], SyntaxTerms[")"]])
+    SyntaxStructs["typearrow_nopar"] = SyntaxStruct([SyntaxFields["typearrow_first"], SyntaxStructs["arrow"], SyntaxFields["typearrow_second"]])
+    SyntaxChoicess["typearrow"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["typearrow_par"], SyntaxStructs["typearrow_nopar"]]))
+
+    for (name, s) in SyntaxTerms  addSyntax!(s10.posteriorsStructure, name, s) end
+    for (name, s) in SyntaxChoicess  addSyntax!(s10.posteriorsStructure, name, s) end
+    for (name, s) in SyntaxStructs  addSyntax!(s10.posteriorsStructure, name, s) end
+    for (name, s) in SyntaxFields  addSyntax!(s10.posteriorsStructure, name, s) end
+    initializeMarginals(s10.posteriorsStructure)
+    initializeChoices(s10.posteriorsStructure)
+    initializePosteriors(s10.posteriorsStructure)
+
+    function typearrow_builder(d::Dict{String, TAnno})::Term
+        types = Array{Term}([d["first"].type, d["second"].type])
+        if d["first"] isa TProd && d["first"].data |> length !=1
+            res = TTerm(d["first"], d["second"])
+        else
+            res = TTermAuto(d["first"], d["second"])
+        end
+        type = infer_type_(res, types[1], types[2])
+        TAnno(res, type)
+    end
+
+    s10.posteriorsStructure.bindings[s10.posteriorsStructure.allSyntaxes["typearrow"]] = [typearrow_builder]
+    s10
+end
+
+s10 = make_s10();
+text = "A->B"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
+
+s10 = make_s10();
+text = "(A->B)->B"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
+
+request = getInferredTerm(SyntaxInstReference(getType(SyntaxField("first", TypeUniverse())),"A", 0.5))
+got = rp.structure.finisheds.matrix[1][6] |> x->filter(y->y.s isa SyntaxInstObject, x) |> x->x[1].s.inferred_obj
+got.expr |> pr
+got.type |> pr
+
+can_be_a
 
 
 
@@ -157,13 +224,6 @@ function make_s10()
     TypeSums = Dict{String, TSum}()
     TypeProds = Dict{String, TProd}()
     bindings = Dict{Term, SyntaxCore}()
-
-    function addFieldToProductWithSintaxfield(whichProduct::String, fieldName::String, whichField::Term)
-        ######################### NOTE: This prod has STR NAMES associated w/ fields, ALREADY!!!
-        push!(TypeProds[whichProduct].data, whichField)
-        push!(TypeProds[whichProduct].tags, fieldName)
-        SyntaxFields[fieldName] = SyntaxField(fieldName, whichField)
-    end
 
     # // type expession: T = A + ("T -> T") where A is base type and "T -> T" is the function type
     # makeNiceTreeStructure("baseTypeVariable", "functionType", "type", "first", "second");
@@ -401,22 +461,19 @@ getBestTotalFound(randomParser10).s.syntax
 SyntaxInstObject
 
 
-merge(Dict("1"=>1), Dict("2"=>2))
 
-collect_fields(s::SyntaxInst)
-
-collect_fields(s::SyntaxInstTerm)::Dict{String, Term} = Dict{String, Term}()
-collect_fields(s::SyntaxInstReference)::Dict{String, Term} = Dict{String, Term}()
-collect_fields(s::SyntaxInstNativeString)::Dict{String, Term} = Dict{String, Term}()
-collect_fields(s::SyntaxInstObject)::Dict{String, Term} = Dict{String, Term}()
-collect_fields(s::SyntaxInstField)::Dict{String, Term} = Dict{String, Term}(s.name.name=>getObjFoundFromAccepted(s.objectFound; as_type=s.name.type))
-collect_fields(s::SyntaxInstChoice)::Dict{String, Term} = collect_fields(s.choice)
-collect_fields(s::SyntaxInstStruct)::Dict{String, Term} = merge((s.list .|> (x->collect_fields(x)))...)
-function collect_fields(s::SyntaxInstStrip)::Dict{String, Term}
+collect_fields(s::SyntaxInstTerm)::Dict{String, TAnno} = Dict{String, TAnno}()
+collect_fields(s::SyntaxInstReference)::Dict{String, TAnno} = Dict{String, TAnno}()
+collect_fields(s::SyntaxInstNativeString)::Dict{String, TAnno} = Dict{String, TAnno}()
+collect_fields(s::SyntaxInstObject)::Dict{String, TAnno} = Dict{String, TAnno}()
+collect_fields(s::SyntaxInstField)::Dict{String, TAnno} = Dict{String, TAnno}(s.name.name=>getObjFoundFromAccepted(s.objectFound; as_type=s.name.type))
+collect_fields(s::SyntaxInstChoice)::Dict{String, TAnno} = collect_fields(s.choice)
+collect_fields(s::SyntaxInstStruct)::Dict{String, TAnno} = merge((s.list .|> (x->collect_fields(x)))...)
+function collect_fields(s::SyntaxInstStrip)::Dict{String, TAnno}
     throw(DomainError("When is a field ever represented by a SyntaxStrip ???"))
 end
 
-function collect_strip(s::SyntaxInstStrip)::Dict{String, Term}
+function collect_strip(s::SyntaxInstStrip)::Dict{String, TAnno}
     @assert all([ss isa Accepted_SynatxInst_type for ss in s.list]) "Which SyntaxStrip has Syntax that are not Accepted_SynatxInst_type ..... (Him: $(s|>trace))"
     # PROBLEM: SyntaxInstStrip has this list::Array{Accepted_SynatxInst_type} (apparently), BUT,
     # since you DON'T pass through a SyntaxInstField,
@@ -441,8 +498,8 @@ getInferredTerm(s::SyntaxInstNativeString)::TAnno = TAnno(TStr(s.text), TS())
 getInferredType(s::SyntaxInstNativeString)::Term = TTermEmpty(TS()) # OR TS()
 # OR, strinType=TypeSumTerm("String", 2, TTop()) for the type, MAYBE???
 
-getInferredTerm(s::SyntaxInstReference)::TAnno = s.inferred_obj
-getInferredType(s::SyntaxInstReference)::Term = s.inferred_obj.type
+getInferredTerm(s::SyntaxInstObject)::TAnno = s.inferred_obj
+getInferredType(s::SyntaxInstObject)::Term = s.inferred_obj.type
 
 
 

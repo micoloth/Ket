@@ -133,20 +133,21 @@ TAppSwitch(func, args) = TApp([args, func])
 # reduc(t::Term) = reduc(detag(t))
 
 
-trace(s::TGlob, topLevel::Bool = true)::String = s.var
-trace(s::TTerm, topLevel::Bool = true)::String = trace(s.t_in, topLevel) * "->" * trace(s.t_out, topLevel)
-trace(s::TSum, topLevel::Bool = true)::String = if (!topLevel) "aSumType"
-	else "(" * join([trace(i, false) for i in s.data], " + ") * ")"
-	end
-trace(s::TProd, topLevel::Bool = true)::String =if (!topLevel) "aProdType"
-else "(" * join([trace(i, false) for i in s.data], " x ") * ")"
-end
-# trace(s::Temp_TypeInt, topLevel::Bool = true)::String = string(s.obj)
+# trace(s::TGlob, topLevel::Bool = true)::String = s.var
+# trace(s::TTerm, topLevel::Bool = true)::String = trace(s.t_in, topLevel) * "->" * trace(s.t_out, topLevel)
+# trace(s::TSum, topLevel::Bool = true)::String = if (!topLevel) "aSumType"
+# 	else "(" * join([trace(i, false) for i in s.data], " + ") * ")"
+# 	end
+# trace(s::TProd, topLevel::Bool = true)::String =if (!topLevel) "aProdType"
+# else "(" * join([trace(i, false) for i in s.data], " x ") * ")"
+# end
+# # trace(s::Temp_TypeInt, topLevel::Bool = true)::String = string(s.obj)
 
 
 
 subst(news::TProd, t::TGlob)::Term= t
 subst(news::TProd, t::TTop)::Term = t
+subst(news::TProd, t::TypeUniverse)::Term = t
 subst(news::TProd, t::TN)::Term = t
 subst(news::TProd, t::TS)::Term = t
 subst(news::TProd, t::TInt)::Term = t
@@ -172,6 +173,7 @@ reduc(t::TGlob)::Term = t
 reduc(t::TLoc)::Term = t
 reduc(t::TLocStr)::Term = t
 reduc(t::TTop)::Term = t
+reduc(t::TypeUniverse)::Term = t
 reduc(t::TN)::Term = t
 reduc(t::TS)::Term = t
 reduc(t::TInt)::Term = t
@@ -222,6 +224,7 @@ pr_T(x::TGlob)::String = "$(x.var)"
 pr_T(x::TLoc)::String = "T$(x.var)"
 pr_T(x::TLocStr)::String = "T$(x.var_tag)"
 pr_T(x::TTop)::String = "⊥"
+pr_T(x::TypeUniverse)::String = "⊥"
 pr_T(x::TN)::String = "ℕ"
 pr_T(x::TS)::String = "𝕊"
 pr_T(x::TInt)::String = "$(x.n)"
@@ -327,6 +330,17 @@ function pr_T(x::TAppend)::String
     "append(" * x.prods .|> pr_T |> x->join(x, ", ") * ")"
 end
 
+function pr_E(x::TTerm)::String
+    if x.t_in isa TTerm
+        return "type:" * "(" * (x.t_in |> pr_E) * ")->" * (x.t_out|> pr_E )
+    # elseif (x.t_in isa TProd && x.t_in.data |> length == 1 && x.t_in.data[1] isa TTerm)
+    #     return "(" * (pr_E(x.t_in; is_an_arg=true)) * ")->" * (x.t_out|> pr_E )
+    # elseif (x.t_in isa TProd && x.t_in.data |> length == 1)
+    #     return (pr_E(x.t_in; is_an_arg=true)) * "->" * (x.t_out|> pr_E )
+    else return "type:" * (x.t_in |> pr_E) * "->" *( x.t_out|> pr_E)
+    end
+end
+
 pr(x) = pr_T(x)
 # pr_ctx(i::TTerm) = "Given [$(join(i.t_in.data .|>pr, ", "))], get $(i.t_out|>pr)"
 pr_ctx(i::TTerm) = "Given $(i.t_in |>pr), get $(i.t_out|>pr)"
@@ -337,6 +351,7 @@ usedLocsSet(t::TGlob)::Set{String}= Set{String}([])
 usedLocsSet(t::TLoc)::Set{String} = Set{String}([])
 usedLocsSet(t::TLocStr)::Set{String} = Set{String}([t.var_tag])
 usedLocsSet(t::TTop)::Set{String} = Set{String}([])
+usedLocsSet(t::TypeUniverse)::Set{String} = Set{String}([])
 usedLocsSet(t::TN)::Set{String} = Set{String}([])
 usedLocsSet(t::TInt)::Set{String} = Set{String}([])
 usedLocsSet(t::TStr)::Set{String} = Set{String}([])
@@ -359,6 +374,7 @@ usedLocs(t::TGlob)::Array{Index} = Array{Index}([])
 usedLocs(t::TLoc)::Array{Index} = Array{Index}([t.var])
 usedLocs(t::TLocStr)::Array{Index} = Array{Index}([])
 usedLocs(t::TTop)::Array{Index} = Array{Index}([])
+usedLocs(t::TypeUniverse)::Array{Index} = Array{Index}([])
 usedLocs(t::TN)::Array{Index} = Array{Index}([])
 usedLocs(t::TInt)::Array{Index} = Array{Index}([])
 usedLocs(t::TIntSum)::Array{Index} = unique(vcat((t.ns .|> usedLocs)...))
@@ -378,6 +394,7 @@ arity_var(base::Index, t::TGlob)::Index= base
 arity_var(base::Index, t::TLoc)::Index = max(base, t.var)
 arity_var(base::Index, t::TLocStr)::Index = base
 arity_var(base::Index, t::TTop)::Index = base
+arity_var(base::Index, t::TypeUniverse)::Index = base
 arity_var(base::Index, t::TN)::Index = base
 arity_var(base::Index, t::TInt)::Index = base
 arity_var(base::Index, t::TIntSum)::Index = t.ns .|> (x->arity_var(base, x)) |> maximum
@@ -405,6 +422,7 @@ has_errors(t::TGlob)::Bool= false
 has_errors(t::TLoc)::Bool = false
 has_errors(t::TLocStr)::Bool = false
 has_errors(t::TTop)::Bool = false
+has_errors(t::TypeUniverse)::Bool = false
 has_errors(t::TN)::Bool = false
 has_errors(t::TInt)::Bool = false
 has_errors(t::TIntSum)::Bool = t.ns .|> has_errors |> any
