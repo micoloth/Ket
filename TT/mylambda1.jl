@@ -196,7 +196,7 @@ function reduc(ops::Array{Term})::Term
         if (ops1 isa TProd && ops2 isa TAbs)
             ops = vcat(Array{Term}([subst(ops1, ops2.body) |> reduc]), ops[3:end])
         elseif (ops1 isa TAbs && ops1.body isa TProd && ops2 isa TAbs)
-                ops = vcat(Array{Term}([subst(ops1.body, ops2.body) |> reduc]), ops[3:end])
+                ops = vcat(Array{Term}([TAbs(subst(ops1.body, ops2.body)) |> reduc]), ops[3:end])
         elseif (ops1 isa TSumTerm && ops2 isa TBranches)
             branches = Dict{String, Term}(n=>s for (n, s) in zip(ops2.tags, ops2.ops_chances))
             ops = vcat([TApp([ops1.data, branches[ops1.tag_name]]) |> reduc], ops[3:end])
@@ -505,9 +505,12 @@ STypeP |> pr
 
 
 
+# Concat:
+
 f1 = TAbs(TProd(Array{Term}([TLocStr("a"), TGlobAuto("b")])))
 f2 = TAbs(TProd(Array{Term}([TLoc(2), TLoc(1)])))
 f3 = TAbs(TProd(Array{Term}([TLoc(2), TGlobAuto("c"), TLoc(1), ])))
 reduc(TConc([f1, f2, f3])) |> pr
-
+reduc(TConc([TConc([f1, f2]), f3])) |> pr
+reduc(TConc([f1, TConc([f2, f3])])) |> pr
 

@@ -14,10 +14,6 @@ infer_type_rec(TAnno(TInt(3), TN())) |> pr_ctx
 
 
 
-t1 = TTermAuto(TLoc(1), TLoc(1))
-t2 = TTerm(TProd(Array{Term}([])), TGlobAuto("g"))
-robinsonUnify(t1, t2; mode=imply_)
-
 # TGlob   TGlob
 # TLoc   TLoc
 # TTop   TTop
@@ -89,40 +85,11 @@ end
 eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> all
 
 
-# s1, s2 =  robinsonUnify(t1, t2)
-# ass_reduc(t1, s1)
-# ass_reduc(t2, s2)
-
-# @testset "unification_2" begin  # COMMENT TESTS
+include("unification_3.jl")
 
 
-# THE BUG:
-t1 = infer_type_rec(TAbs(TLocStr("1_"))).t_out
-t1|>pr
-t2 = TTerm(TLoc(1), TLoc(2))
-robinsonUnify(t1, t2)
-# Solution: ALLOW SOLVING TLOC-TLOCSTR CONSTRAINTS by SUBSTITUTING TLOC with TLOCSTR-
-# Actually, you COULD even do the Reverse, i'm just NOT doing it
 
-robinsonUnify(t1.t_out, t2.t_out)
-
-
-proj1_1 = TApp([TLocStr("1_"), TAbs(TLocStr("1_"))])
-proj1_1 |> pr_E
-infer_type_rec(proj1_1) |> pr_ctx
-infer_type_rec(proj1_1.ops_dot_ordered[1]) |>pr_ctx
-infer_type_rec(proj1_1.ops_dot_ordered[2]) |>pr_ctx
-
-
-vec_w_proj2_1 = TProd(Array{Term}([TApp([TLocStr("1_"), TAbs(TLocStr("2_"))]), TLocStr("2_")]))
-vec_w_proj2_1 |> pr_E
-infer_type_rec(vec_w_proj2_1) |> pr_ctx
-e = TProd(Array{Term}([proj1_1, vec_w_proj2_1]))
-e |> pr_E
-infer_type_rec(e) |> pr_ctx  # YES my boy... YESSSS :)
-@test infer_type_rec(e) |> pr_ctx == "Given [[T1 x T2], T3], get [T1 x [T2 x T3]]"
-
-
+@testset "unification_2" begin  # COMMENT TESTS
 
 
 
@@ -141,7 +108,7 @@ robinsonUnify(TAbs(t1), TAbs(t2))[2]|> (x->pr_T(x; is_an_arg=true))
 @test robinsonUnify(TAbs(t1), TAbs(t2))[3] == TProd(Term[], Dict{String, Term}("f" => TGlob("F", TypeUniverse()), "g" => TGlob("G", TypeUniverse())))
 @test test_unify_join(t1, t2)
 
-
+reduc(TApp([TProd(Dict{Id, Term}("f"=>TLocStr("g"))), TAbs(TLocStr("f"))]))
 
 
 t1 = TAppAuto(TGlob("G0"), TLoc(1))
@@ -640,11 +607,19 @@ f1 = TAbs(TProd(Array{Term}([TLoc(2), TGlobAuto("b")])))
 f2 = TAbs(TProd(Array{Term}([TLoc(2), TLoc(1)])))
 f3 = TAbs(TProd(Array{Term}([TLoc(2), TGlobAuto("c"), TLoc(1), ])))
 @test infer_type_rec(TConc([f1, f2, f3])) ==TTerm(TProd(Term[], Dict{String, Term}()), TTerm(TProd(Term[TLoc(1), TLoc(2)], Dict{String, Term}()), TProd(Term[TLoc(2), TGlob("C", TypeUniverse()), TGlob("B", TypeUniverse())], Dict{String, Term}())))
+infer_type_rec(TConc([f1, f2, f3])) |> pr_ctx
 
 
 f1 = TAbs(TProd(Array{Term}([TLoc(2), TGlobAuto("b")])))
 @test infer_type_rec(TConc([TLoc(1), f1])) == TTerm(TProd(Term[TTerm(TLoc(1), TProd(Term[TLoc(2), TLoc(3)], Dict{String, Term}()))], Dict{String, Term}()), TTerm(TLoc(1), TProd(Term[TLoc(3), TGlob("B", TypeUniverse())], Dict{String, Term}())))
 infer_type_rec(TConc([TLoc(1), f1])) |> pr_ctx
+
+
+SType |> pr
+S |> pr
+infer_type_rec(S) |> pr_ctx  # YES my boy... YES :)
+@test infer_type_rec(S) == TTerm(TProd(Term[]), TTerm(TProd(Term[TTerm(TProd(Term[TLoc(1)]), TTerm(TProd(Term[TLoc(2)]), TLoc(3))), TTerm(TProd(Term[TLoc(1)]), TLoc(2)), TLoc(1)]), TLoc(3)))
+
 
 
 proj1_1 = TApp([TLoc(1), TAbs(TLoc(1))])
@@ -656,14 +631,32 @@ infer_type_rec(vec_w_proj2_1) |> pr_ctx
 e = TProd(Array{Term}([proj1_1, vec_w_proj2_1]))
 e |> pr_E
 infer_type_rec(e) |> pr_ctx  # YES my boy... YESSSS :)
+@test infer_type_rec(e) |> pr_ctx == "Given [[T1 x T2] x T3], get [T1 x [T2 x T3]]"
+
+# With letters:
+
+t1 = TTerm(TProd(Term[], Dict{String, Term}("1_" => TLoc(1))), TLocStr("1_"))
+t2 = TTerm(TLoc(1), TLoc(2))
+robinsonUnify(t1, t2)
+robinsonUnify(t1, t2)[3] |> pr
+@test test_unify_join(t1, t2)
+@test test_unify_imply(t1, t2)
+
+proj1_1 = TApp([TLocStr("1_"), TAbs(TLocStr("2_"))])
+proj1_1 |> pr_E
+infer_type_rec(proj1_1) |> pr_T
+vec_w_proj2_1 = TProd(Array{Term}([TApp([TLocStr("1_"), TAbs(TLocStr("3_"))]), TLocStr("4_")]))
+vec_w_proj2_1 |> pr_E
+infer_type_rec(vec_w_proj2_1) |> pr_T
+
+e = TProd(Array{Term}([proj1_1, vec_w_proj2_1]))
+e |> pr_E
+infer_type_rec(e) |> pr_ctx  # YES my boy... YESSSS :)
 @test infer_type_rec(e) |> pr_ctx == "Given [[T1 x T2], T3], get [T1 x [T2 x T3]]"
 
+"Given [1_:[2_:T1 x 3_:T2], 4_:T3], get [2_:T1 x [3_:T2 x 4_:T3]]"
 
 
-SType |> pr
-S |> pr
-infer_type_rec(S) |> pr_ctx  # YES my boy... YES :)
-@test infer_type_rec(S) == TTerm(TProd(Term[]), TTerm(TProd(Term[TTerm(TProd(Term[TLoc(1)]), TTerm(TProd(Term[TLoc(2)]), TLoc(3))), TTerm(TProd(Term[TLoc(1)]), TLoc(2)), TLoc(1)]), TLoc(3)))
 
 
 # How inference handles WRONG THINGS:
@@ -684,7 +677,7 @@ e|> pr_E
 infer_type_rec(e)|>pr # GREAT
 
 
-# end # COMMENT TESTS
+end # COMMENT TESTS
 
 
 

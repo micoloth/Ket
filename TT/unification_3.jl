@@ -245,9 +245,9 @@ function meetjoin_rec_unify_(t1::Term, t2::Term, do_meet)::MeetJoin_rec_res # ba
     if t1 == t2
         MeetJoin_rec_res(t1, Array{Constraint}([]))
     elseif t1 isa TLoc
-        MeetJoin_rec_res(t1, Array{Constraint}([EqConstraint(t1, t2)]))
+        MeetJoin_rec_res(t2, Array{Constraint}([EqConstraint(t1, t2)]))
     elseif t2 isa TLoc
-        MeetJoin_rec_res(t2, Array{Constraint}([EqConstraint(t2, t1)]))
+        MeetJoin_rec_res(t1, Array{Constraint}([EqConstraint(t2, t1)]))
     else
         MeetJoin_rec_res(TermwError(t1, Error(err_msg_terms(t1, t2))), Array{Constraint}[])
     end
@@ -426,16 +426,20 @@ end
 # It WONT RETURN THEM, either. See above.
 
 # idea: in NO CASE x=f(x) can be solved, (if types_ are REDUCED), because we handle RecursiveTypes Differently!!
-function check_not_recursive(tloc::TLoc, tt::Term)::Bool
-    for v in usedLocsSet(tt) # THIS IS DIFFERENT IN VAR VS VAR_TAG
+function check_not_recursive_str(tloc::TLocStr, tt::Term)::Bool
+    for v in usedLocsSet(tt)
         if tloc.var_tag == v
             return false
-        end # THIS IS DIFFERENT IN VAR VS VAR_TAG
+        end
     end
-    for v in usedLocs(tt) # THIS IS DIFFERENT IN VAR VS VAR_TAG
+    return true
+end
+
+function check_not_recursive_loc(tloc::TLoc, tt::Term)::Bool
+    for v in usedLocs(tt)
         if tloc.var == v
             return false
-        end # THIS IS DIFFERENT IN VAR VS VAR_TAG
+        end
     end
     return true
 end
@@ -473,8 +477,9 @@ function get_subst_prod_data(tloc::TLoc, tt::Term, curr_arity::Arity)::TProd
         Array{Term}([TLoc(0)]), # Placeholder, complete nonsense, it's getting replaced
         Array{Term}([TLoc(i) for i in (tloc.var:curr_arity.data-1)])
     )
-    prod[tloc.var] = ass_reduc(tt, TProd(prod))
-    TProd(prod, id_tags(curr_arity.tags))
+    prod = TProd(prod, id_tags(curr_arity.tags))
+    prod.data[tloc.var] = ass_reduc(tt, prod)
+    prod
 end  # THIS IS DIFFERENT IN VAR VS VAR_TAG #
 function get_subst_prod_tag(tloc::TLocStr, tt::Term, curr_arity::Arity)::TProd
     # you have ALREADY TESTED that tt does not contain tloc, that's the whole point !!!!
@@ -484,18 +489,20 @@ function get_subst_prod_tag(tloc::TLocStr, tt::Term, curr_arity::Arity)::TProd
 end  # THIS IS DIFFERENT IN VAR VS VAR_TAG #
 
 
-function share_ctx_tlocs_names(t1::TAbs, t2::TAbs, t1arity::Index, t2arity::Index)
-    s1 = TProd(Array{Term}([TLoc(i) for i = 1:t1arity]))
-    s2 = TProd(Array{Term}([TLoc(i) for i = (t1arity+1):(t1arity+t2arity)]))
+function share_ctx_tlocs_names(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity)
+    s1 = TProd(Array{Term}([TLoc(i) for i = 1:t1arity.data]), id_tags(t1arity.tags))
+    s2 = TProd(Array{Term}([TLoc(i) for i = (t1arity.data+1):(t1arity.data+t2arity.data)]), id_tags(t2arity.tags))
     TApp([s1, t1]), TApp([s2, t2])
 end
-function share_ctx_tlocs_names_get_substs(t1arity::Index, t2arity::Index)
-    s1 = TProd(Array{Term}([TLoc(i) for i = 1:t1arity]))
-    s2 = TProd(Array{Term}([TLoc(i) for i = (t1arity+1):(t1arity+t2arity)]))
+function share_ctx_tlocs_names_get_substs(t1arity::Arity, t2arity::Arity)
+    s1 = TProd(Array{Term}([TLoc(i) for i = 1:t1arity.data]), id_tags(t1arity.tags))
+    s2 = TProd(Array{Term}([TLoc(i) for i = (t1arity.data+1):(t1arity.data+t2arity.data)]), id_tags(t2arity.tags))
     s1, s2
 end
 
-struct ItsLiterallyAlreadyOk end
+struct ItsLiterallyAlreadyOk
+    computed_type::Term
+end
 
 function get_first_pair_of_matching_indices(v::Array) #  This changed !!!
     for i = 1:length(v)
@@ -544,7 +551,7 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
     # 1. Share TLocs
     if unify_tlocs_ctx # THIS IS DIFFERENT IN VAR VS VAR_TAG # IS IT ENOUGH TO NOT DO THIS ???? #
         current_arity = Arity(t1arity.data + t2arity.data, union(t1arity.tags, t2arity.tags))
-        t1, t2 = share_ctx_tlocs_names(t1, t2, t1arity.data, t2arity.data)
+        t1, t2 = share_ctx_tlocs_names(t1, t2, t1arity, t2arity)
     else
         # This means Sharing of names has ALREADY HAPPENED !!!
         current_arity = Arity(max(t1arity.data, t2arity.data), union(t1arity.tags, t2arity.tags))
@@ -589,11 +596,11 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
             tloc, ct1, ct2 = STACK[ij[1]].t1, STACK[ij[1]].t2, STACK[ij[2]].t2
             deleteat!(STACK, ij[2])
             deleteat!(STACK, ij[1])
-            if !check_not_recursive(tloc, ct1)
+            if !check_not_recursive_loc(tloc, ct1)
                 push!(ERRORSTACK, ErrorConstraint(EqConstraint(tloc, ct1), Error("$(tloc) == $(ct1) is not a thing (recursive)")))
                 continue
             end
-            if !check_not_recursive(tloc, ct2)
+            if !check_not_recursive_loc(tloc, ct2)
                 push!(ERRORSTACK, ErrorConstraint(EqConstraint(tloc, ct2), Error("$(tloc) == $(ct2) is not a thing (recursive)")))
                 continue
             end
@@ -623,7 +630,6 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
             else
                 append!(STACK, cs_inside)
             end
-            continue
         elseif ct1 isa TLocStr && ct2 isa TLocStr
             # NOTE: it would be NICE if i reworked Imply_ mode so that this DOESNT happen ... println("Does locloc Still happen? Ever ????? (Here, w/ $(ct1) and $(ct2))")
             if !(ct1.var_tag == ct2.var_tag) # cannot hurt can it?
@@ -636,45 +642,37 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
             if !(ct1.var == ct2.var)
                 current_arity, current_total_subst = do_the_subst_thing!(ct1, ct2, current_arity, current_total_subst, STACK, ERRORSTACK; data = true)
             end
-        elseif ct1 isa TLocStr
-            @assert !(ct2 isa TLoc)
-            if !check_not_recursive(ct1, ct2)
+        elseif ct1 isa TLocStr && !(ct2 isa TLoc)
+            if !check_not_recursive_str(ct1, ct2)
                 push!(ERRORSTACK, ErrorConstraint(EqConstraint(ct1, ct2), Error("$(ct1) == $(ct2) is not a thing (recursive)")))
-                continue
+            else
+                current_arity, current_total_subst = do_the_subst_thing!(ct1, ct2, current_arity, current_total_subst, STACK, ERRORSTACK; data = false)
             end
-            current_arity, current_total_subst = do_the_subst_thing!(ct1, ct2, current_arity, current_total_subst, STACK, ERRORSTACK; data = false)
-        elseif ct2 isa TLocStr
-            @assert !(ct1 isa TLoc)
-            if !check_not_recursive(ct2, ct1)
+        elseif ct2 isa TLocStr && !(ct1 isa TLoc)
+            if !check_not_recursive_str(ct2, ct1)
                 push!(ERRORSTACK, ErrorConstraint(EqConstraint(ct2, ct1), Error("$(ct2) == $(ct1) is not a thing (recursive)")))
-                continue
+            else
+                current_arity, current_total_subst = do_the_subst_thing!(ct2, ct1, current_arity, current_total_subst, STACK, ERRORSTACK; data = false)
             end
-            current_arity, current_total_subst = do_the_subst_thing!(ct2, ct1, current_arity, current_total_subst, STACK, ERRORSTACK; data = false)
         elseif ct1 isa TLoc
-            @assert !(ct2 isa TLocStr)
-            if !check_not_recursive(ct1, ct2)
+            if !check_not_recursive_loc(ct1, ct2)
                 push!(ERRORSTACK, ErrorConstraint(EqConstraint(ct1, ct2), Error("$(ct1) == $(ct2) is not a thing (recursive)")))
-                continue
+            else
+                current_arity, current_total_subst = do_the_subst_thing!(ct1, ct2, current_arity, current_total_subst, STACK, ERRORSTACK; data = true)
             end
-            current_arity, current_total_subst = do_the_subst_thing!(ct1, ct2, current_arity, current_total_subst, STACK, ERRORSTACK; data = true)
         elseif ct2 isa TLoc
-            @assert !(ct1 isa TLocStr)
-            if !check_not_recursive(ct2, ct1)
+            if !check_not_recursive_loc(ct2, ct1)
                 push!(ERRORSTACK, ErrorConstraint(EqConstraint(ct2, ct1), Error("$(ct2) == $(ct1) is not a thing (recursive)")))
-                continue
+            else
+                current_arity, current_total_subst = do_the_subst_thing!(ct2, ct1, current_arity, current_total_subst, STACK, ERRORSTACK; data = true)
             end
-            current_arity, current_total_subst = do_the_subst_thing!(ct2, ct1, current_arity, current_total_subst, STACK, ERRORSTACK; data = true)
         end
     end
 
     if length(current_total_subst) == 0 && !there_are_errors && length(ERRORSTACK) == 0
-        return ItsLiterallyAlreadyOk()
+        return ItsLiterallyAlreadyOk(mode == imply_ ? t2 : res_type)
     elseif length(current_total_subst) == 0
-        res_type = if (mode == imply_)
-            TGlob("O")
-        else
-            res_type
-        end
+        res_type = if (mode == imply_) t2 else res_type end
         return Failed_unif_res([TProd(Array{Term}([])), TProd(Array{Term}([])), res_type, ERRORSTACK])
     end
     final_subst = ass_reduc(current_total_subst...)
@@ -726,10 +724,10 @@ robinsonUnify(t1::Term, t2::Term; unify_tlocs_ctx::Bool = true, mode::Unify_mode
 TTermEmpty(res_type::Term) = TTerm(TProd(Array{Term}([])), res_type)
 
 function infer_type_(term::TLoc)::Term
-    TTerm(TProd(Array{Term}([TLoc(i) for i = 1:term.var])), TLoc(term.var))
+    TTerm(TProd(Array{Term}([TLoc(i) for i in 1:term.var])), TLoc(term.var))
 end #  (but also kinda this is right)
 function infer_type_(term::TLocStr)::Term
-    return TTerm(TProd(Dict{Id,Term}(term.var_tag => TLoc(1))), term)  # TAbs(TLoc(term.var)) was an idea i tried
+    return TTerm(TProd(Dict{Id,Term}(term.var_tag => TLoc(1))), TLoc(1))  # TAbs(TLoc(term.var)) was an idea i tried
 end #  (but also kinda this is right)
 function infer_type_(term::TGlob)::Term
     if term.type isa TAbs
@@ -795,7 +793,7 @@ function infer_type_(term::TProd, ts_computed::Array{TTerm})::Term # IMPORTANT: 
     args, full_arity = ts_computed[1].t_in, Arity(ts_computed[1] |> arity, ts_computed[1] |> usedLocsSet)
     all_errors = Array{ErrorConstraint}([])
     for t in ts_computed[2:end]
-        s1, s2 = share_ctx_tlocs_names_get_substs(full_arity.data, t |> arity)
+        s1, s2 = share_ctx_tlocs_names_get_substs(full_arity, t |> get_arity_obj)
         args, t = ass_reduc(args, s1), ass_reduc(t, s2)
         unified_RES_types = unified_RES_types .|> (x -> ass_reduc(x, s1))
         #  # Not sharing vars
@@ -807,6 +805,7 @@ function infer_type_(term::TProd, ts_computed::Array{TTerm})::Term # IMPORTANT: 
         #     return Error("ELocs typed $(t.arg_types .|> pr) cannot be unified into ELocs typed $(args.arg_types .|> pr), with error '$(res)'")
         if res isa ItsLiterallyAlreadyOk
             push!(unified_RES_types, t.t_out)
+            args = res.computed_type
             full_arity = Arity(max(args |> arity, t |> arity), union(args |> usedLocsSet, t |> usedLocsSet))
             continue
         end
