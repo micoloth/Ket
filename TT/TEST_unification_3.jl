@@ -7,10 +7,10 @@ include("unification_3.jl")
 
 
 
-infer_type_rec(TAnno(TLoc(1), TGlob("A"))) |> pr_ctx
-infer_type_rec(TAnno(TLoc(1), TN())) |> pr_ctx
-infer_type_rec(TAnno(TLoc(1), TInt(3))) |> pr_ctx
-infer_type_rec(TAnno(TInt(3), TN())) |> pr_ctx
+# infer_type_rec(TAnno(TLoc(1), TGlob("A"))) |> pr_ctx
+# infer_type_rec(TAnno(TLoc(1), TN())) |> pr_ctx
+# infer_type_rec(TAnno(TLoc(1), TInt(3))) |> pr_ctx
+# infer_type_rec(TAnno(TInt(3), TN())) |> pr_ctx
 
 
 
@@ -85,12 +85,7 @@ end
 eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> all
 
 
-include("unification_3.jl")
-
-
-
-@testset "unification_2" begin  # COMMENT TESTS
-
+# @testset "unification_2" begin  # COMMENT TESTS
 
 
 t1 = TAppAuto(TGlob("G0"), TLoc(1))
@@ -117,6 +112,19 @@ t2 = TAppAuto(TGlob("G0"), TGlob("G99"))
 robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
+
+
+t1 = TLoc(1)
+t2 = TGlob("T")
+@test test_unify_imply(t1, t2)
+@test test_unify_join(t1, t2)
+
+t1 = TLocStr("x")
+t2 = TGlob("T")
+robinsonUnify(t1, t2)
+@test test_unify_imply(t1, t2)
+@test test_unify_join(t1, t2)
+
 
 t1 = TAppAuto(TAbs(TLoc(1)), TLoc(1))
 t2 = TLoc(2)
@@ -435,6 +443,20 @@ s1, s2 = robinsonUnify(t1, t2) # Cannot unify !!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
 
+# Is my unification higher order or not? I sincerely don't know.....
+t1 = TApp([TApp([TGlobAuto("a"), TLocStr("G")]), TLocStr("F")])
+t2 = TApp([TGlobAuto("b"), TLocStr("F")])
+robinsonUnify(t1, t2)  # -->  "Different: TG(a) is really different from b"
+
+# if F==1, G==2:
+t1 = TApp([TApp([TGlobAuto("a"), TLoc(2)]), TLoc(1)])
+t2 = TApp([TGlobAuto("b"), TLoc(1)])
+robinsonUnify(t1, t2)  # --> "Different: T2(a) is really different from b"
+
+# >> While the right answer would be "TG==TAbs(b)", or "T2==TAbs(b)" .....
+# >>> Yep... Squarely First Order. That's what it says in the title, btw...
+
+
 
 
 
@@ -560,6 +582,13 @@ e = TAbs(TApp([TProd(Array{Term}([TLoc(1), TLoc(1)])), TLoc(2)]))
 infer_type_rec(e).t_out |> pr # == "[T1 x [T1 x T1]->T2]->T2"
 @test infer_type_rec(e).t_out == TTerm(TProd(Array{Term}([TLoc(1), TTerm(TProd(Array{Term}([TLoc(1), TLoc(1)])), TLoc(2))])), TLoc(2))
 
+e = TApp([TLocStr("a"), TAnno(TAbs(TLocStr("b")), TTerm(TProd(Dict{String, Term}("a"=>TGlob("A"))), TGlob("B")))])
+infer_type_rec(TAnno(TAbs(TLocStr("b")), TTermAuto(TGlob("A"), TGlob("B"))))
+
+
+# infer_type_rec(e).t_out |> pr # == "[T1 x [T1 x T1]->T2]->T2"
+# @test infer_type_rec(e).t_out == TTerm(TProd(Array{Term}([TLoc(1), TTerm(TProd(Array{Term}([TLoc(1), TLoc(1)])), TLoc(2))])), TLoc(2))
+
 
 ea = TProd(Array{Term}([TAnno(TLoc(1), TGlob("A"))]))
 ef1 = TGlob("f", TTermAuto(TLoc(1), TGlob("B")))
@@ -652,7 +681,7 @@ infer_type_rec(vec_w_proj2_1) |> pr_T
 e = TProd(Array{Term}([proj1_1, vec_w_proj2_1]))
 e |> pr_E
 infer_type_rec(e) |> pr_ctx  # YES my boy... YESSSS :)
-@test infer_type_rec(e) |> pr_ctx == "Given [[T1 x T2], T3], get [T1 x [T2 x T3]]"
+@test infer_type_rec(e) |> pr_ctx == "Given [4_:T3 x 1_:[3_:T2 x 2_:T1]], get [T1 x [T2 x T3]]"
 
 "Given [1_:[2_:T1 x 3_:T2], 4_:T3], get [2_:T1 x [3_:T2 x 4_:T3]]"
 
@@ -677,7 +706,7 @@ e|> pr_E
 infer_type_rec(e)|>pr # GREAT
 
 
-end # COMMENT TESTS
+# end # COMMENT TESTS
 
 
 
@@ -688,3 +717,4 @@ end # COMMENT TESTS
 
 
 # include("TEST_unification_2.jl")
+

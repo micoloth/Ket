@@ -18,128 +18,182 @@ si = SyntaxInstField(s, si, 1)
 # s = SyntaxStrip()
 # si = SyntaxInstStrip()
 
-fs = FinishedsStructure10(3); fs|>trace
-getS(s) = SyntaxInstOwner(SyntaxInstTerm(SyntaxTerm(s), 1))
+# fs = FinishedsStructure10(3); fs|>trace
+# getS(s) = SyntaxInstOwner(SyntaxInstTerm(SyntaxTerm(s), 1))
 
-fs = FinishedsStructure10([getS("+"), getS("-"), getS(":")]); fs|>trace
-reshape(fs, 0, 1, 1); fs|>trace
-reshape(fs, 0, 0, 1); fs|>trace
-reshape(fs, 0, 1, 0); fs|>trace
-reshape(fs, 0, 2, 3); fs|>trace
-reshape(fs, 0, 2, 2); fs|>trace
+# fs = FinishedsStructure10([getS("+"), getS("-"), getS(":")]); fs|>trace
+# reshape(fs, 0, 1, 1); fs|>trace
+# reshape(fs, 0, 0, 1); fs|>trace
+# reshape(fs, 0, 1, 0); fs|>trace
+# reshape(fs, 0, 2, 3); fs|>trace
+# reshape(fs, 0, 2, 2); fs|>trace
 
-reshape(fs, 3, 3, 1); fs|>trace
-reshape(fs, 2, 3, 3); fs|>trace
-reshape(fs, 2, 3, 0); fs|>trace
-reshape(fs, 3, 3, 2); fs|>trace
+# reshape(fs, 3, 3, 1); fs|>trace
+# reshape(fs, 2, 3, 3); fs|>trace
+# reshape(fs, 2, 3, 0); fs|>trace
+# reshape(fs, 3, 3, 2); fs|>trace
 
-fs = FinishedsStructure10([getS("+"), getS("-"), getS(":")]); fs|>trace
-set(fs, 0,2,[getS("+-")]); fs|>trace
-@assert [s for s in IterableForElementsEndingAt(fs.matrix, 1)] |> length == 1
-@assert [s for s in IterableForElementsEndingAt(fs.matrix, 2)] |> length == 2
-@assert [s for s in IterableForElementsEndingAt(fs.matrix, 3)] |> length == 1
-@assert [s for s in IterableForElementsStartingFrom(fs.matrix, 0)] |> length == 2
-@assert [s for s in IterableForElementsStartingFrom(fs.matrix, 1)] |> length == 1
-@assert [s for s in IterableForElementsStartingFrom(fs.matrix, 2)] |> length == 1
-
-
-# OK!^
-
-get_hc_beg(s::String) = HangingChance10(
-    SyntaxStruct([SyntaxTerm(s),SyntaxTerm("=")]),
-    SyntaxInstTerm(SyntaxTerm(s), 1),
-    0, 1,
-    1, 1)
-get_hc_beg("+")
-get_hc_end(s::String) = HangingChance10(
-    SyntaxStruct([SyntaxTerm("+"),SyntaxTerm(s)]),
-    SyntaxInstTerm(SyntaxTerm(s), 1),
-    1, 1,
-    1, 1)
-get_hc_end("+")
-
-function get_cs()
-    cs = ChancesStructure10()
-    reshape(cs, 0,0,3)
-    addBeginning(cs, get_hc_beg("+"), 1)
-    addBeginning(cs, get_hc_beg("+"), 1)
-    addEnding(cs, get_hc_end("="), 1)
-    addEnding(cs, get_hc_end("="), 2)
-    println(cs.beginnings.|>length), println(cs.endings.|>length);
-    cs
-end
-
-cs = get_cs();
-
-# reshape(cs, 0,1,0); println(cs.beginnings.|>length), println(cs.endings.|>length);# YES
-# reshape(cs, 0,0,1); println(cs.beginnings.|>length), println(cs.endings.|>length);# deleting too much
-# reshape(cs, 0,1,1); println(cs.beginnings.|>length), println(cs.endings.|>length);# YES
-
-# reshape(cs, 2,3,0); println(cs.beginnings.|>length), println(cs.endings.|>length);# YES
-# reshape(cs, 2,3,2); println(cs.beginnings.|>length), println(cs.endings.|>length);# YES
-# reshape(cs, 3,3,2); println(cs.beginnings.|>length), println(cs.endings.|>length);# YES
+# fs = FinishedsStructure10([getS("+"), getS("-"), getS(":")]); fs|>trace
+# set(fs, 0,2,[getS("+-")]); fs|>trace
+# @assert [s for s in IterableForElementsEndingAt(fs.matrix, 1)] |> length == 1
+# @assert [s for s in IterableForElementsEndingAt(fs.matrix, 2)] |> length == 2
+# @assert [s for s in IterableForElementsEndingAt(fs.matrix, 3)] |> length == 1
+# @assert [s for s in IterableForElementsStartingFrom(fs.matrix, 0)] |> length == 2
+# @assert [s for s in IterableForElementsStartingFrom(fs.matrix, 1)] |> length == 1
+# @assert [s for s in IterableForElementsStartingFrom(fs.matrix, 2)] |> length == 1
 
 
+# # OK!^
 
-########## Parsing 1: Parse "+"
+# get_hc_beg(s::String) = HangingChance10(
+#     SyntaxStruct([SyntaxTerm(s),SyntaxTerm("=")]),
+#     SyntaxInstTerm(SyntaxTerm(s), 1),
+#     0, 1,
+#     1, 1)
+# get_hc_beg("+")
+# get_hc_end(s::String) = HangingChance10(
+#     SyntaxStruct([SyntaxTerm("+"),SyntaxTerm(s)]),
+#     SyntaxInstTerm(SyntaxTerm(s), 1),
+#     1, 1,
+#     1, 1)
+# get_hc_end("+")
 
-s10 = Structure11()
-addSyntax!(s10.posteriorsStructure, "+", SyntaxTerm("+"))
-initializeMarginals(s10.posteriorsStructure)
-initializeChoices(s10.posteriorsStructure)
-initializePosteriors(s10.posteriorsStructure)
-# initializeStrips(s10.posteriorsStructure)
+# function get_cs()
+#     cs = ChancesStructure10()
+#     reshape(cs, 0,0,3)
+#     addBeginning(cs, get_hc_beg("+"), 1)
+#     addBeginning(cs, get_hc_beg("+"), 1)
+#     addEnding(cs, get_hc_end("="), 1)
+#     addEnding(cs, get_hc_end("="), 2)
+#     println(cs.beginnings.|>length), println(cs.endings.|>length);
+#     cs
+# end
 
-insertTerminal(s10, 0,1,SyntaxTerm("+"), 1)
-s10.finisheds|>trace
-doTheBestYouCan(s10)
-s10.finisheds|>trace
+# cs = get_cs();
 
+# # reshape(cs, 0,1,0); println(cs.beginnings.|>length), println(cs.endings.|>length);# YES
+# # reshape(cs, 0,0,1); println(cs.beginnings.|>length), println(cs.endings.|>length);# deleting too much
+# # reshape(cs, 0,1,1); println(cs.beginnings.|>length), println(cs.endings.|>length);# YES
 
-s10 = Structure11()
-rp = RandomParser10("", [], s10)
-parse(rp, "+")
-rp.structure|>trace
+# # reshape(cs, 2,3,0); println(cs.beginnings.|>length), println(cs.endings.|>length);# YES
+# # reshape(cs, 2,3,2); println(cs.beginnings.|>length), println(cs.endings.|>length);# YES
+# # reshape(cs, 3,3,2); println(cs.beginnings.|>length), println(cs.endings.|>length);# YES
 
 
 
-########## Parsing 2: Parse "->"
+# ########## Parsing 1: Parse "+"
 
-s10 = Structure11()
+# s10 = Structure11()
+# addSyntax!(s10.posteriorsStructure, "+", SyntaxTerm("+"))
+# initializeMarginals(s10.posteriorsStructure)
+# initializeChoices(s10.posteriorsStructure)
+# initializePosteriors(s10.posteriorsStructure)
+# # initializeStrips(s10.posteriorsStructure)
 
-SyntaxTerms = Dict{String, SyntaxTerm}()
-SyntaxFields = Dict{String, SyntaxField}()
-SyntaxChoicess = Dict{String, SyntaxChoice}()
-SyntaxStructs = Dict{String, SyntaxStruct}()
-SyntaxStrips = Dict{String, SyntaxStrip}()
-TypeBases = Dict{String, TGlob}()
-TypeFuncs = Dict{String, Term}()
-TypeSums = Dict{String, TSum}()
-TypeProds = Dict{String, TProd}()
-bindings = Dict{Term, SyntaxCore}()
-
-for i in ["{", "-",">"] SyntaxTerms[i] =SyntaxTerm(i) end
-SyntaxStructs["arrow"] = SyntaxStruct(Array{SyntaxCore}([SyntaxTerms["-"], SyntaxTerms[">"]]))
-SyntaxChoicess["arrow_S"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["arrow"]]))
-
-for (name, s) in SyntaxTerms  addSyntax!(s10.posteriorsStructure, name, s) end
-for (name, s) in SyntaxChoicess  addSyntax!(s10.posteriorsStructure, name, s) end
-for (name, s) in SyntaxStructs  addSyntax!(s10.posteriorsStructure, name, s) end
-initializeMarginals(s10.posteriorsStructure)
-initializeChoices(s10.posteriorsStructure)
-initializePosteriors(s10.posteriorsStructure)
+# insertTerminal(s10, 0,1,SyntaxTerm("+"), 1)
+# s10.finisheds|>trace
+# doTheBestYouCan(s10)
+# s10.finisheds|>trace
 
 
-text = "->"
+# s10 = Structure11()
+# rp = RandomParser10("", [], s10)
+# parse(rp, "+")
+# rp.structure|>trace
 
-rp = RandomParser10("", [], s10);
-parse(rp, text)
-rp.structure|>trace
+
+
+# ########## Parsing 2: Parse "->"
+
+# s10 = Structure11()
+
+# SyntaxTerms = Dict{String, SyntaxTerm}()
+# SyntaxFields = Dict{String, SyntaxField}()
+# SyntaxChoicess = Dict{String, SyntaxChoice}()
+# SyntaxStructs = Dict{String, SyntaxStruct}()
+# SyntaxStrips = Dict{String, SyntaxStrip}()
+# TypeBases = Dict{String, TGlob}()
+# TypeFuncs = Dict{String, Term}()
+# TypeSums = Dict{String, TSum}()
+# TypeProds = Dict{String, TProd}()
+# bindings = Dict{Term, SyntaxCore}()
+
+# for i in ["{", "-",">"] SyntaxTerms[i] =SyntaxTerm(i) end
+# SyntaxStructs["arrow"] = SyntaxStruct(Array{SyntaxCore}([SyntaxTerms["-"], SyntaxTerms[">"]]))
+# SyntaxChoicess["arrow_S"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["arrow"]]))
+
+# for (name, s) in SyntaxTerms  addSyntax!(s10.posteriorsStructure, name, s) end
+# for (name, s) in SyntaxChoicess  addSyntax!(s10.posteriorsStructure, name, s) end
+# for (name, s) in SyntaxStructs  addSyntax!(s10.posteriorsStructure, name, s) end
+# initializeMarginals(s10.posteriorsStructure)
+# initializeChoices(s10.posteriorsStructure)
+# initializePosteriors(s10.posteriorsStructure)
+
+
+# text = "->"
+
+# rp = RandomParser10("", [], s10);
+# parse(rp, text)
+# rp.structure|>trace
 
 
 
 ########## Parsing 3: Parse "A->B"
 
+# function typearrow_builder(d::Dict{String, TAnno})::TAnno
+#     build_anno_term_TTerm(d["first"], d["second"]; make_auto=true)
+# end
+function typearrow_builder_strip(d::Array{TAnno})::TAnno
+    foldr(build_anno_term_TTerm, d)
+end
+function typearrow_builder_inpar(d::Dict{String, TAnno})::TAnno
+    d["typearrow_inpar"] # It should ALREADY be a TAnno... ^
+end
+function funcapp_builder(d::Dict{String, TAnno})::TAnno
+    build_anno_term_TApp([d["arg"], d["func"]])
+end
+function tannotation_builder(d::Dict{String, TAnno})::TAnno
+    build_anno_term_TAnno(d["anno_obj"], d["anno_type"])
+end
+function typedef_builder(d::Dict{String, TAnno})::TAnno # For the :Type" syntax
+    if d["typename"].type.t_out !==TypeUniverse()
+        throw(DomainError("Whats going on here ???????? with term $(d["typename"]|>pr) written to be : \"Type\", but it didnt come out as a TypeUniverse at all, tho ..."))
+    end
+    d["typename"] # It should ALREADY be a TAnno... ^
+end
+function funcdecl_builder(d::Dict{String, TAnno})::TAnno
+    types = Array{TTerm}([d["name"].type, d["type"].type, d["name2"].type, d["parameter"].type, d["body"].type])
+    if types[1].t_out !== TS()# Wait.... Havent you ALREADY checked this tho ??????????
+        throw(DomainError("Whats going on here ???????? with function name $(d["name"]|>pr) which is def not a String ...")) end
+    if (d["parameter"].expr isa TStr) # Wait.. WHat's the difference ????? ^
+        throw(DomainError("Why is param not a TStr ??? > $(d["parameter"]|>pr)")) end
+    if types[2].t_out !== TypeUniverse()# Wait.... Havent you ALREADY checked this tho ??????????
+        throw(DomainError("Whats going on here ???????? with function type $(d["name"]|>pr) which is def not a TypeUniverse ...")) end
+    # if !(d["type"].expr isa TTerm) # Should be Can be a  # Wait.... Havent you ALREADY checked this tho ??????????
+    #     throw(DomainError("Whats going on here ???????? with function type $(d["type"]|>pr) which is def not a TTerm ...")) end
+    # if d["type"].expr.t_in.data |> length !=0
+    #     throw(DomainError("I dont even know how, but you inferred a TTerm w/ unnamed vars: $(d["type"].expr.t_in|>pr)")) end
+    # if !(d["parameter"].expr.s in keys(d["type"].expr.t_in.data_tags))
+    #     throw(DomainError("The function param should be in the func arg type names: $(d["parameter"]|>pr) not in $(d["type"].expr.t_in|>pr)")) end
+    if d["name"].expr != d["name2"].expr
+        throw(DomainError("The What are you even writing? These don't match... $(d["name"]|>pr) != $(d["name2"]|>pr)")) end
+    build_anno_term_TAnno(build_anno_term_TAbs(d["body"]), d["type"])
+end
+
+function evalterm_builder(d::Dict{String, TAnno})::TAnno
+    res = TSumTerm(1, "to_eval", d["evalSentence_term"].expr)
+    return TAnno(res, infer_type_(res, d["evalSentence_term"].type))
+end
+
+function fullprog_builder(d::Dict{String, TAnno})::TAnno
+    res = TProd([d["program_funcdef"].expr, d["program_eval"].expr])
+    return TAnno(res, infer_type_(res, d["program_funcdef"].type, d["program_eval"].type))
+end
+
+# function references_handler(d::Array{Dict})
+
+
+
 function make_s10()
     s10 = Structure11()
 
@@ -154,130 +208,131 @@ function make_s10()
     TypeProds = Dict{String, TProd}()
     bindings = Dict{Term, SyntaxCore}()
 
-    for i in ["{", "-",">", ")", "("] SyntaxTerms[i] =SyntaxTerm(i) end
+    for i in ["{", "-",">",":","=","(",")",";","where","Type","eval","}"] SyntaxTerms[i] =SyntaxTerm(i) end
     SyntaxStructs["arrow"] = SyntaxStruct(Array{SyntaxCore}([SyntaxTerms["-"], SyntaxTerms[">"]]))
-    SyntaxChoicess["arrow_S"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["arrow"]]))
+    # SyntaxChoicess["arrow_S"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["arrow"]]))
 
-    SyntaxFields["typearrow_first"] = SyntaxField("first", TypeUniverse())
-    SyntaxFields["typearrow_second"] = SyntaxField("second", TypeUniverse())
-
-    SyntaxStructs["typearrow_par"] = SyntaxStruct([SyntaxTerms["("], SyntaxFields["typearrow_first"], SyntaxStructs["arrow"], SyntaxFields["typearrow_second"], SyntaxTerms[")"]])
-    SyntaxStructs["typearrow_nopar"] = SyntaxStruct([SyntaxFields["typearrow_first"], SyntaxStructs["arrow"], SyntaxFields["typearrow_second"]])
-    SyntaxChoicess["typearrow"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["typearrow_par"], SyntaxStructs["typearrow_nopar"]]))
-
-    for (name, s) in SyntaxTerms  addSyntax!(s10.posteriorsStructure, name, s) end
-    for (name, s) in SyntaxChoicess  addSyntax!(s10.posteriorsStructure, name, s) end
-    for (name, s) in SyntaxStructs  addSyntax!(s10.posteriorsStructure, name, s) end
-    for (name, s) in SyntaxFields  addSyntax!(s10.posteriorsStructure, name, s) end
-    initializeMarginals(s10.posteriorsStructure)
-    initializeChoices(s10.posteriorsStructure)
-    initializePosteriors(s10.posteriorsStructure)
-
-    function typearrow_builder(d::Dict{String, TAnno})::Term
-        types = Array{Term}([d["first"].type, d["second"].type])
-        if d["first"] isa TProd && d["first"].data |> length !=1
-            res = TTerm(d["first"], d["second"])
-        else
-            res = TTermAuto(d["first"], d["second"])
-        end
-        type = infer_type_(res, types[1], types[2])
-        TAnno(res, type)
+    function auto_SyntStruct(ss::Array{Union{String, SyntaxCore}})
+        for (i, s) in enumerate(ss)
+            if s isa SyntaxField
+                SyntaxFields[s.name] = s
+                ss[i] = SyntaxFields[s.name]  # In Julia this is prob exactly the same, but i want ref equality
+            elseif s isa String
+                SyntaxTerms[s] = SyntaxTerm(s)
+                ss[i] = SyntaxTerms[s]  # In Julia this is prob exactly the same, but i want ref equality
+        end end
+        SyntaxStruct(ss)
     end
+    function auto_SyntStrip(ssb::Union{String, SyntaxCore, Nothing}, sso::Union{String, SyntaxCore}, ssc::Union{String, SyntaxCore}, ssa::Union{String, SyntaxCore, Nothing})
+        dd = Dict("ssb"=> ssb,"sso"=> sso,"ssc"=> ssc,"ssa"=> ssa,)
+        for (n, s) in dd
+            if s isa SyntaxField
+            SyntaxFields[s.name] = s
+            dd[n] = s  # In Julia this is prob exactly the same, but i want ref equality
+        elseif s isa String
+            SyntaxTerms[s] = SyntaxTerm(s)
+            dd[n] = SyntaxTerms[s]  # In Julia this is prob exactly the same, but i want ref equality
+        end end
+        SyntaxStrip(dd["ssb"], dd["sso"], dd["ssc"], dd["ssa"])
+    end
+    AUSS = Array{Union{String, SyntaxCore}}
 
-    s10.posteriorsStructure.bindings[s10.posteriorsStructure.allSyntaxes["typearrow"]] = [typearrow_builder]
+    # SyntaxStructs["typearrow_nopar"] = auto_SyntStruct(AUSS[SyntaxField("first", TypeUniverse()), SyntaxStructs["arrow"], SyntaxField("second", TypeUniverse())])
+    SyntaxStrips["typearrow_strip"] = auto_SyntStrip(nothing, SyntaxField("typearrow_first", TypeUniverse()), SyntaxStructs["arrow"], nothing)
+    SyntaxStructs["typearrow_par"] = auto_SyntStruct(AUSS(["(", SyntaxField("typearrow_inpar", TypeUniverse()), ")"]))
+    SyntaxChoicess["typearrow"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["typearrow_par"], SyntaxStrips["typearrow_strip"]]))
+
+    SyntaxStructs["funcApp_S"] = auto_SyntStruct(AUSS([SyntaxField("func", TTerm(TLoc(1), TLoc(2))), "(", SyntaxField("arg", TLoc(1)), ")"]))
+    SyntaxStructs["BaseTypeDef_S"] = auto_SyntStruct(AUSS([SyntaxField("tname", TS()), ":", "Type"]))
+    SyntaxStructs["termanno_S"] = auto_SyntStruct(AUSS([SyntaxField("anno_obj", TLoc(1)), ":", SyntaxField("anno_type", TypeUniverse())]))
+    SyntaxStructs["funcDefAndDecl_S"] = auto_SyntStruct(AUSS([SyntaxField("name", TS()), ":", SyntaxField("type", TypeUniverse()), "where", SyntaxField("name2", TS()), "(", SyntaxField("parameter", TS()), ")", "=", SyntaxField("body", TLoc(1))]))
+    SyntaxFields["evalSentence_term"] = SyntaxField("term_toeval", TLoc(1))
+    SyntaxStructs["evalSentence_S"] = auto_SyntStruct(AUSS(["eval", SyntaxFields["evalSentence_term"]]))
+    SyntaxStructs["program_S"] = auto_SyntStruct(AUSS([SyntaxField("program_funcdef", TLoc(1)), ";", SyntaxField("program_eval", TLoc(1))]))
+
+    s10p = s10.posteriorsStructure
+    for (name, s) in SyntaxTerms  addSyntax!(s10p, name, s) end
+    for (name, s) in SyntaxChoicess  addSyntax!(s10p, name, s) end
+    for (name, s) in SyntaxStructs  addSyntax!(s10p, name, s) end
+    for (name, s) in SyntaxStrips  addSyntax!(s10p, name, s) end
+    for (name, s) in SyntaxFields  addSyntax!(s10p, name, s) end
+    initializeMarginals(s10p)
+    initializeChoices(s10p)
+    initializePosteriors(s10p)
+
+    # s10p.bindings[s10p.allSyntaxes["typearrow"]] = [typearrow_builder_strip]
+    s10p.bindings[s10p.allSyntaxes["typearrow"]] =[ Array([typearrow_builder_inpar, typearrow_builder_strip])]
+    s10p.bindings[s10p.allSyntaxes["funcApp_S"]] = [funcapp_builder]
+    s10p.bindings[s10p.allSyntaxes["BaseTypeDef_S"]] = [typedef_builder]
+    s10p.bindings[s10p.allSyntaxes["termanno_S"]] = [tannotation_builder]
+    s10p.bindings[s10p.allSyntaxes["funcDefAndDecl_S"]] = [funcdecl_builder]
+    s10p.bindings[s10p.allSyntaxes["evalSentence_S"]] = [evalterm_builder]
+    s10p.bindings[s10p.allSyntaxes["program_S"]] = [fullprog_builder]
+
     s10
 end
 
-s10 = make_s10();
-text = "A->B"
-rp = RandomParser10("", [], s10);
-parse(rp, text)
-rp.structure|>trace
-
-s10 = make_s10();
-text = "(A->B)->B"
-rp = RandomParser10("", [], s10);
-parse(rp, text)
-rp.structure|>trace
 
 request = getInferredTerm(SyntaxInstReference(getType(SyntaxField("first", TypeUniverse())),"A", 0.5))
-got = rp.structure.finisheds.matrix[1][6] |> x->filter(y->y.s isa SyntaxInstObject, x) |> x->x[1].s.inferred_obj
+request.expr |> pr
+request.type |> pr
+got = rp.structure.finisheds.matrix[1][13] |> x->filter(y->y.s isa SyntaxInstObject, x) |> x->x[1].s.inferred_obj
 got.expr |> pr
 got.type |> pr
 
-can_be_a
 
+robinsonUnify(got.type.t_out, request.type.t_out; mode=imply_)
+can_be_a(got.type.t_out, request.type.t_out)
 
-
-########## Parsing 3: Parse "T->T"
-
-function make_s10()
-    s10 = Structure11()
-
-    SyntaxTerms = Dict{String, SyntaxTerm}()
-    SyntaxFields = Dict{String, SyntaxField}()
-    SyntaxChoicess = Dict{String, SyntaxChoice}()
-    SyntaxStructs = Dict{String, SyntaxStruct}()
-    SyntaxStrips = Dict{String, SyntaxStrip}()
-    TypeBases = Dict{String, TGlob}()
-    TypeFuncs = Dict{String, Term}()
-    TypeSums = Dict{String, TSum}()
-    TypeProds = Dict{String, TProd}()
-    bindings = Dict{Term, SyntaxCore}()
-
-    # // type expession: T = A + ("T -> T") where A is base type and "T -> T" is the function type
-    # makeNiceTreeStructure("baseTypeVariable", "functionType", "type", "first", "second");
-
-    leafName = "baseTypeVariable"
-    productBranchName = "functionType"
-    fieldNameFirst = "first"
-    FieldNameSecond = "second"
-    TypeBases[leafName] = TGlob(leafName)
-    TypeProds[productBranchName] = TProd(Array{Term}([]))
-
-    addFieldToProductWithSintaxfield(productBranchName, fieldNameFirst, TypeBases[leafName])
-    addFieldToProductWithSintaxfield(productBranchName, FieldNameSecond, TypeBases[leafName])
-
-    for i in ["{", "-",">",":","=","(",")",";","where","Type","eval","}"] SyntaxTerms[i] =SyntaxTerm(i) end
-    SyntaxStructs["functionType_S_noPar"] = SyntaxStruct(Array{SyntaxCore}([SyntaxFields["first"], SyntaxTerms["-"], SyntaxTerms[">"], SyntaxFields["second"]]))
-    SyntaxStructs["functionType_S_Par"] = SyntaxStruct(Array{SyntaxCore}([SyntaxTerms["("], SyntaxStructs["functionType_S_noPar"], SyntaxTerms[")"]]))
-    SyntaxChoicess["functionType_S"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["functionType_S_Par"], SyntaxStructs["functionType_S_noPar"]]))
-    bindings[TypeProds["functionType"]] = SyntaxChoicess["functionType_S"] # //it HAS BEEN:  << SyntaxChoicess.getSyntaxCore("functionType_S_Par_noPar");
-
-    TypeProds["baseTypeDef"] = TProd(Array{Term}([]))
-    whichProduct = "baseTypeDef"; fieldName = "BaseTypeDef_name"; whichField = TypeBases["baseTypeVariable"]
-    addFieldToProductWithSintaxfield(whichProduct, fieldName, whichField)
-    SyntaxStructs["BaseTypeDef_S"] = SyntaxStruct(Array{SyntaxCore}([SyntaxFields["BaseTypeDef_name"], SyntaxTerms[":"], SyntaxTerms["Type"]]))
-    bindings[TypeProds["baseTypeDef"]] = SyntaxStructs["BaseTypeDef_S"]
-
-    for (name, s) in SyntaxTerms  addSyntax!(s10.posteriorsStructure, name, s) end
-    for (name, s) in SyntaxFields  addSyntax!(s10.posteriorsStructure, name, s) end
-    for (name, s) in SyntaxChoicess  addSyntax!(s10.posteriorsStructure, name, s) end
-    for (name, s) in SyntaxStructs  addSyntax!(s10.posteriorsStructure, name, s) end
-    for (name, s) in SyntaxStrips  addSyntax!(s10.posteriorsStructure, name, s) end
-    initializeMarginals(s10.posteriorsStructure)
-    initializeChoices(s10.posteriorsStructure)
-    initializePosteriors(s10.posteriorsStructure)
-
-    for (s, t) in bindings
-        if !(t in keys(s10.posteriorsStructure.bindings))
-            s10.posteriorsStructure.bindings[t] = [s]
-        else
-            push!(s10.posteriorsStructure.bindings[t], s)
-        end
-    end
-    return s10
-end
-
-text = "A->B"
 s10 = make_s10();
+text = "A->B"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
-rp.structure |> trace
-rp.structure.finisheds.matrix[1][end][end].s.list #|> trace
+rp.structure|>trace
+
+s10 = make_s10();
+text = "(A->B->C)"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
+
+s10 = make_s10();
+text = "((A->B)->B)"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
+
+s10 = make_s10();
+text = "g(a)"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
+
+s10 = make_s10();
+text = "g(a):B"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
+
+s10 = make_s10();
+text = "ff:A where ff (  g  )  =  x"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
+println("(Btw, length(inputVec) = $(length(rp.inputVec)))")
 
 
+s10 = make_s10();
+text = "ff:A->B where ff (  g  )  =  b"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
 
+s10 = make_s10();
+text = "ff:(A->B)-> B  where ff (  g  )  =  g  (  a ) ; eval ff ( h ) "
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
 
 
 
@@ -459,48 +514,6 @@ println("(Btw, length(inputVec) = $(length(randomParser10.inputVec)))")
 
 getBestTotalFound(randomParser10).s.syntax
 SyntaxInstObject
-
-
-
-collect_fields(s::SyntaxInstTerm)::Dict{String, TAnno} = Dict{String, TAnno}()
-collect_fields(s::SyntaxInstReference)::Dict{String, TAnno} = Dict{String, TAnno}()
-collect_fields(s::SyntaxInstNativeString)::Dict{String, TAnno} = Dict{String, TAnno}()
-collect_fields(s::SyntaxInstObject)::Dict{String, TAnno} = Dict{String, TAnno}()
-collect_fields(s::SyntaxInstField)::Dict{String, TAnno} = Dict{String, TAnno}(s.name.name=>getObjFoundFromAccepted(s.objectFound; as_type=s.name.type))
-collect_fields(s::SyntaxInstChoice)::Dict{String, TAnno} = collect_fields(s.choice)
-collect_fields(s::SyntaxInstStruct)::Dict{String, TAnno} = merge((s.list .|> (x->collect_fields(x)))...)
-function collect_fields(s::SyntaxInstStrip)::Dict{String, TAnno}
-    throw(DomainError("When is a field ever represented by a SyntaxStrip ???"))
-end
-
-function collect_strip(s::SyntaxInstStrip)::Dict{String, TAnno}
-    @assert all([ss isa Accepted_SynatxInst_type for ss in s.list]) "Which SyntaxStrip has Syntax that are not Accepted_SynatxInst_type ..... (Him: $(s|>trace))"
-    # PROBLEM: SyntaxInstStrip has this list::Array{Accepted_SynatxInst_type} (apparently), BUT,
-    # since you DON'T pass through a SyntaxInstField,
-    # you have ONE LESS LEVEL of indication of what you should be typechecking to !!!
-    # If you want each obj in the SyntaxInstStrip.list to typecheck to the SAME Term(which'd be sane), you could put that INTO THE SyntaxStrip/AND/OR/SyntaxInstStrip DIRECTLY.....
-    gof = (x->getObjFoundFromAccepted(x))
-    # MISSING: as_type               ^
-    s.list .|> gof |> x->Dict{String, Term}(string(i)=> t for (i, t) in enumerate(x))
-end
-
-function getObjFoundFromAccepted(s::Accepted_SynatxInst_type; as_type::Union{Nothing, Term} = nothing)::Union{TAnno, Error}
-    if s isa SyntaxInstReference && as_type !== nothing
-        @assert s.type == as_type "This is only diagnostic. Ofc it is. If not, tough luck LOL"
-    end
-    return getInferredTerm(s) # TODO:  |> transform_in<as_type>
-end
-
-getInferredTerm(s::SyntaxInstReference)::TAnno = TAnno(TLocStr(s.text), TTermAuto(s.type, s.type))
-getInferredType(s::SyntaxInstReference)::Term = TTermAuto(s.type, s.type)
-
-getInferredTerm(s::SyntaxInstNativeString)::TAnno = TAnno(TStr(s.text), TS())
-getInferredType(s::SyntaxInstNativeString)::Term = TTermEmpty(TS()) # OR TS()
-# OR, strinType=TypeSumTerm("String", 2, TTop()) for the type, MAYBE???
-
-getInferredTerm(s::SyntaxInstObject)::TAnno = s.inferred_obj
-getInferredType(s::SyntaxInstObject)::Term = s.inferred_obj.type
-
 
 
 

@@ -75,6 +75,13 @@ mutable struct SyntaxInstStrip <: SyntaxInstProduct
     # //std::optional<ATermBuilder Owning>meetedReferences;
 end
 
+function getObjects(s::SyntaxInstStrip)
+    if s.name.before === nothing
+        Array{SyntaxInst}([s.list[i*2-1] for i in 1:((length(s.list)+1)÷2)])
+    else
+        Array{SyntaxInst}([s.list[i*2] for i in 1:((length(s.list)-1)÷2)])
+    end
+end
 
 getP(s::SyntaxInstTerm)::Real = s.P
 getP(s::SyntaxInstReference)::Real = s.P
@@ -85,14 +92,16 @@ getP(s::SyntaxInstChoice)::Real = s.PofThisAndBelowGivenBelow
 getP(s::SyntaxInstStruct)::Real = s.PofThisAndBelowGivenBelow
 getP(s::SyntaxInstStrip)::Real = s.PofThisAndBelowGivenBelow
 
-trace(s::SyntaxInstTerm)::String = getString(s.name)
-trace(s::SyntaxInstReference)::String = s.text
-trace(s::SyntaxInstNativeString)::String = s.text
-trace(s::SyntaxInstObject)::String = "FOUND{"*trace(s.syntax)*"}"
-trace(s::SyntaxInstField)::String = trace(s.objectFound)
-trace(s::SyntaxInstChoice)::String = "[<$(string(s.flag))>: $(s.choice |> trace)]"
-trace(s::SyntaxInstStruct)::String = join(s.list .|> trace, " ")
-trace(s::SyntaxInstStrip)::String = "(" * join(s.list .|> trace, " ") * ")"
+trace(s::SyntaxInstTerm; top=false)::String = getString(s.name)
+trace(s::SyntaxInstReference; top=false)::String = s.text
+trace(s::SyntaxInstNativeString; top=false)::String = s.text
+trace(s::SyntaxInstObject; top=false)::String = (
+    "FOUND{$(trace(s.syntax))" *
+    (top ? (" (inferred to a $(s.inferred_obj.expr|>typeof) obj, $(s.inferred_obj.expr|>pr) of type $(s.inferred_obj.type|>pr))})}") : "}"))
+trace(s::SyntaxInstField; top=false)::String = trace(s.objectFound)
+trace(s::SyntaxInstChoice; top=false)::String = "[<$(string(s.flag))>: $(s.choice |> trace)]"
+trace(s::SyntaxInstStruct; top=false)::String = join(s.list .|> trace, " ")
+trace(s::SyntaxInstStrip; top=false)::String = "(" * join(s.list .|> trace, " ") * ")"
 
 deepEqual(s::SyntaxInstTerm, other::SyntaxInst)::Bool = other isa SyntaxInstTerm && s.name == other.name
 deepEqual(s::SyntaxInstReference, other::SyntaxInst)::Bool = other isa SyntaxInstReference && s.type === other.type && s.name == other.name
@@ -138,3 +147,70 @@ function insert_front!(s::SyntaxInstStrip, obj::SyntaxInst, index::Int, marginal
     # //idem^^
     s.PofThisAndBelowGivenBelow *= (getP(obj) / marginalOfObjName);
 end
+
+
+
+
+
+
+struct SyntWithItsBuilderFunc
+	syntax::SyntaxCore
+	builder_func::Any
+    # Any is a (Dict{String, Union{Term,Error}}) -> Union{TAnno, Error}  lambda !!!
+    # OR a (Array{Union{Term,Error}}) -> Union{TAnno, Error}  lambda !!!
+	P::Real
+end
+buildTypeThatHasSyntInst(s::SyntaxInstStrip, builder_func) = builder_func(collect_strip(s)) # builder_func is REQUIRED to be a (Dict{str, TAnno}) -> TAnno
+buildTypeThatHasSyntInst(s::SyntaxInstStruct, builder_func) = builder_func(collect_fields(s)) # builder_func is REQUIRED to be a (Array{TAnno}) -> TAnno
+buildTypeThatHasSyntInst(s::SyntaxInstChoice, builder_func::Array) = buildTypeThatHasSyntInst(s.choice, builder_func[s.flag+1]) # builder_func is REQUIRED to be a Array{(Dict{str, TAnno}) -> TAnno}
+
+# HELPER: collect_fields looks for SyntaxInstField's and extract a name=>obj dict.
+# It looks at the whole tree, and it only doesnt know how to handle SyntaxInstStrip's.
+collect_fields(s::SyntaxInstTerm)::Dict{String, TAnno} = Dict{String, TAnno}()
+collect_fields(s::SyntaxInstReference)::Dict{String, TAnno} = Dict{String, TAnno}()
+collect_fields(s::SyntaxInstNativeString)::Dict{String, TAnno} = Dict{String, TAnno}()
+collect_fields(s::SyntaxInstObject)::Dict{String, TAnno} = Dict{String, TAnno}()
+collect_fields(s::SyntaxInstField)::Dict{String, TAnno} = Dict{String, TAnno}(s.name.name=>getObjFoundFromAccepted(s.objectFound; as_type=s.name.type))
+collect_fields(s::SyntaxInstChoice)::Dict{String, TAnno} = collect_fields(s.choice)
+collect_fields(s::SyntaxInstStruct)::Dict{String, TAnno} = merge((s.list .|> (x->collect_fields(x)))...)
+function collect_fields(s::SyntaxInstStrip)::Dict{String, TAnno}
+    throw(DomainError("When is a field ever represented by a SyntaxStrip ???"))
+end
+
+# HELPER: collect_objs works on Accepted_SynatxInst_type's and returns it.
+# If it founds a SyntaxInstField, it looks into its .objectFound. Otherwise, it's an error.
+collect_objs(s::SyntaxInstTerm) = nothing
+collect_objs(s::SyntaxInstReference) = s
+collect_objs(s::SyntaxInstNativeString) = s
+collect_objs(s::SyntaxInstObject) = s
+collect_objs(s::SyntaxInstField) = collect_objs(s.objectFound)
+collect_objs(s::SyntaxInstChoice) = nothing
+collect_objs(s::SyntaxInstStruct) = nothing
+collect_objs(s::SyntaxInstStrip) = nothing
+
+function collect_strip(s::SyntaxInstStrip)::Array{TAnno}
+    objs = s |>getObjects .|> collect_objs
+    @assert all([ss !== nothing for ss in objs]) "Which SyntaxInstStrip has Syntax that are not Accepted_SynatxInst_type ..... (Him: $(s|>trace), with types $(s.list .|>typeof))"
+    gof = (x->getObjFoundFromAccepted(x))
+    # MISSING: as_type               ^
+    objs .|> gof
+end
+
+function getObjFoundFromAccepted(s::Accepted_SynatxInst_type; as_type::Union{Nothing, Term} = nothing)::TAnno
+    if s isa SyntaxInstReference && as_type !== nothing
+        @assert s.type == as_type "This is only diagnostic. Ofc it is. If not, tough luck LOL"
+    end
+    return getInferredTerm(s) # TODO:  |> transform_in<as_type>
+end
+
+getInferredTerm(s::SyntaxInstReference)::TAnno = TAnno(TLocStr(s.text), TTerm(TProd(Dict{Id,Term}(s.text => s.type)), s.type))
+getInferredType(s::SyntaxInstReference)::Term = TTermAuto(s.type, s.type)
+
+getInferredTerm(s::SyntaxInstNativeString)::TAnno = TAnno(TStr(s.text), TS())
+getInferredType(s::SyntaxInstNativeString)::Term = TTermEmpty(TS()) # OR TS()
+# OR, strinType=TypeSumTerm("String", 2, TTop()) for the type, MAYBE???
+
+getInferredTerm(s::SyntaxInstObject)::TAnno = s.inferred_obj
+getInferredType(s::SyntaxInstObject)::Term = s.inferred_obj.type
+
+

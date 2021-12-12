@@ -6,20 +6,6 @@ struct SomeChancewIndex{T}
     P::Real  #//posterior, OBVIOUSLY
 end
 
-struct someOtherReturn
-	syntax::SyntaxCore
-	builder_func::Any # Any is a (Dict{String, Union{Term,Error}}) -> Union{TAnno, Error}  lambda !!!
-	P::Real
-end
-function buildTypeThatHasSyntInst(r::someOtherReturn, s::SyntaxInst)::TAnno
-    if s isa SyntaxInstStrip
-        r.builder_func(collect_strip(s)) # collect_strip returns a LIS OF dict_str
-        # TODO
-    else
-        r.builder_func(collect_fields(s))
-    end
-end
-
 struct PosteriorStucture2
 	marginalsNormalizer::Real
 	marginalsUnn::Dict{SyntaxCore, Real}
@@ -127,11 +113,12 @@ function initializePosteriors(ps::PosteriorsStructure)
                 push_dict(ps.posteriorsBaked, child, (posterior, (parent,i-1)))
             end
         elseif parent isa SyntaxStrip
-            # //for (auto child : parent->)
-            # //{
-            # //	float posterior = ps.marginals[SyntaxCore{ parent }] / ps.marginals[child] * choicesLikelyhood[parent][child];
-            # //	posteriorsBaked[child].emplace(posterior, parent);  -1 !!!!!!!!
-            # //}
+            for (i, child) in Dict(1=>parent.before, 2=>parent.object, 3=>parent.comma, 4=>parent.after)
+                if child !== nothing
+                    posterior::Real = ps.marginals[parent] / ps.marginals[child]
+                    push_dict(ps.posteriorsBaked, child, (posterior, (parent, i)))
+                end
+            end
         end
     end
     # sort!(ps.posteriorsBaked; by=(x->x[1]))
@@ -161,10 +148,10 @@ function getAllSyntaxChoicesWithIndexFor(ps::PosteriorsStructure, s::SyntaxCore)
     return v
 end
 
-function getAllSyntaxBindingsFor(ps::PosteriorsStructure, s::SyntaxCore)::Array{someOtherReturn}
-    v = Array{someOtherReturn}([])
+function getAllSyntaxBindingsFor(ps::PosteriorsStructure, s::SyntaxCore)::Array{SyntWithItsBuilderFunc}
+    v = Array{SyntWithItsBuilderFunc}([])
     for i in get(ps.bindings, s,[])
-        push!(v, someOtherReturn(s, i, 1 )) # //im pushing THE LIKELYHOOD in now just because
+        push!(v, SyntWithItsBuilderFunc(s, i, 1 )) # //im pushing THE LIKELYHOOD in now just because
         # //i mean, Just because every syntax is only owned by one type^^ .
     end
     return v

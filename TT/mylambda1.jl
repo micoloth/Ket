@@ -344,6 +344,7 @@ end
 pr(x) = pr_T(x)
 # pr_ctx(i::TTerm) = "Given [$(join(i.t_in.data .|>pr, ", "))], get $(i.t_out|>pr)"
 pr_ctx(i::TTerm) = "Given $(i.t_in |>pr), get $(i.t_out|>pr)"
+pr_ctx(i::TermwError) = "ERROR $(t.error) Given $(i.term.t_in |>pr), get $(i.term.t_out|>pr)"
 
 
 # NOT used by the above:
@@ -353,6 +354,7 @@ usedLocsSet(t::TLocStr)::Set{String} = Set{String}([t.var_tag])
 usedLocsSet(t::TTop)::Set{String} = Set{String}([])
 usedLocsSet(t::TypeUniverse)::Set{String} = Set{String}([])
 usedLocsSet(t::TN)::Set{String} = Set{String}([])
+usedLocsSet(t::TS)::Set{String} = Set{String}([])
 usedLocsSet(t::TInt)::Set{String} = Set{String}([])
 usedLocsSet(t::TStr)::Set{String} = Set{String}([])
 usedLocsSet(t::TIntSum)::Set{String} = t.ns .|> usedLocsSet |> (x->union(Set{String}([]), x...))
@@ -376,6 +378,7 @@ usedLocs(t::TLocStr)::Array{Index} = Array{Index}([])
 usedLocs(t::TTop)::Array{Index} = Array{Index}([])
 usedLocs(t::TypeUniverse)::Array{Index} = Array{Index}([])
 usedLocs(t::TN)::Array{Index} = Array{Index}([])
+usedLocs(t::TS)::Array{Index} = Array{Index}([])
 usedLocs(t::TInt)::Array{Index} = Array{Index}([])
 usedLocs(t::TIntSum)::Array{Index} = unique(vcat((t.ns .|> usedLocs)...))
 usedLocs(t::TIntProd)::Array{Index} = unique(vcat((t.ns .|> usedLocs)...))
@@ -396,6 +399,7 @@ arity_var(base::Index, t::TLocStr)::Index = base
 arity_var(base::Index, t::TTop)::Index = base
 arity_var(base::Index, t::TypeUniverse)::Index = base
 arity_var(base::Index, t::TN)::Index = base
+arity_var(base::Index, t::TS)::Index = base
 arity_var(base::Index, t::TInt)::Index = base
 arity_var(base::Index, t::TIntSum)::Index = t.ns .|> (x->arity_var(base, x)) |> maximum
 arity_var(base::Index, t::TIntProd)::Index = t.ns .|> (x->arity_var(base, x)) |> maximum
@@ -424,6 +428,7 @@ has_errors(t::TLocStr)::Bool = false
 has_errors(t::TTop)::Bool = false
 has_errors(t::TypeUniverse)::Bool = false
 has_errors(t::TN)::Bool = false
+has_errors(t::TS)::Bool = false
 has_errors(t::TInt)::Bool = false
 has_errors(t::TIntSum)::Bool = t.ns .|> has_errors |> any
 has_errors(t::TIntProd)::Bool = t.ns .|> has_errors |> any

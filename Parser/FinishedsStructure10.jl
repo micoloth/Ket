@@ -185,7 +185,7 @@ function trace(FS::FinishedsStructure10)
     for i in 1:(FS.matrix|>length)
         for j in 1:(FS.matrix[i]|>length)
             if length(FS.matrix[i][j])>0
-                print("($(i-1),$(i+j-1)) $(join(FS.matrix[i][j] .|> trace, " || ")) ")
+                print("($(i-1),$(i+j-1)) $(join(FS.matrix[i][j] .|> (x->trace(x; top=true)), " || ")) ")
             end
         end
         println("")

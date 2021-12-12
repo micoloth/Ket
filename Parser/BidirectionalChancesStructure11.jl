@@ -26,8 +26,11 @@ end
 
 getTo(hc::HangingChance10, from::Int) = from + hc.length
 getFrom(hc::HangingChance10, to::Int) = to - hc.length
-hasEnded(hc::HangingChance10)::Bool = getPossibleNexts(hc.chance, getName(hc.object), hc.indexInChance+1) |> isempty  # +1, apparently
-hasJustBegun(hc::HangingChance10)::Bool = getPossiblePreviouses(hc.chance, getName(hc.object), hc.indexInChance) |> isempty
+
+has_ended_strip_w_no_after(hc::HangingChance10) = hc.chance isa SyntaxStrip && hc.chance.after === nothing && hc.indexInChance == 2 && isempty(hc.nexts) && !isempty(hc.previouses)
+has_justbegun_strip_w_no_before(hc::HangingChance10) = hc.chance isa SyntaxStrip && hc.chance.before === nothing && hc.indexInChance == 2 && isempty(hc.previouses) && !isempty(hc.nexts)
+hasEnded(hc::HangingChance10)::Bool = getPossibleNexts(hc.chance, getName(hc.object), hc.indexInChance) |> isempty || has_ended_strip_w_no_after(hc)
+hasJustBegun(hc::HangingChance10)::Bool = getPossiblePreviouses(hc.chance, getName(hc.object), hc.indexInChance) |> isempty || has_justbegun_strip_w_no_before(hc)
 # SyntaxProduct getChance() { return chance; }
 # int getIndexInChance() { return indexInChance; }
 # float getPForward() { return POfThisIfGoingForward; }
@@ -38,7 +41,7 @@ hasJustBegun(hc::HangingChance10)::Bool = getPossiblePreviouses(hc.chance, getNa
 struct SyntaxInstOwner
     s::SyntaxInst
 end
-trace(sio::SyntaxInstOwner) = trace(sio.s)
+trace(sio::SyntaxInstOwner; top=false) = trace(sio.s; top=top)
 getName(obj::SyntaxInstOwner) = getName(obj.s)
 
 
@@ -112,16 +115,16 @@ function getAllFinalObjsLinked(hc::HangingChance10, hc_from::Int, hc_to::Int)::A
 end
 
 getWhatNeedsBefore(hc::HangingChance10)::Array{SyntaxCore} = getPossiblePreviouses(hc.chance, getName(hc.object), hc.indexInChance)
-getWhatNeedsNext(hc::HangingChance10)::Array{SyntaxCore} = getPossibleNexts(hc.chance, getName(hc.object), hc.indexInChance+1) # +1, apparently
+getWhatNeedsNext(hc::HangingChance10)::Array{SyntaxCore} = getPossibleNexts(hc.chance, getName(hc.object), hc.indexInChance)
 needsBefore(hc::HangingChance10, obj::SyntaxCore)::Bool = obj in getWhatNeedsBefore(hc)
 needsNext(hc::HangingChance10, obj::SyntaxCore)::Bool = obj in getWhatNeedsNext(hc)
 function fields_needsBefore_obj(hc::HangingChance10, obj::SyntaxInstObject)::Array{SyntaxField}
     v =  getWhatNeedsBefore(hc)
-    return filter(x-> x isa SyntaxField && can_be_a(getType(x), getInferredType(obj)), v)
+    return filter(x-> x isa SyntaxField && can_be_a(getType(x), getInferredType(obj).t_out), v)
 end
 function fields_needsNext_obj(hc::HangingChance10, obj::SyntaxInstObject)::Array{SyntaxField}
     v = getWhatNeedsNext(hc)
-    return filter(x-> x isa SyntaxField && can_be_a(getType(x), getInferredType(obj)), v)
+    return filter(x-> x isa SyntaxField && can_be_a(getType(x), getInferredType(obj).t_out), v)
 end
 
 
@@ -203,8 +206,8 @@ function chancesNeedingThisNext_hc(cs::ChancesStructure10, from_of_hc::Int, new_
     res = Array{HangingChance10}([])
     if from_of_hc == 0 return res end #// Excluded, BUT UNCHECKED
     for hc in cs.endings[from_of_hc] # from_of_hc -1 BECAUSE SHIFTED, +1 cuz Julia
-        @assert !(hc.chance == new_hc.chance && hc.indexInChance == new_hc.indexInChance - 1 && !needsNext(hc, getName(new_hc.object))) "hahahahahah"
-        if hc.chance == new_hc.chance && hc.indexInChance == new_hc.indexInChance - 1 && !(new_hc in hc.nexts) # If already there, skip
+        @assert !(hc.chance == new_hc.chance && hc.indexInChance == getPrevIndex(new_hc.chance, new_hc.indexInChance) && !needsNext(hc, getName(new_hc.object))) "hahahahahah"
+        if hc.chance == new_hc.chance && hc.indexInChance == getPrevIndex(new_hc.chance, new_hc.indexInChance) && !(new_hc in hc.nexts) # If already there, skip
             push!(res, hc) end
     end
     return res
@@ -213,8 +216,8 @@ function chancesNeedingThisPreviously_hc(cs::ChancesStructure10, to_of_hc::Int, 
     res = Array{HangingChance10}([])
     if to_of_hc == length(cs.beginnings) return res end #// Excluded, BUT UNCHECKED
     for hc in cs.beginnings[to_of_hc+1]
-        @assert !(hc.chance == new_hc.chance && hc.indexInChance == new_hc.indexInChance + 1 && !needsBefore(hc, getName(new_hc.object))) "hahahahahah"
-        if hc.chance == new_hc.chance && hc.indexInChance == new_hc.indexInChance + 1 && !(new_hc in hc.previouses) # If already there, skip
+        @assert !(hc.chance == new_hc.chance && hc.indexInChance == getNextIndex(new_hc.chance, new_hc.indexInChance) && !needsBefore(hc, getName(new_hc.object))) "hahahahahah"
+        if hc.chance == new_hc.chance && hc.indexInChance == getNextIndex(new_hc.chance, new_hc.indexInChance) && !(new_hc in hc.previouses) # If already there, skip
             push!(res, hc) end
     end
     return res
