@@ -21,7 +21,7 @@ struct TGlob <: Term
     var::Id
     type::Term # If this is a Type, write TypeUniverse
 end
-struct TLoc <: Term
+struct TLocInt <: Term
     var::Index
 end
 struct TLocStr <: Term
@@ -91,7 +91,7 @@ end
 
 
 Base.:(==)(a::TGlob, b::TGlob) = Base.:(==)(a.var, b.var)
-Base.:(==)(a::TLoc, b::TLoc) = (a.var == b.var) # && (a.var == b.var)
+Base.:(==)(a::TLocInt, b::TLocInt) = (a.var == b.var) # && (a.var == b.var)
 Base.:(==)(a::TLocStr, b::TLocStr) = (a.var_tag == b.var_tag) # && (a.var == b.var)
 Base.:(==)(a::TAbs, b::TAbs) = Base.:(==)(a.body, b.body) && all(a.var_tags .== b.var_tags)
 Base.:(==)(a::TApp, b::TApp) = all(a.ops_dot_ordered .== b.ops_dot_ordered)
@@ -121,7 +121,7 @@ TAppSwitch(func, args) = TApp([args, func])
 
 
 # detag(t::TGlob) = TGlob(t.var, detag(t.type))
-# detag(t::TLoc) = TLoc(t.var)
+# detag(t::TLocInt) = TLocInt(t.var)
 # detag(t::TAbs) = TAbs(detag(t.body))
 # detag(t::TApp) = TApp(detag.(t.ops_dot_ordered))
 # detag(t::TTerm) = TTerm(detag(t.t_in), detag(t.t_out))
@@ -164,13 +164,13 @@ subst(news::TProd, t::TConc)::Term = TConc(t.ops_dot_ordered .|> x->subst(news, 
 subst(news::TProd, t::TSumTerm)::Term = TSumTerm(t.tag, t.tag_name, subst(news, t.data))
 subst(news::TProd, t::TAnno)::Term = TAnno(subst(news, t.expr), t.type)
 subst(news::TProd, t::TBranches)::Term = TBranches(t.ops_chances .|> x->subst(news, x), t.tags) # Just like TApp, This should have No effect being all TAbs's, but just in case.
-subst(news::TProd, t::TLoc)::Term = if t.var <= length(news.data) news.data[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news.data))" )) end
+subst(news::TProd, t::TLocInt)::Term = if t.var <= length(news.data) news.data[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news.data))" )) end
 subst(news::TProd, t::TLocStr)::Term = if (t.var_tag in keys(news.data_tags)) news.data_tags[t.var_tag] else throw(DomainError("Undefined local var named $(t.var_tag), n args given = $(news.data_tags)" )) end
 subst(news::TProd, t::TermwError)::Term = TermwError(subst(news, t.term), t.error)
-# subst(news::Array{Term}, t::TLoc)::Term = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
+# subst(news::Array{Term}, t::TLocInt)::Term = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
 
 reduc(t::TGlob)::Term = t
-reduc(t::TLoc)::Term = t
+reduc(t::TLocInt)::Term = t
 reduc(t::TLocStr)::Term = t
 reduc(t::TTop)::Term = t
 reduc(t::TypeUniverse)::Term = t
@@ -221,7 +221,7 @@ end
 reduc(t::TermwError)::Term = TermwError(reduc(t.term), t.error)
 
 pr_T(x::TGlob)::String = "$(x.var)"
-pr_T(x::TLoc)::String = "T$(x.var)"
+pr_T(x::TLocInt)::String = "T$(x.var)"
 pr_T(x::TLocStr)::String = "T$(x.var_tag)"
 pr_T(x::TTop)::String = "⊥"
 pr_T(x::TypeUniverse)::String = "⊥"
@@ -290,7 +290,7 @@ pr_T(x::TAnno)::String = "$(pr_E(x.expr)):$(pr_T(x.type))" # Hellloo...
 pr_T(x::TermwError)::String = pr_T(x.term) * " w/ error: " * x.error
 
 pr_E(x::TGlob)::String = "$(x.var)"
-pr_E(x::TLoc)::String = "$(x.var)"
+pr_E(x::TLocInt)::String = "$(x.var)"
 pr_E(x::TLocStr)::String = "$(x.var_tag)"
 pr_E(x::TTop)::String = "T"
 pr_E(x::TN)::String = "ℕ"
@@ -349,7 +349,7 @@ pr_ctx(i::TermwError) = "ERROR $(t.error) Given $(i.term.t_in |>pr), get $(i.ter
 
 # NOT used by the above:
 usedLocsSet(t::TGlob)::Set{String}= Set{String}([])
-usedLocsSet(t::TLoc)::Set{String} = Set{String}([])
+usedLocsSet(t::TLocInt)::Set{String} = Set{String}([])
 usedLocsSet(t::TLocStr)::Set{String} = Set{String}([t.var_tag])
 usedLocsSet(t::TTop)::Set{String} = Set{String}([])
 usedLocsSet(t::TypeUniverse)::Set{String} = Set{String}([])
@@ -373,7 +373,7 @@ usedLocsSet(t::TSumTerm)::Set{String} = usedLocsSet(t.data)
 usedLocsSet(t::TermwError)::Set{String} = usedLocsSet(t.term)
 
 usedLocs(t::TGlob)::Array{Index} = Array{Index}([])
-usedLocs(t::TLoc)::Array{Index} = Array{Index}([t.var])
+usedLocs(t::TLocInt)::Array{Index} = Array{Index}([t.var])
 usedLocs(t::TLocStr)::Array{Index} = Array{Index}([])
 usedLocs(t::TTop)::Array{Index} = Array{Index}([])
 usedLocs(t::TypeUniverse)::Array{Index} = Array{Index}([])
@@ -394,7 +394,7 @@ usedLocs(t::TermwError)::Array{Index} = usedLocs(t.term)
 
 
 arity_var(base::Index, t::TGlob)::Index= base
-arity_var(base::Index, t::TLoc)::Index = max(base, t.var)
+arity_var(base::Index, t::TLocInt)::Index = max(base, t.var)
 arity_var(base::Index, t::TLocStr)::Index = base
 arity_var(base::Index, t::TTop)::Index = base
 arity_var(base::Index, t::TypeUniverse)::Index = base
@@ -423,7 +423,7 @@ arity(t::Term)::Index = arity_var(t)  #max(arity_var(0, t), arity_set(t)) ??????
 
 
 has_errors(t::TGlob)::Bool= false
-has_errors(t::TLoc)::Bool = false
+has_errors(t::TLocInt)::Bool = false
 has_errors(t::TLocStr)::Bool = false
 has_errors(t::TTop)::Bool = false
 has_errors(t::TypeUniverse)::Bool = false
@@ -448,7 +448,7 @@ has_errors(t::TermwError)::Bool = true
 
 
 # TGlob   TGlob
-# TLoc   TLoc
+# TLocInt   TLocInt
 # TTop   TTop
 # TTerm   TTerm
 # TAbs   TAbs
@@ -467,17 +467,17 @@ has_errors(t::TermwError)::Bool = true
 
 
 
-S = TAbs(TAppAuto(TAppAuto(TLoc(1), TLoc(3)), TAppAuto(TLoc(2), TLoc(3))))
+S = TAbs(TAppAuto(TAppAuto(TLocInt(1), TLocInt(3)), TAppAuto(TLocInt(2), TLocInt(3))))
 pr_E(S)
 
 reduc(TAbs(TAppSwitch(S, TProd(Array{Term}([TGlobAuto("f"), TGlobAuto("g"), TGlobAuto("x")]))))) |> pr_E
 
-f = TAbs(TLoc(1))
+f = TAbs(TLocInt(1))
 g = TAbs(TGlobAuto("y"))
 reduc(TAppSwitch(S, TProd([f, g, TGlobAuto("x")]))) |> pr
 
 # Remember: At this point (not typechecked) it IS possible to be recursive!
-ycomb = TAbs(TApp([TLoc(1), TLoc(1)]))
+ycomb = TAbs(TApp([TLocInt(1), TLocInt(1)]))
 reduc(TApp([ycomb, ycomb])) |> pr
 
 # EVEN IF, note that we ARE amart enough to not go ahead at inf, which is Good!
@@ -486,31 +486,31 @@ reduc(TApp([ycomb, ycomb])) |> pr
 
 # Sum types 1. : CASE: ( i e ending on a single type C)
 f = TAbs(TGlob("cdef", TGlob("C")))
-g = TAbs(TLoc(1))
+g = TAbs(TLocInt(1))
 
 e = TSumTerm(1, "1", TProd(Array{Term}([TGlob("cpass", TGlob("C"))])))
-case2 = TAbs(TApp([TLoc(1), TBranches(Array{Term}([TLoc(2), TLoc(3)]))]))  # Case 2 meaning a sum of 2 types
+case2 = TAbs(TApp([TLocInt(1), TBranches(Array{Term}([TLocInt(2), TLocInt(3)]))]))  # Case 2 meaning a sum of 2 types
 
 reduc(TApp([TProd([e,f,g]), case2]))
 
 # Sum types 2. : IF: ( i e on 1+1)
 
 Tbool = TSum(Array{Term}([TProd(Array{Term}([])), TProd(Array{Term}([]))]))
-if_ = TAbs(TApp([TAnno(TApp([TLoc(2), TLoc(1)]), Tbool), TBranches(Array{Term}([TApp([TLoc(1), TLoc(3)]), TApp([TLoc(1), TLoc(4)])]))]))
+if_ = TAbs(TApp([TAnno(TApp([TLocInt(2), TLocInt(1)]), Tbool), TBranches(Array{Term}([TApp([TLocInt(1), TLocInt(3)]), TApp([TLocInt(1), TLocInt(4)])]))]))
 # What THIS WOULD REQUIRE is, a POP/PartialApp to say that NO, you are Not interested in ^^ what comes out of Tbool, ONLY as a redirection !!
 # Well, EITHER that, OR the (A+B)xC --> (AxC)+(BxC) function: i THINK you can use that as well, if you look closely !!
 # if_ = TAbs(TApp([
-#     TProd([TLoc(1), TAnno(TApp([TLoc(2), TLoc(1)]), Tbool)]),
+#     TProd([TLocInt(1), TAnno(TApp([TLocInt(2), TLocInt(1)]), Tbool)]),
 #     magic_distr_func,
 #     magic_remove_dumb_1x_func,
-#     TBranches([TLoc(3), TLoc(4)])
+#     TBranches([TLocInt(3), TLocInt(4)])
 # ]))
 # infer_type_rec(if_).res_type |> pr
 
 
 TGlob("x", TGlob("A"))
-TAnno(TLoc(1), TFunAuto(TGlob("A"), TGlob("B")))
-TAnno(TLoc(2), TAbs(TLoc(1)))
+TAnno(TLocInt(1), TFunAuto(TGlob("A"), TGlob("B")))
+TAnno(TLocInt(2), TAbs(TLocInt(1)))
 
 SType1 = TFunAuto(TGlob("X"), TGlob("A"))
 SType2 = TFunAuto(TGlob("X"), TFunAuto(TGlob("A"), TGlob("B")))
@@ -521,9 +521,9 @@ TGlob("S", TFunAuto(TGlob("A"), TGlob("B"))) |> pr
 TFunAuto(TGlob("A"), TGlob("B")) |> pr
 
 # Now polymorphicly:
-SType1P = TFunAuto(TLoc(3), TLoc(2))
-SType2P = TFunAuto(TLoc(3), TFunAuto(TLoc(2), TLoc(1)))
-STypeP = TAbs(TTerm(TProd([SType2P, SType1P, TLoc(3)]), TLoc(1)))
+SType1P = TFunAuto(TLocInt(3), TLocInt(2))
+SType2P = TFunAuto(TLocInt(3), TFunAuto(TLocInt(2), TLocInt(1)))
+STypeP = TAbs(TTerm(TProd([SType2P, SType1P, TLocInt(3)]), TLocInt(1)))
 STypeP |> pr
 
 
@@ -531,8 +531,8 @@ STypeP |> pr
 # Concat:
 
 f1 = TAbs(TProd(Array{Term}([TLocStr("a"), TGlobAuto("b")])))
-f2 = TAbs(TProd(Array{Term}([TLoc(2), TLoc(1)])))
-f3 = TAbs(TProd(Array{Term}([TLoc(2), TGlobAuto("c"), TLoc(1), ])))
+f2 = TAbs(TProd(Array{Term}([TLocInt(2), TLocInt(1)])))
+f3 = TAbs(TProd(Array{Term}([TLocInt(2), TGlobAuto("c"), TLocInt(1), ])))
 reduc(TConc([f1, f2, f3])) |> pr
 reduc(TConc([TConc([f1, f2]), f3])) |> pr
 reduc(TConc([f1, TConc([f2, f3])])) |> pr

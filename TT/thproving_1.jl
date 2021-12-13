@@ -20,10 +20,10 @@ pr_ty_red(e) = (r = e |> infer_type_rec; (r isa Error ? r : r |> (x->x.res_type)
 
 
 e1T = TSumTerm("e1", TProd([]))
-ivT = TAbs(TSumTerm("iv", TProd([TLoc(1)])))
-opT = TAbs(TSumTerm("op", TProd([TLoc(1), TLoc(2)])))
+ivT = TAbs(TSumTerm("iv", TProd([TLocInt(1)])))
+opT = TAbs(TSumTerm("op", TProd([TLocInt(1), TLocInt(2)])))
 # ^ Important note: What i'm doing here, is SHAMELESSLY EXPLOITING the fact that Term is ALREADY recursive (So very much not consistent, im sure?)
-eqT = TAbs(TSumTerm("EQ", TProd([TLoc(1), TLoc(2)]))) # This is WRONG, cuz you can say e.g. eq(eq(_,_), eq(_,_)), but this can WAIT.
+eqT = TAbs(TSumTerm("EQ", TProd([TLocInt(1), TLocInt(2)]))) # This is WRONG, cuz you can say e.g. eq(eq(_,_), eq(_,_)), but this can WAIT.
 e1() = e1T
 iv(e::Term) = TApp([TProd([e]), ivT])
 op(e1::Term, e2::Term) = TApp([TProd([e1, e2]), opT])
@@ -38,13 +38,13 @@ eqE(e1::Expr, e2::Expr) = TAnno(TProd([e1, e2]), eqT)
 
 # TESTS/ examples:
 ee = op(iv(e1()), e1())
-TAbs(op(TLoc(2), TLoc(3))) |> reduc
+TAbs(op(TLocInt(2), TLocInt(3))) |> reduc
 TAnno(TProd([e1E()]), iv(e1())) |> pr_ty
 ivE(e1E()) |> pr_ty
 opE(ivE(e1E()), e1E()) |> pr_ty
 opE(ivE(e1E()), e1E()) |> pr # I mean, it sucks but it's Not wrong...
 TAnno(opE(ivE(e1E()), e1E()),  op(iv(e1()), e1())) |> pr_ty
-fp = TAbs(TLoc(2)) # This is supposed to be SECOND PROJECTION
+fp = TAbs(TLocInt(2)) # This is supposed to be SECOND PROJECTION
 TApp([opE(TGlobAuto("a"), TGlobAuto("b")), fp]) |> reduc |> pr
 TApp([opE(TGlobAuto("a"), TGlobAuto("b")), fp]) |> pr_ty
 
@@ -60,22 +60,22 @@ invsx |> pr
 invsx |> pr_ty
 invsx |> pr_ty_red
 
-nuldx = TAnno(TAbs(TLoc(1)), TAbs(TTerm(op(TLoc(1), e1()), TLoc(1))))
-nulsx = TAnno(TAbs(TLoc(2)), TAbs(TTerm(op(e1(), TLoc(1)), TLoc(1))))
+nuldx = TAnno(TAbs(TLocInt(1)), TAbs(TTerm(op(TLocInt(1), e1()), TLocInt(1))))
+nulsx = TAnno(TAbs(TLocInt(2)), TAbs(TTerm(op(e1(), TLocInt(1)), TLocInt(1))))
 nuldx |> pr_ty
 nulsx |> pr_ty
 
 # op(op(a,b),c) --> op(a,op(b,c))
-proj1_1, proj2_1 = TApp([TLoc(1), TAbs(TLoc(1))]), TApp([TLoc(1), TAbs(TLoc(2))])
+proj1_1, proj2_1 = TApp([TLocInt(1), TAbs(TLocInt(1))]), TApp([TLocInt(1), TAbs(TLocInt(2))])
 assdx = TAnno(
-    TAbs(opE(proj1_1, opE(proj2_1, TLoc(2)))),
-    TAbs(TTerm(op(op(TLoc(1), TLoc(2)), TLoc(3)), op(TLoc(1), op(TLoc(2), TLoc(3))))))
+    TAbs(opE(proj1_1, opE(proj2_1, TLocInt(2)))),
+    TAbs(TTerm(op(op(TLocInt(1), TLocInt(2)), TLocInt(3)), op(TLocInt(1), op(TLocInt(2), TLocInt(3))))))
 
 e = infer_type_rec(assdx)
 # What's the problem here?
 # > Imean does this ever even happen?
 # > "ELocs typed [\"[T1]\", \"T2\"] cannot be unified with ELocs typed [\"[T1 x T2]\", \"T3\"], with error 'Different lengths: 1 < 2, so you cannot even drop.'"
-# ^ This is because: The SECOND is the correct INFERRED type of the ARGUMENT INTO opE(proj2_1, TLoc(2)),
+# ^ This is because: The SECOND is the correct INFERRED type of the ARGUMENT INTO opE(proj2_1, TLocInt(2)),
 # ^ while the first thing, is: the CORRECT INFERRED type of the ARGUMENT INTO proj1_1, THAT WOULD BE [\"[T1]\"] (YES)- Augmented to [\"[T1]\", \"T2\"] by the Prod augmentation procedure.
 # ^ Ok but this is DUMB, because: it's really NOT ABOUT AUGMENTING, it's about BEING CONTRAVARIANT ALL THE WAY DOWN!!
 
@@ -92,11 +92,11 @@ e = infer_type_rec(assdx)
 
 ############
 
-e = TApp([TLoc(1), TAbs(TLoc(1))])
+e = TApp([TLocInt(1), TAbs(TLocInt(1))])
 infer_type_rec(e)
-# |> (x->x.arg_types) == [TLoc(1)] # And NOTT [TProd([TLoc(1)])], plz ????
-# infer_type_rec(TLoc(1))
-# infer_type_rec(TAbs(TLoc(1)))
+# |> (x->x.arg_types) == [TLocInt(1)] # And NOTT [TProd([TLocInt(1)])], plz ????
+# infer_type_rec(TLocInt(1))
+# infer_type_rec(TAbs(TLocInt(1)))
 
 
 

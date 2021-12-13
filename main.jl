@@ -242,13 +242,13 @@ function make_s10()
     SyntaxStructs["typearrow_par"] = auto_SyntStruct(AUSS(["(", SyntaxField("typearrow_inpar", TypeUniverse()), ")"]))
     SyntaxChoicess["typearrow"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["typearrow_par"], SyntaxStrips["typearrow_strip"]]))
 
-    SyntaxStructs["funcApp_S"] = auto_SyntStruct(AUSS([SyntaxField("func", TTerm(TLoc(1), TLoc(2))), "(", SyntaxField("arg", TLoc(1)), ")"]))
+    SyntaxStructs["funcApp_S"] = auto_SyntStruct(AUSS([SyntaxField("func", TTerm(TLocInt(1), TLocInt(2))), "(", SyntaxField("arg", TLocInt(1)), ")"]))
     SyntaxStructs["BaseTypeDef_S"] = auto_SyntStruct(AUSS([SyntaxField("tname", TS()), ":", "Type"]))
-    SyntaxStructs["termanno_S"] = auto_SyntStruct(AUSS([SyntaxField("anno_obj", TLoc(1)), ":", SyntaxField("anno_type", TypeUniverse())]))
-    SyntaxStructs["funcDefAndDecl_S"] = auto_SyntStruct(AUSS([SyntaxField("name", TS()), ":", SyntaxField("type", TypeUniverse()), "where", SyntaxField("name2", TS()), "(", SyntaxField("parameter", TS()), ")", "=", SyntaxField("body", TLoc(1))]))
-    SyntaxFields["evalSentence_term"] = SyntaxField("term_toeval", TLoc(1))
+    SyntaxStructs["termanno_S"] = auto_SyntStruct(AUSS([SyntaxField("anno_obj", TLocInt(1)), ":", SyntaxField("anno_type", TypeUniverse())]))
+    SyntaxStructs["funcDefAndDecl_S"] = auto_SyntStruct(AUSS([SyntaxField("name", TS()), ":", SyntaxField("type", TypeUniverse()), "where", SyntaxField("name2", TS()), "(", SyntaxField("parameter", TS()), ")", "=", SyntaxField("body", TLocInt(1))]))
+    SyntaxFields["evalSentence_term"] = SyntaxField("term_toeval", TLocInt(1))
     SyntaxStructs["evalSentence_S"] = auto_SyntStruct(AUSS(["eval", SyntaxFields["evalSentence_term"]]))
-    SyntaxStructs["program_S"] = auto_SyntStruct(AUSS([SyntaxField("program_funcdef", TLoc(1)), ";", SyntaxField("program_eval", TLoc(1))]))
+    SyntaxStructs["program_S"] = auto_SyntStruct(AUSS([SyntaxField("program_funcdef", TLocInt(1)), ";", SyntaxField("program_eval", TLocInt(1))]))
 
     s10p = s10.posteriorsStructure
     for (name, s) in SyntaxTerms  addSyntax!(s10p, name, s) end
