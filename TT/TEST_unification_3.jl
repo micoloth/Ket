@@ -85,7 +85,7 @@ end
 eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> all
 
 
-# @testset "unification_2" begin  # COMMENT TESTS
+@testset "unification_2" begin  # COMMENT TESTS
 
 
 t1 = TAppAuto(TGlob("G0"), TLocInt(1))
@@ -706,7 +706,7 @@ e|> pr_E
 infer_type_rec(e)|>pr # GREAT
 
 
-# end # COMMENT TESTS
+end # COMMENT TESTS
 
 
 

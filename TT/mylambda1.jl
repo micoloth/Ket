@@ -4,6 +4,7 @@ Id = String
 Error = String
 
 abstract type Term end
+abstract type TLoc <: Term end
 
 struct TermwError <: Term
     term::Term
@@ -21,11 +22,11 @@ struct TGlob <: Term
     var::Id
     type::Term # If this is a Type, write TypeUniverse
 end
-struct TLocInt <: Term
+struct TLocInt <: TLoc
     var::Index
 end
-struct TLocStr <: Term
-    var_tag::Id # REPETITION of the var name in the func declaration
+struct TLocStr <: TLoc
+    var::Id # REPETITION of the var name in the func declaration
 end
 struct TAbs <: Term
     body::Term # idea: this CAN contain (type level) local variables
@@ -92,7 +93,7 @@ end
 
 Base.:(==)(a::TGlob, b::TGlob) = Base.:(==)(a.var, b.var)
 Base.:(==)(a::TLocInt, b::TLocInt) = (a.var == b.var) # && (a.var == b.var)
-Base.:(==)(a::TLocStr, b::TLocStr) = (a.var_tag == b.var_tag) # && (a.var == b.var)
+Base.:(==)(a::TLocStr, b::TLocStr) = (a.var == b.var) # && (a.var == b.var)
 Base.:(==)(a::TAbs, b::TAbs) = Base.:(==)(a.body, b.body) && all(a.var_tags .== b.var_tags)
 Base.:(==)(a::TApp, b::TApp) = all(a.ops_dot_ordered .== b.ops_dot_ordered)
 Base.:(==)(a::TConc, b::TConc) = all(a.ops_dot_ordered .== b.ops_dot_ordered)
@@ -165,7 +166,7 @@ subst(news::TProd, t::TSumTerm)::Term = TSumTerm(t.tag, t.tag_name, subst(news, 
 subst(news::TProd, t::TAnno)::Term = TAnno(subst(news, t.expr), t.type)
 subst(news::TProd, t::TBranches)::Term = TBranches(t.ops_chances .|> x->subst(news, x), t.tags) # Just like TApp, This should have No effect being all TAbs's, but just in case.
 subst(news::TProd, t::TLocInt)::Term = if t.var <= length(news.data) news.data[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news.data))" )) end
-subst(news::TProd, t::TLocStr)::Term = if (t.var_tag in keys(news.data_tags)) news.data_tags[t.var_tag] else throw(DomainError("Undefined local var named $(t.var_tag), n args given = $(news.data_tags)" )) end
+subst(news::TProd, t::TLocStr)::Term = if (t.var in keys(news.data_tags)) news.data_tags[t.var] else throw(DomainError("Undefined local var named $(t.var), n args given = $(news.data_tags)" )) end
 subst(news::TProd, t::TermwError)::Term = TermwError(subst(news, t.term), t.error)
 # subst(news::Array{Term}, t::TLocInt)::Term = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
 
@@ -222,7 +223,7 @@ reduc(t::TermwError)::Term = TermwError(reduc(t.term), t.error)
 
 pr_T(x::TGlob)::String = "$(x.var)"
 pr_T(x::TLocInt)::String = "T$(x.var)"
-pr_T(x::TLocStr)::String = "T$(x.var_tag)"
+pr_T(x::TLocStr)::String = "T$(x.var)"
 pr_T(x::TTop)::String = "⊥"
 pr_T(x::TypeUniverse)::String = "⊥"
 pr_T(x::TN)::String = "ℕ"
@@ -291,7 +292,7 @@ pr_T(x::TermwError)::String = pr_T(x.term) * " w/ error: " * x.error
 
 pr_E(x::TGlob)::String = "$(x.var)"
 pr_E(x::TLocInt)::String = "$(x.var)"
-pr_E(x::TLocStr)::String = "$(x.var_tag)"
+pr_E(x::TLocStr)::String = "$(x.var)"
 pr_E(x::TTop)::String = "T"
 pr_E(x::TN)::String = "ℕ"
 pr_E(x::TS)::String = "𝕊"
@@ -350,7 +351,7 @@ pr_ctx(i::TermwError) = "ERROR $(t.error) Given $(i.term.t_in |>pr), get $(i.ter
 # NOT used by the above:
 usedLocsSet(t::TGlob)::Set{String}= Set{String}([])
 usedLocsSet(t::TLocInt)::Set{String} = Set{String}([])
-usedLocsSet(t::TLocStr)::Set{String} = Set{String}([t.var_tag])
+usedLocsSet(t::TLocStr)::Set{String} = Set{String}([t.var])
 usedLocsSet(t::TTop)::Set{String} = Set{String}([])
 usedLocsSet(t::TypeUniverse)::Set{String} = Set{String}([])
 usedLocsSet(t::TN)::Set{String} = Set{String}([])

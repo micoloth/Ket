@@ -40,7 +40,7 @@ struct ReverseConstraint <: Constraint# (Meaning <-)
     t2::Term
 end
 struct EqConstraint <: Constraint # Should be equal.
-    t1::TLocInt
+    t1::TLoc
     t2::Term
 end
 struct ErrorConstraint <: Constraint
@@ -167,38 +167,40 @@ function meetjoin_rec_unify_(t1::TSumTerm, t2::TSumTerm, do_meet)::MeetJoin_rec_
         return MeetJoin_rec_res(TSumTerm(t1.tag, t1.tag_name, res.res_type), res.cs)
     end
 end
-function meetjoin_rec_unify_(t1::Term, t2::TSumTerm, do_meet)::MeetJoin_rec_res
+function meetjoin_rec_unify_(t1::TLoc, t2::TSumTerm, do_meet)::MeetJoin_rec_res
     # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
-    if (t1 isa TLocInt)
-        MeetJoin_rec_res(t1, Array{Constraint}([EqConstraint(t1, t2)]))
-    else
-        res = meetjoin_rec_unify_(t1, t2.data, do_meet) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
-        MeetJoin_rec_res(TSumTerm(t2.tag, t1.tag_name, res.res_type), res.cs)
-    end
+    MeetJoin_rec_res(t1, Array{Constraint}([EqConstraint(t1, t2)]))
+end
+function meetjoin_rec_unify_(t1::Term, t2::TSumTerm, do_meet)::MeetJoin_rec_res
+    res = meetjoin_rec_unify_(t1, t2.data, do_meet) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
+    MeetJoin_rec_res(TSumTerm(t2.tag, t1.tag_name, res.res_type), res.cs)
+end
+function meetjoin_rec_unify_(t1::TSumTerm, t2::TLoc, do_meet)::MeetJoin_rec_res
+    # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
+    MeetJoin_rec_res(t2, Array{Constraint}([EqConstraint(t2, t1)]))
 end
 function meetjoin_rec_unify_(t1::TSumTerm, t2::Term, do_meet)::MeetJoin_rec_res
-    # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
-    if (t2 isa TLocInt)
-        MeetJoin_rec_res(t2, Array{Constraint}([EqConstraint(t2, t1)]))
-    else
-        res = meetjoin_rec_unify_(t1.data, t2, do_meet) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
-        MeetJoin_rec_res(TSumTerm(t1.tag, t1.tag_name, res.res_type), res.cs)
-    end
+    res = meetjoin_rec_unify_(t1.data, t2, do_meet) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
+    MeetJoin_rec_res(TSumTerm(t1.tag, t1.tag_name, res.res_type), res.cs)
 end
 
-function meetjoin_rec_unify_(t1::TLocInt, t2::TLocInt, do_meet)::MeetJoin_rec_res
+function meetjoin_rec_unify_(t1::TLoc, t2::TLoc, do_meet)::MeetJoin_rec_res
     if t1.var == t2.var # t1.var == t2.var
         MeetJoin_rec_res(t2, Array{Constraint}([]))
+    elseif t1 isa TLocStr && t2 isa TLocStr
+        MeetJoin_rec_res(t2, Array{Constraint}([ErrorConstraint(EqConstraint(t1, t2), err_msg_tags(t1, t2))]))# Uhhh How about return an error ??? ???
+        # ^ For some reason, i DONT want to substitute away var tags for now ...
+    elseif t1 isa TLocStr  # prefer substituting away numbers wrt strings
+        MeetJoin_rec_res(t1, Array{Constraint}([EqConstraint(t2, t1)]))
     else
         MeetJoin_rec_res(t2, Array{Constraint}([EqConstraint(t1, t2)]))
     end
 end
-function meetjoin_rec_unify_(t1::TLocStr, t2::TLocStr, do_meet)::MeetJoin_rec_res
-    if t1.var_tag == t2.var_tag # t1.var == t2.var
-        MeetJoin_rec_res(t2, Array{Constraint}([]))
-    else
-        MeetJoin_rec_res(t2, Array{Constraint}([ErrorConstraint(EqConstraint(t1, t2), err_msg_tags(t1, t2))]))# Uhhh How about return an error ??? ???
-    end
+function meetjoin_rec_unify_(t1::TLoc, t2::Term, do_meet)::MeetJoin_rec_res
+    MeetJoin_rec_res(t2, Array{Constraint}([EqConstraint(t1, t2)]))
+end
+function meetjoin_rec_unify_(t1::Term, t2::TLoc, do_meet)::MeetJoin_rec_res
+    MeetJoin_rec_res(t1, Array{Constraint}([EqConstraint(t2, t1)]))
 end
 
 function meetjoin_rec_unify_(t1::TInt, t2::TInt, do_meet)::MeetJoin_rec_res
@@ -244,10 +246,6 @@ end
 function meetjoin_rec_unify_(t1::Term, t2::Term, do_meet)::MeetJoin_rec_res # base case
     if t1 == t2
         MeetJoin_rec_res(t1, Array{Constraint}([]))
-    elseif t1 isa TLocInt
-        MeetJoin_rec_res(t2, Array{Constraint}([EqConstraint(t1, t2)]))
-    elseif t2 isa TLocInt
-        MeetJoin_rec_res(t1, Array{Constraint}([EqConstraint(t2, t1)]))
     else
         MeetJoin_rec_res(TermwError(t1, Error(err_msg_terms(t1, t2))), Array{Constraint}[])
     end
@@ -323,8 +321,13 @@ function imply_unify_(t1::Term, t2::TTop)::Imply_res
     Array{Constraint}([])
 end
 
-function imply_unify_(t1::TLocInt, t2::TLocInt)::Imply_res
-    Array{Constraint}([DirectConstraint(t1, t2)])
+function imply_unify_(t1::TLoc, t2::TLoc)::Imply_res
+    if t1 isa TLocStr && t2 isa TLocStr
+        ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_tags(t1, t2)))
+        # ^ For some reason, i DONT want to substitute away var tags for now ...
+    else
+        Array{Constraint}([DirectConstraint(t1, t2)])
+    end
 end
 
 function imply_unify_(t1::TSum, t2::TSum)::Imply_res
@@ -344,7 +347,7 @@ function imply_unify_(t1::TSumTerm, t2::TSumTerm)::Imply_res
 end
 function imply_unify_(t1::Term, t2::TSumTerm)::Imply_res
     # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
-    if (t1 isa TLocInt)
+    if (t1 isa TLoc)
         Array{Constraint}([DirectConstraint(t1, t2)])
     else
         Array{Constraint}([DirectConstraint(t1, t2.data)])
@@ -352,7 +355,7 @@ function imply_unify_(t1::Term, t2::TSumTerm)::Imply_res
 end
 function imply_unify_(t1::TSumTerm, t2::Term)::Imply_res
     # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
-    if (t2 isa TLocInt)
+    if (t2 isa TLoc)
         Array{Constraint}([DirectConstraint(t1, t2)])
     else
         Array{Constraint}([DirectConstraint(t1.data, t2)])
@@ -392,12 +395,15 @@ function imply_unify_(t1::TAppend, t2::TAppend)::Imply_res
     else Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(t1.prods, t2.prods)])
     end
 end
-
+function imply_unify_(t1::TLoc, t2::Term)::Imply_res # base case
+        Array{Constraint}([DirectConstraint(t1, t2)])
+end
+function imply_unify_(t1::Term, t2::TLoc)::Imply_res # base case
+        Array{Constraint}([DirectConstraint(t1, t2)])
+end
 function imply_unify_(t1::Term, t2::Term)::Imply_res # base case
     if t1 == t2
         Array{Constraint}([])
-    elseif typeof(t1) === TLocInt || typeof(t2) === TLocInt
-        Array{Constraint}([DirectConstraint(t1, t2)])
     else
         ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_terms(t1, t2)))
     end
@@ -429,16 +435,16 @@ end
 # It WONT RETURN THEM, either. See above.
 
 # idea: in NO CASE x=f(x) can be solved, (if types_ are REDUCED), because we handle RecursiveTypes Differently!!
-function check_not_recursive_str(tloc::TLocStr, tt::Term)::Bool
+function check_not_recursive(tloc::TLocStr, tt::Term)::Bool
     for v in usedLocsSet(tt)
-        if tloc.var_tag == v
+        if tloc.var == v
             return false
         end
     end
     return true
 end
 
-function check_not_recursive_loc(tloc::TLocInt, tt::Term)::Bool
+function check_not_recursive(tloc::TLocInt, tt::Term)::Bool
     for v in usedLocs(tt)
         if tloc.var == v
             return false
@@ -487,7 +493,7 @@ end  # THIS IS DIFFERENT IN VAR VS VAR_TAG #
 function get_subst_prod_tag(tloc::TLocStr, tt::Term, curr_arity::Arity)::TProd
     # you have ALREADY TESTED that tt does not contain tloc, that's the whole point !!!!
     subst = id_tags(curr_arity.tags)
-    subst[tloc.var_tag] = tt # i'm PRETENDING THAT tt DOES NOT CONTAIN var_tag
+    subst[tloc.var] = tt # i'm PRETENDING THAT tt DOES NOT CONTAIN var
     TProd(id_data(curr_arity.data), subst)
 end  # THIS IS DIFFERENT IN VAR VS VAR_TAG #
 
@@ -519,7 +525,7 @@ function get_first_pair_of_matching_indices(v::Array) #  This changed !!!
 end
 function get_loc_loc_constraint(v)
     for i = 1:length(v)
-        if !(v[i] isa ErrorConstraint) && (v[i].t1 isa TLocInt && v[i].t2 isa TLocInt)
+        if !(v[i] isa ErrorConstraint) && (v[i].t1 isa TLoc && v[i].t2 isa TLoc)
             return i
         end
     end
@@ -530,8 +536,12 @@ end
 Succeded_unif_res = Tuple{TProd,TProd,Term}
 Failed_unif_res = Tuple{TProd,TProd,Term,Array{ErrorConstraint}}
 
-function do_the_subst_thing!(var_obj, tt, current_arity, current_total_subst, STACK, ERRORSTACK; data::Bool = true)
-    new_subst = data ? get_subst_prod_data(var_obj, tt, current_arity) : get_subst_prod_tag(var_obj, tt, current_arity)
+function do_the_subst_thing!(var_obj::TLoc, tt, current_arity, current_total_subst, STACK, ERRORSTACK)
+    if !check_not_recursive(var_obj, tt)
+        push!(ERRORSTACK, ErrorConstraint(EqConstraint(var_obj, tt), Error("$(var_obj) == $(tt) is not a thing (recursive)")))
+        return current_arity, current_total_subst
+    end
+    new_subst = (var_obj isa TLocInt) ? get_subst_prod_data(var_obj, tt, current_arity) : get_subst_prod_tag(var_obj, tt, current_arity)
     current_total_subst = Array{TProd}(ass_smart_reduc(current_total_subst..., new_subst))
     current_arity = Arity(arity(current_total_subst[end]), usedLocsSet(current_total_subst[end])) # The beauty of this is this is Enough... I HOPE LOL
     for i = 1:length(STACK)
@@ -583,13 +593,13 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
 
     # 3.1 Remove all loc-loc constraint first
     while (i = get_loc_loc_constraint(STACK)) !== nothing
-        l1, l2 = STACK[i].t1.var, STACK[i].t2.var
-        # ^ it WILL break if these are not Ints, which is Exactly what i want. There should be no such constraints between strings.
+        l1, l2 = STACK[i].t1, STACK[i].t2
+        if (l1 isa TLocStr) l1, l2 = l2, l1
+        elseif (l1 isa TLocInt && l2 isa TLocInt) l1, l2 = TLocInt(max(l1.var, l2.var)), TLocInt(min(l1.var, l2.var))
+        end  # ^ customly decide who gets substituted
         deleteat!(STACK, i)
-        if l1 == l2
-            continue
-        end # cannot hurt can it?
-        current_arity, current_total_subst = do_the_subst_thing!(TLocInt(max(l1, l2)), TLocInt(min(l1, l2)), current_arity, current_total_subst, STACK, ERRORSTACK; data = true)
+        if l1 == l2 continue end # cannot hurt can it?
+        current_arity, current_total_subst = do_the_subst_thing!(l1, l2, current_arity, current_total_subst, STACK, ERRORSTACK)
     end
 
     # 3.2 This while loop is Important for Meeting, while it can be Skipped for directional case.
@@ -600,11 +610,11 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
             tloc, ct1, ct2 = STACK[ij[1]].t1, STACK[ij[1]].t2, STACK[ij[2]].t2
             deleteat!(STACK, ij[2])
             deleteat!(STACK, ij[1])
-            if !check_not_recursive_loc(tloc, ct1)
+            if !check_not_recursive(tloc, ct1)
                 push!(ERRORSTACK, ErrorConstraint(EqConstraint(tloc, ct1), Error("$(tloc) == $(ct1) is not a thing (recursive)")))
                 continue
             end
-            if !check_not_recursive_loc(tloc, ct2)
+            if !check_not_recursive(tloc, ct2)
                 push!(ERRORSTACK, ErrorConstraint(EqConstraint(tloc, ct2), Error("$(tloc) == $(ct2) is not a thing (recursive)")))
                 continue
             end
@@ -626,7 +636,7 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
     while (length(STACK) > 0)
         c = pop!(STACK)
         ct1, ct2 = c.t1, c.t2
-        if !(ct1 isa TLocInt || ct2 isa TLocInt) && !(ct1 isa TLocStr || ct2 isa TLocStr)
+        if !(ct1 isa TLoc || ct2 isa TLoc)
             @assert mode == imply_
             cs_inside = imply_unify_(reduc(c))
             if cs_inside isa ErrorConstraint
@@ -636,7 +646,7 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
             end
         elseif ct1 isa TLocStr && ct2 isa TLocStr
             # NOTE: it would be NICE if i reworked Imply_ mode so that this DOESNT happen ... println("Does locloc Still happen? Ever ????? (Here, w/ $(ct1) and $(ct2))")
-            if !(ct1.var_tag == ct2.var_tag) # cannot hurt can it?
+            if !(ct1.var == ct2.var) # cannot hurt can it?
                 # throw(DomainError("This never happens.. Right.. Right?? $(ct1) required to be $(ct2)"))
                 push!(ERRORSTACK, ErrorConstraint(c, "You are asking to unify these names, which is not a thing"))
             end
@@ -644,32 +654,12 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
         elseif ct1 isa TLocInt && ct2 isa TLocInt
             # NOTE: it would be NICE if i reworked Imply_ mode so that this DOESNT happen ... println("Does locloc Still happen? Ever ????? (Here, w/ $(ct1) and $(ct2))")
             if !(ct1.var == ct2.var)
-                current_arity, current_total_subst = do_the_subst_thing!(ct1, ct2, current_arity, current_total_subst, STACK, ERRORSTACK; data = true)
+                current_arity, current_total_subst = do_the_subst_thing!(ct1, ct2, current_arity, current_total_subst, STACK, ERRORSTACK)
             end
-        elseif ct1 isa TLocStr && !(ct2 isa TLocInt)
-            if !check_not_recursive_str(ct1, ct2)
-                push!(ERRORSTACK, ErrorConstraint(EqConstraint(ct1, ct2), Error("$(ct1) == $(ct2) is not a thing (recursive)")))
-            else
-                current_arity, current_total_subst = do_the_subst_thing!(ct1, ct2, current_arity, current_total_subst, STACK, ERRORSTACK; data = false)
-            end
-        elseif ct2 isa TLocStr && !(ct1 isa TLocInt)
-            if !check_not_recursive_str(ct2, ct1)
-                push!(ERRORSTACK, ErrorConstraint(EqConstraint(ct2, ct1), Error("$(ct2) == $(ct1) is not a thing (recursive)")))
-            else
-                current_arity, current_total_subst = do_the_subst_thing!(ct2, ct1, current_arity, current_total_subst, STACK, ERRORSTACK; data = false)
-            end
-        elseif ct1 isa TLocInt
-            if !check_not_recursive_loc(ct1, ct2)
-                push!(ERRORSTACK, ErrorConstraint(EqConstraint(ct1, ct2), Error("$(ct1) == $(ct2) is not a thing (recursive)")))
-            else
-                current_arity, current_total_subst = do_the_subst_thing!(ct1, ct2, current_arity, current_total_subst, STACK, ERRORSTACK; data = true)
-            end
-        elseif ct2 isa TLocInt
-            if !check_not_recursive_loc(ct2, ct1)
-                push!(ERRORSTACK, ErrorConstraint(EqConstraint(ct2, ct1), Error("$(ct2) == $(ct1) is not a thing (recursive)")))
-            else
-                current_arity, current_total_subst = do_the_subst_thing!(ct2, ct1, current_arity, current_total_subst, STACK, ERRORSTACK; data = true)
-            end
+        elseif (ct1 isa TLoc && !(ct2 isa TLoc)) || ct1 isa TLocInt
+            current_arity, current_total_subst = do_the_subst_thing!(ct1, ct2, current_arity, current_total_subst, STACK, ERRORSTACK)
+        elseif (ct2 isa TLoc && !(ct1 isa TLoc)) || ct2 isa TLocInt
+            current_arity, current_total_subst = do_the_subst_thing!(ct2, ct1, current_arity, current_total_subst, STACK, ERRORSTACK)
         end
     end
 
@@ -736,7 +726,7 @@ function infer_type_(term::TLocInt)::InferResTerm
     TTerm(TProd(Array{Term}([TLocInt(i) for i in 1:term.var])), TLocInt(term.var))
 end #  (but also kinda this is right)
 function infer_type_(term::TLocStr)::InferResTerm
-    return TTerm(TProd(Dict{Id,Term}(term.var_tag => TLocInt(1))), TLocInt(1))  # TAbs(TLocInt(term.var)) was an idea i tried
+    return TTerm(TProd(Dict{Id,Term}(term.var => TLocInt(1))), TLocInt(1))  # TAbs(TLocInt(term.var)) was an idea i tried
 end #  (but also kinda this is right)
 function infer_type_(term::TGlob)::InferResTerm
     if term.type isa TAbs

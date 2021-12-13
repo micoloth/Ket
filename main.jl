@@ -273,12 +273,12 @@ function make_s10()
 end
 
 
-request = getInferredTerm(SyntaxInstReference(getType(SyntaxField("first", TypeUniverse())),"A", 0.5))
-request.expr |> pr
-request.type |> pr
-got = rp.structure.finisheds.matrix[1][13] |> x->filter(y->y.s isa SyntaxInstObject, x) |> x->x[1].s.inferred_obj
-got.expr |> pr
-got.type |> pr
+# request = getInferredTerm(SyntaxInstReference(getType(SyntaxField("first", TypeUniverse())),"A", 0.5))
+# request.expr |> pr
+# request.type |> pr
+# got = rp.structure.finisheds.matrix[1][13] |> x->filter(y->y.s isa SyntaxInstObject, x) |> x->x[1].s.inferred_obj
+# got.expr |> pr
+# got.type |> pr
 
 
 robinsonUnify(got.type.t_out, request.type.t_out; mode=imply_)
