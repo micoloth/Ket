@@ -138,57 +138,49 @@ si = SyntaxInstField(s, si, 1)
 
 
 
-########## Parsing 3: Parse "A->B"
+########## Parsing 3: Parse some stuff
 
-# function typearrow_builder(d::Dict{String, TAnno})::TAnno
-#     build_anno_term_TTerm(d["first"], d["second"]; make_auto=true)
-# end
-function typearrow_builder_strip(d::Array{TAnno})::TAnno
-    foldr(build_anno_term_TTerm, d)
+# buildTypeThatHasSyntInst(s::SyntaxInstStrip, builder_func) = builder_func(collect_strip(s)) # builder_func is REQUIRED to be a (Dict{str, TAnno}) -> TAnno
+# buildTypeThatHasSyntInst(s::SyntaxInstStruct, builder_func) = builder_func(collect_fields(s)) # builder_func is REQUIRED to be a (Array{TAnno}) -> TAnno
+# buildTypeThatHasSyntInst(s::SyntaxInstChoice, builder_func::Array) = buildTypeThatHasSyntInst(s.choice, builder_func[s.flag+1]) # builder_func is REQUIRED to be a Array{(Dict{str, TAnno}) -> TAnno}
+
+
+function builder_typearrow(s::SyntaxInstChoice)
+    # SyntaxChoicess["typearrow"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["typearrowPar"], SyntaxStrips["typearrowStrip"]]))
+    if s.flag == 0 collect_fields(s)["typearrowPar_inpar"]
+    else foldr(build_anno_term_TTerm, collect_strip(s))
 end
-function typearrow_builder_inpar(d::Dict{String, TAnno})::TAnno
-    d["typearrow_inpar"] # It should ALREADY be a TAnno... ^
+
+function builder_funcApp(s::SyntaxInstStruct)::TAnno
+    # SyntaxStructs["funcApp"] = auto_SyntStruct(AUSS([SyntaxField("funcApp_func", TTerm(TLocInt(1), TLocInt(2))), "(", SyntaxField("funcApp_arg", TLocInt(1)), ")"]))
+    fields = collect_fields(s)
+    build_anno_term_TApp([fields["funcApp_arg"], fields["funcApp_func"]])
 end
-function funcapp_builder(d::Dict{String, TAnno})::TAnno
-    build_anno_term_TApp([d["arg"], d["func"]])
+function builder_termannotated(s::SyntaxInstStruct)::TAnno
+    # SyntaxStructs["termannotated"] = auto_SyntStruct(AUSS([SyntaxField("termannotated_anno_obj", TLocInt(1)), ":", SyntaxField("termannotated_anno_type", TypeUniverse())]))
+    fields = collect_fields(s)
+    build_anno_term_TAnno(fields["termannotated_anno_obj"], fields["termannotated_anno_type"])
 end
-function tannotation_builder(d::Dict{String, TAnno})::TAnno
-    build_anno_term_TAnno(d["anno_obj"], d["anno_type"])
-end
-function typedef_builder(d::Dict{String, TAnno})::TAnno # For the :Type" syntax
-    if d["typename"].type.t_out !==TypeUniverse()
-        throw(DomainError("Whats going on here ???????? with term $(d["typename"]|>pr) written to be : \"Type\", but it didnt come out as a TypeUniverse at all, tho ..."))
+function builder_typedef(s::SyntaxInstStruct)::TAnno # For the :Type" syntax
+    # SyntaxStructs["typedef"] = auto_SyntStruct(AUSS([SyntaxField("typedef_tname", TypeUniverse()), ":", "Type"]))
+    fields = collect_fields(s)
+    if fields["typedef_tname"].type.t_out !==TypeUniverse()
+        throw(DomainError("Whats going on here ???????? with term $(fields["typedef_tname"]|>pr) written to be : \"Type\", but it didnt come out as a TypeUniverse at all, tho ..."))
     end
-    d["typename"] # It should ALREADY be a TAnno... ^
+    fields["typedef_tname"] # It should ALREADY be a TAnno... ^
 end
-function funcdecl_builder(d::Dict{String, TAnno})::TAnno
-    types = Array{TTerm}([d["name"].type, d["type"].type, d["name2"].type, d["parameter"].type, d["body"].type])
-    if types[1].t_out !== TS()# Wait.... Havent you ALREADY checked this tho ??????????
-        throw(DomainError("Whats going on here ???????? with function name $(d["name"]|>pr) which is def not a String ...")) end
-    if (d["parameter"].expr isa TStr) # Wait.. WHat's the difference ????? ^
-        throw(DomainError("Why is param not a TStr ??? > $(d["parameter"]|>pr)")) end
-    if types[2].t_out !== TypeUniverse()# Wait.... Havent you ALREADY checked this tho ??????????
-        throw(DomainError("Whats going on here ???????? with function type $(d["name"]|>pr) which is def not a TypeUniverse ...")) end
-    # if !(d["type"].expr isa TTerm) # Should be Can be a  # Wait.... Havent you ALREADY checked this tho ??????????
-    #     throw(DomainError("Whats going on here ???????? with function type $(d["type"]|>pr) which is def not a TTerm ...")) end
-    # if d["type"].expr.t_in.data |> length !=0
-    #     throw(DomainError("I dont even know how, but you inferred a TTerm w/ unnamed vars: $(d["type"].expr.t_in|>pr)")) end
-    # if !(d["parameter"].expr.s in keys(d["type"].expr.t_in.data_tags))
-    #     throw(DomainError("The function param should be in the func arg type names: $(d["parameter"]|>pr) not in $(d["type"].expr.t_in|>pr)")) end
-    if d["name"].expr != d["name2"].expr
-        throw(DomainError("The What are you even writing? These don't match... $(d["name"]|>pr) != $(d["name2"]|>pr)")) end
-    build_anno_term_TAnno(build_anno_term_TAbs(d["body"]), d["type"])
+function builder_product(s::SyntaxInstStrip)::TAnno
+    # SyntaxStrips["product"] = auto_SyntStrip(SyntaxTerm("["), SyntaxField("product_fieldS", TLocInt(1)), SyntaxTerm(","), SyntaxTerm("]"))
+    build_anno_term_TProd(collect_strip_tannos(s))
+end
+function builder_productDefFields(s::SyntaxInstStrip)::TAnno
+    # SyntaxStrips["productDefFields"] = auto_SyntStrip(SyntaxTerm("["), SyntaxField("productDefFields_fieldS", TLocInt(1)), SyntaxTerm(","), SyntaxTerm("]"))
+    dict = Dict{Str, TAnno}(collect_simpleStrings(sstruct)["namedfield_fieldname"] => collect_fields(sstruct)["namedfield_type"] for sstruct in getObjects(s))
+    # ^ for EACH VALUE, val.type.t_out should be GUARANTEED to be a TypeUniverse !! (while val.term is the TLocStr)
+    build_anno_term_TProd(collect_strip_tannos(s))
 end
 
-function evalterm_builder(d::Dict{String, TAnno})::TAnno
-    res = TSumTerm(1, "to_eval", d["evalSentence_term"].expr)
-    return TAnno(res, infer_type_(res, d["evalSentence_term"].type))
-end
 
-function fullprog_builder(d::Dict{String, TAnno})::TAnno
-    res = TProd([d["program_funcdef"].expr, d["program_eval"].expr])
-    return TAnno(res, infer_type_(res, d["program_funcdef"].type, d["program_eval"].type))
-end
 
 # function references_handler(d::Array{Dict})
 
@@ -206,11 +198,9 @@ function make_s10()
     TypeFuncs = Dict{String, Term}()
     TypeSums = Dict{String, TSum}()
     TypeProds = Dict{String, TProd}()
-    bindings = Dict{Term, SyntaxCore}()
+    bindings = Dict{String, Any}()  # Any is an ARRAY OF FUNCTIONS
 
-    for i in ["{", "-",">",":","=","(",")",";","where","Type","eval","}"] SyntaxTerms[i] =SyntaxTerm(i) end
-    SyntaxStructs["arrow"] = SyntaxStruct(Array{SyntaxCore}([SyntaxTerms["-"], SyntaxTerms[">"]]))
-    # SyntaxChoicess["arrow_S"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["arrow"]]))
+    for i in ["{", "-",">",":","=","(",")",";","where","Type","eval","}", "x", "+"] SyntaxTerms[i] =SyntaxTerm(i) end
 
     function auto_SyntStruct(ss::Array{Union{String, SyntaxCore}})
         for (i, s) in enumerate(ss)
@@ -238,17 +228,30 @@ function make_s10()
     AUSS = Array{Union{String, SyntaxCore}}
 
     # SyntaxStructs["typearrow_nopar"] = auto_SyntStruct(AUSS[SyntaxField("first", TypeUniverse()), SyntaxStructs["arrow"], SyntaxField("second", TypeUniverse())])
-    SyntaxStrips["typearrow_strip"] = auto_SyntStrip(nothing, SyntaxField("typearrow_first", TypeUniverse()), SyntaxStructs["arrow"], nothing)
-    SyntaxStructs["typearrow_par"] = auto_SyntStruct(AUSS(["(", SyntaxField("typearrow_inpar", TypeUniverse()), ")"]))
-    SyntaxChoicess["typearrow"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["typearrow_par"], SyntaxStrips["typearrow_strip"]]))
+    SyntaxStructs["arrow"] = SyntaxStruct(Array{SyntaxCore}([SyntaxTerms["-"], SyntaxTerms[">"]]))
+    SyntaxStrips["typearrowStrip"] = auto_SyntStrip(nothing, SyntaxField("typearrowStrip_first", TypeUniverse()), SyntaxStructs["arrow"], nothing)
+    SyntaxStructs["typearrowPar"] = auto_SyntStruct(AUSS(["(", SyntaxField("typearrowPar_inpar", TypeUniverse()), ")"]))
+    SyntaxChoicess["typearrow"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["typearrowPar"], SyntaxStrips["typearrowStrip"]]))
+    bindings["typearrow"] =[builder_typearrow]
 
-    SyntaxStructs["funcApp_S"] = auto_SyntStruct(AUSS([SyntaxField("func", TTerm(TLocInt(1), TLocInt(2))), "(", SyntaxField("arg", TLocInt(1)), ")"]))
-    SyntaxStructs["BaseTypeDef_S"] = auto_SyntStruct(AUSS([SyntaxField("tname", TS()), ":", "Type"]))
-    SyntaxStructs["termanno_S"] = auto_SyntStruct(AUSS([SyntaxField("anno_obj", TLocInt(1)), ":", SyntaxField("anno_type", TypeUniverse())]))
-    SyntaxStructs["funcDefAndDecl_S"] = auto_SyntStruct(AUSS([SyntaxField("name", TS()), ":", SyntaxField("type", TypeUniverse()), "where", SyntaxField("name2", TS()), "(", SyntaxField("parameter", TS()), ")", "=", SyntaxField("body", TLocInt(1))]))
-    SyntaxFields["evalSentence_term"] = SyntaxField("term_toeval", TLocInt(1))
-    SyntaxStructs["evalSentence_S"] = auto_SyntStruct(AUSS(["eval", SyntaxFields["evalSentence_term"]]))
-    SyntaxStructs["program_S"] = auto_SyntStruct(AUSS([SyntaxField("program_funcdef", TLocInt(1)), ";", SyntaxField("program_eval", TLocInt(1))]))
+    SyntaxStructs["funcApp"] = auto_SyntStruct(AUSS([SyntaxField("funcApp_func", TTerm(TLocInt(1), TLocInt(2))), "(", SyntaxField("funcApp_arg", TLocInt(1)), ")"]))
+    bindings["funcApp"] = [builder_funcApp]
+
+    SyntaxStructs["typedef"] = auto_SyntStruct(AUSS([SyntaxField("typedef_tname", TypeUniverse()), ":", "Type"]))
+    bindings["typedef"] = [builder_typedef]
+
+    SyntaxStructs["termannotated"] = auto_SyntStruct(AUSS([SyntaxField("termannotated_anno_obj", TLocInt(1)), ":", SyntaxField("termannotated_anno_type", TypeUniverse())]))
+    bindings["termannotated"] = [builder_termannotated]
+
+    SyntaxStrips["product"] = auto_SyntStrip(SyntaxTerm("["), SyntaxField("product_fieldS", TLocInt(1)), SyntaxTerm(","), SyntaxTerm("]"))
+    bindings["product"] = [builder_product]
+
+    SyntaxStructs["namedfield"] = auto_SyntStruct(AUSS([SyntaxSimpleString("namedfield_fieldname"), ":", SyntaxField("namedfield_type", TypeUniverse())]))
+    SyntaxStrips["productDefFields"] = auto_SyntStrip(SyntaxTerm("["), SyntaxStructs["namedfield"], SyntaxTerm("x"), SyntaxTerm("]"))
+    bindings["productDefFields"] = [builder_productDefFields]
+
+    SyntaxStrips["funcConc"] = auto_SyntStrip(SyntaxTerm("{"), SyntaxField("field", TLocInt(1)), SyntaxTerm(","), SyntaxTerm("}"))
+
 
     s10p = s10.posteriorsStructure
     for (name, s) in SyntaxTerms  addSyntax!(s10p, name, s) end
@@ -260,14 +263,9 @@ function make_s10()
     initializeChoices(s10p)
     initializePosteriors(s10p)
 
+    for (name, bind) in bindings s10p.bindings[s10p.allSyntaxes[name]] = bind end
+
     # s10p.bindings[s10p.allSyntaxes["typearrow"]] = [typearrow_builder_strip]
-    s10p.bindings[s10p.allSyntaxes["typearrow"]] =[ Array([typearrow_builder_inpar, typearrow_builder_strip])]
-    s10p.bindings[s10p.allSyntaxes["funcApp_S"]] = [funcapp_builder]
-    s10p.bindings[s10p.allSyntaxes["BaseTypeDef_S"]] = [typedef_builder]
-    s10p.bindings[s10p.allSyntaxes["termanno_S"]] = [tannotation_builder]
-    s10p.bindings[s10p.allSyntaxes["funcDefAndDecl_S"]] = [funcdecl_builder]
-    s10p.bindings[s10p.allSyntaxes["evalSentence_S"]] = [evalterm_builder]
-    s10p.bindings[s10p.allSyntaxes["program_S"]] = [fullprog_builder]
 
     addGlobal!(s10p, TGlobAutoCtx("b"))
     s10

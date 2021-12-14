@@ -13,6 +13,15 @@ include("unification_3.jl")
 # infer_type_rec(TAnno(TInt(3), TN())) |> pr_ctx
 
 
+t1=TProd(Array{Term}([TypeUniverse(), TypeUniverse()]))
+t2 = TypeUniverse()
+robinsonUnify(t1, t2; mode=imply_)
+
+e1 = TProd(Array{Term}([TAnno(TLocStr("A"), TypeUniverse()), TAnno(TLocStr("B"), TypeUniverse())]))
+e2 = TAnno(e1, TypeUniverse())
+infer_type_rec(e1) |>pr_ctx
+infer_type_rec(e2) |>pr_ctx
+
 
 # TGlob   TGlob
 # TLocInt   TLocInt

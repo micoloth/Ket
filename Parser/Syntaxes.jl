@@ -7,6 +7,9 @@ abstract type SyntaxProduct <: SyntaxCore end
 struct SyntaxTerm <: SyntaxCore
 	name::String  # //it's ALSO THE STRING ITSELF
 end
+struct SyntaxSimpleString <: SyntaxCore
+	name::String
+end
 
 struct SyntaxField <: SyntaxCore
 	name::String  # //field name
@@ -34,6 +37,7 @@ end
 SyntaxStrip(obj::SyntaxCore, comma::SyntaxCore) = SyntaxStrip(nothing, obj, comma, nothing)
 
 getString(s::SyntaxTerm)::String = s.name
+getString(s::SyntaxSimpleString)::String = "STRING"
 getString(s::SyntaxField)::String = "#F{$(s.name):$(s.type|>pr_T)}"  # //gets FIELD name
 getString(s::SyntaxChoice)::String = "#C(" * join(s.list .|> getString, " or ") * ")"
 getString(s::SyntaxStruct)::String = join(s.list .|> getString, " ")

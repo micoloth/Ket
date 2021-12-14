@@ -46,6 +46,7 @@ mutable struct PosteriorsStructure
 	stripLambdas::Dict{SyntaxStrip, Real} #  //sL[Strip]=Lambda
     bindings::Dict{SyntaxCore, Array{Any}} # Any is a (Dict{String, Union{Term,Error}}) -> Union{TAnno, Error}  lambda !!!
 	allSyntaxes::Dict{String, SyntaxCore}
+    globals::Dict{String, Tuple{TAnno, Real}}
 	epsilon::Real
 end
 
@@ -56,13 +57,20 @@ PosteriorsStructure() = PosteriorsStructure(
     Dict{SyntaxStrip, Real}(), #  //sL[Strip]=Lambda
     Dict{SyntaxCore, Array{Term}}(),
     Dict{String, SyntaxCore}(),
+    Dict{String, Tuple{TAnno, Real}}(),
     0.0
-    )
+)
 
 getSyntax(ps::PosteriorsStructure, s::String)::SyntaxCore = ps.allSyntaxes[s]
 
 function addSyntax!(ps::PosteriorsStructure, s::String, obj::SyntaxCore)
     ps.allSyntaxes[s] =obj
+end
+function addGlobal!(ps::PosteriorsStructure, tglob::TGlob)
+    ps.globals[tglob.var] = (TAnno(tglob, tglob.type), 1) # Yes pretty effin wasteful, but ok
+end
+function addGlobal!(ps::PosteriorsStructure, s::String, tanno::TAnno)
+    ps.globals[s] = (tanno, 1) # Yes pretty effin wasteful, but ok
 end
 
 
@@ -161,6 +169,14 @@ function getTerminal(ps::PosteriorsStructure, s::String)::Tuple{Union{SyntaxTerm
     t::Union{SyntaxTerm, Nothing} = get(ps.allSyntaxes, s, nothing)
     if (t !==nothing && t isa SyntaxTerm)
         return (t, getMarginal(ps, t))
+    else
+        return (nothing, 0.0)
+    end
+end
+function getGlobal(ps::PosteriorsStructure, s::String)::Tuple{Union{TAnno, Nothing}, Real}
+    t::Union{Tuple{TAnno, Real}, Nothing} = get(ps.globals, s, nothing)
+    if (t !==nothing)
+        return t
     else
         return (nothing, 0.0)
     end

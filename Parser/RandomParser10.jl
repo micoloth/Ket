@@ -35,6 +35,8 @@ function matchTerminals(prs::RandomParser10, from_::Int, end_::Int)  # # [..)
 	for i in from_:(end_-1)
 		t = getTerminal(prs.structure.posteriorsStructure, prs.inputVec[i+1]) # TODO CHECK what the type of this is !!!! Should be a Pair, at least
 		if (t[1] !== nothing) insertTerminal(prs.structure, i, i+1, t[1], t[2]) end
+        t = getGlobal(prs.structure.posteriorsStructure, prs.inputVec[i+1]) # TODO CHECK what the type of this is !!!! Should be a Pair, at least
+		if (t[1] !== nothing) insertGlobal(prs.structure, i, i+1, prs.inputVec[i+1], t[1], t[2]) end
     end
 end
 

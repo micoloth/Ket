@@ -11,6 +11,7 @@ struct StackableChance <: StackableBoid # //posterior=chance|occurrence, likelyh
     to::Int
 	goForward::Bool
 	goBackward::Bool
+    alreadyAdded::Bool
 end
 getP(s::StackableChance) = (s.goForward ? getPForward(s.what) : 0.0) + (s.goBackward ? getPBackward(s.what) : 0.0)
 empty(s::StackableChance)::Bool = s.what === nothing

@@ -4,7 +4,7 @@ include("Syntaxes.jl")
 
 abstract type SyntaxInst end
 abstract type Accepted_SynatxInst_type <: SyntaxInst end
-# ^ SyntaxInstObject, SyntaxInstReference, SyntaxInstNativeString <: Accepted_SynatxInst_type;
+# ^ SyntaxInstObject, SyntaxInstReference, SyntaxInstSimpleString <: Accepted_SynatxInst_type;
 abstract type SyntaxInstProduct <: SyntaxInst end
 
 wouldFit(si::SyntaxInst, s::SyntaxCore)::Bool = si.name == s
@@ -25,8 +25,9 @@ struct SyntaxInstReference <: Accepted_SynatxInst_type
     # inferred_term will have the very simple form TAnno(TLocStr(text), type)
 end
 
-struct SyntaxInstNativeString <: Accepted_SynatxInst_type
+struct SyntaxInstSimpleString <: Accepted_SynatxInst_type
     # //it's a string
+	name::SyntaxSimpleString
 	text::String
 	P::Real # //What is this, really? Prob a constant? Or >>1<<?
     # ^ This has the very simple form TAnno(TStr(text), TS())
@@ -85,7 +86,7 @@ end
 
 getP(s::SyntaxInstTerm)::Real = s.P
 getP(s::SyntaxInstReference)::Real = s.P
-getP(s::SyntaxInstNativeString)::Real = s.P
+getP(s::SyntaxInstSimpleString)::Real = s.P
 getP(s::SyntaxInstObject)::Real = s.PofObjectAndBelowGivenBelow
 getP(s::SyntaxInstField)::Real = s.PofThisAndBelowGivenBelow
 getP(s::SyntaxInstChoice)::Real = s.PofThisAndBelowGivenBelow
@@ -94,7 +95,7 @@ getP(s::SyntaxInstStrip)::Real = s.PofThisAndBelowGivenBelow
 
 trace(s::SyntaxInstTerm; top=false)::String = getString(s.name)
 trace(s::SyntaxInstReference; top=false)::String = s.text
-trace(s::SyntaxInstNativeString; top=false)::String = s.text
+trace(s::SyntaxInstSimpleString; top=false)::String = s.text
 trace(s::SyntaxInstObject; top=false)::String = (
     "FOUND{$(trace(s.syntax))" *
     (top ? (" (inferred to a $(s.inferred_obj.expr|>typeof) obj, $(s.inferred_obj.expr|>pr) of type $(s.inferred_obj.type|>pr))})}") : "}"))
@@ -105,7 +106,7 @@ trace(s::SyntaxInstStrip; top=false)::String = "(" * join(s.list .|> trace, " ")
 
 deepEqual(s::SyntaxInstTerm, other::SyntaxInst)::Bool = other isa SyntaxInstTerm && s.name == other.name
 deepEqual(s::SyntaxInstReference, other::SyntaxInst)::Bool = other isa SyntaxInstReference && s.type === other.type && s.name == other.name
-deepEqual(s::SyntaxInstNativeString, other::SyntaxInst)::Bool = other isa SyntaxInstNativeString && s.text == other.text
+deepEqual(s::SyntaxInstSimpleString, other::SyntaxInst)::Bool = other isa SyntaxInstSimpleString && s.text == other.text
 deepEqual(s::SyntaxInstObject, other::SyntaxInst)::Bool = other isa SyntaxInstObject && other.inferred_obj === getInferredTerm(s) && deepEqual(s.syntax, other.syntax)
 deepEqual(s::SyntaxInstField, other::SyntaxInst)::Bool = other isa SyntaxInstField && s.name == other.name
 # // LOL THIS WILL BE WRONG IN THE FUTURE ^
@@ -160,15 +161,12 @@ struct SyntWithItsBuilderFunc
     # OR a (Array{Union{Term,Error}}) -> Union{TAnno, Error}  lambda !!!
 	P::Real
 end
-buildTypeThatHasSyntInst(s::SyntaxInstStrip, builder_func) = builder_func(collect_strip(s)) # builder_func is REQUIRED to be a (Dict{str, TAnno}) -> TAnno
-buildTypeThatHasSyntInst(s::SyntaxInstStruct, builder_func) = builder_func(collect_fields(s)) # builder_func is REQUIRED to be a (Array{TAnno}) -> TAnno
-buildTypeThatHasSyntInst(s::SyntaxInstChoice, builder_func::Array) = buildTypeThatHasSyntInst(s.choice, builder_func[s.flag+1]) # builder_func is REQUIRED to be a Array{(Dict{str, TAnno}) -> TAnno}
 
 # HELPER: collect_fields looks for SyntaxInstField's and extract a name=>obj dict.
 # It looks at the whole tree, and it only doesnt know how to handle SyntaxInstStrip's.
 collect_fields(s::SyntaxInstTerm)::Dict{String, TAnno} = Dict{String, TAnno}()
 collect_fields(s::SyntaxInstReference)::Dict{String, TAnno} = Dict{String, TAnno}()
-collect_fields(s::SyntaxInstNativeString)::Dict{String, TAnno} = Dict{String, TAnno}()
+collect_fields(s::SyntaxInstSimpleString)::Dict{String, TAnno} = Dict{String, TAnno}()
 collect_fields(s::SyntaxInstObject)::Dict{String, TAnno} = Dict{String, TAnno}()
 collect_fields(s::SyntaxInstField)::Dict{String, TAnno} = Dict{String, TAnno}(s.name.name=>getObjFoundFromAccepted(s.objectFound; as_type=s.name.type))
 collect_fields(s::SyntaxInstChoice)::Dict{String, TAnno} = collect_fields(s.choice)
@@ -176,19 +174,29 @@ collect_fields(s::SyntaxInstStruct)::Dict{String, TAnno} = merge((s.list .|> (x-
 function collect_fields(s::SyntaxInstStrip)::Dict{String, TAnno}
     throw(DomainError("When is a field ever represented by a SyntaxStrip ???"))
 end
+collect_simpleStrings(s::SyntaxInstTerm)::Dict{String, String} = Dict{String, String}()
+collect_simpleStrings(s::SyntaxInstReference)::Dict{String, String} = Dict{String, String}()
+collect_simpleStrings(s::SyntaxInstSimpleString)::Dict{String, String} = Dict{String, String}(s.name.name=>s.text)
+collect_simpleStrings(s::SyntaxInstObject)::Dict{String, String} = Dict{String, String}()
+collect_simpleStrings(s::SyntaxInstField)::Dict{String, String} = Dict{String, String}()
+collect_simpleStrings(s::SyntaxInstChoice)::Dict{String, String} = collect_simpleStrings(s.choice)
+collect_simpleStrings(s::SyntaxInstStruct)::Dict{String, String} = merge((s.list .|> (x->collect_simpleStrings(x)))...)
+function collect_fields(s::SyntaxInstStrip)::Dict{String, String}
+    throw(DomainError("When is a field ever represented by a SyntaxStrip ???"))
+end
 
 # HELPER: collect_objs works on Accepted_SynatxInst_type's and returns it.
 # If it founds a SyntaxInstField, it looks into its .objectFound. Otherwise, it's an error.
 collect_objs(s::SyntaxInstTerm) = nothing
 collect_objs(s::SyntaxInstReference) = s
-collect_objs(s::SyntaxInstNativeString) = s
+collect_objs(s::SyntaxInstSimpleString) = s
 collect_objs(s::SyntaxInstObject) = s
 collect_objs(s::SyntaxInstField) = collect_objs(s.objectFound)
 collect_objs(s::SyntaxInstChoice) = nothing
 collect_objs(s::SyntaxInstStruct) = nothing
 collect_objs(s::SyntaxInstStrip) = nothing
 
-function collect_strip(s::SyntaxInstStrip)::Array{TAnno}
+function collect_strip_tannos(s::SyntaxInstStrip)::Array{TAnno}
     objs = s |>getObjects .|> collect_objs
     @assert all([ss !== nothing for ss in objs]) "Which SyntaxInstStrip has Syntax that are not Accepted_SynatxInst_type ..... (Him: $(s|>trace), with types $(s.list .|>typeof))"
     gof = (x->getObjFoundFromAccepted(x))
@@ -206,8 +214,8 @@ end
 getInferredTerm(s::SyntaxInstReference)::TAnno = TAnno(TLocStr(s.text), TTerm(TProd(Dict{Id,Term}(s.text => s.type)), s.type))
 getInferredType(s::SyntaxInstReference)::Term = TTermAuto(s.type, s.type)
 
-getInferredTerm(s::SyntaxInstNativeString)::TAnno = TAnno(TStr(s.text), TS())
-getInferredType(s::SyntaxInstNativeString)::Term = TTermEmpty(TS()) # OR TS()
+getInferredTerm(s::SyntaxInstSimpleString)::TAnno = TAnno(TStr(s.text), TS())
+getInferredType(s::SyntaxInstSimpleString)::Term = TTermEmpty(TS()) # OR TS()
 # OR, strinType=TypeSumTerm("String", 2, TTop()) for the type, MAYBE???
 
 getInferredTerm(s::SyntaxInstObject)::TAnno = s.inferred_obj

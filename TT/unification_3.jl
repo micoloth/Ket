@@ -715,7 +715,6 @@ robinsonUnify(t1::Term, t2::Term; unify_tlocs_ctx::Bool = true, mode::Unify_mode
 
 # IMPORTANT: I'm using TTerm's for carrying around contexts, but PLEASE make sure it's always TTerm OF A TPROD...
 
-TTermEmpty(res_type::Term) = TTerm(TProd(Array{Term}([])), res_type)
 
 InferResTerm = Union{TTerm, TermwError}
 
