@@ -26,6 +26,9 @@ end
 
 getTo(hc::HangingChance10, from::Int) = from + hc.length
 getFrom(hc::HangingChance10, to::Int) = to - hc.length
+counts_as_the_same(hc1::HangingChance10, hc2::HangingChance10) = (
+    hc1.chance == hc2.chance && hc1.indexInChance == hc2.indexInChance
+    && hc1.length == hc2.length && hc1.chanche.object.name == hc2.chanche.object.name)
 
 has_ended_strip_w_no_after(hc::HangingChance10) = hc.chance isa SyntaxStrip && hc.chance.after === nothing && hc.indexInChance == 2 && isempty(hc.nexts) && !isempty(hc.previouses)
 has_justbegun_strip_w_no_before(hc::HangingChance10) = hc.chance isa SyntaxStrip && hc.chance.before === nothing && hc.indexInChance == 2 && isempty(hc.previouses) && !isempty(hc.nexts)
@@ -92,7 +95,7 @@ struct SizeWBounds
 end
 
 function getAllFinalObjsLinked(hc::HangingChance10, hc_from::Int, hc_to::Int)::Array{SizeWBounds}
-    @assert hc_to - hc_from == hc.length "Yep- hc_to - hc_from == hc.length, $(hc_to) - $(hc_from) == $(hc.length)"
+    @assert hc_to - hc_from == hc.length "Yep- hc_to - hc_from == hc.length, $(hc_to) - $(hc_from) == $(hc.length) when doing this: chance $(hc.chance|> getString), in particular: $(hc.object|> trace)"
     buildswSizes = Array{SizeWBounds}([])
     all_chains_fw = getEndingChancesForward(hc)
     if isempty(all_chains_fw) return buildswSizes end
@@ -206,8 +209,8 @@ function chancesNeedingThisNext_hc(cs::ChancesStructure10, from_of_hc::Int, new_
     res = Array{HangingChance10}([])
     if from_of_hc == 0 return res end #// Excluded, BUT UNCHECKED
     for hc in cs.endings[from_of_hc] # from_of_hc -1 BECAUSE SHIFTED, +1 cuz Julia
-        @assert !(hc.chance == new_hc.chance && hc.indexInChance == getPrevIndex(new_hc.chance, new_hc.indexInChance) && !needsNext(hc, getName(new_hc.object))) "hahahahahah"
-        if hc.chance == new_hc.chance && hc.indexInChance == getPrevIndex(new_hc.chance, new_hc.indexInChance) && !(new_hc in hc.nexts) # If already there, skip
+        @assert !(hc.chance == new_hc.chance && hc.indexInChance in getPrevIndexes(new_hc.chance, new_hc.indexInChance) && !needsNext(hc, getName(new_hc.object))) "hahahahahah"
+        if hc.chance == new_hc.chance && hc.indexInChance in getPrevIndexes(new_hc.chance, new_hc.indexInChance) && !(new_hc in hc.nexts) # If already there, skip
             push!(res, hc) end
     end
     return res
@@ -216,8 +219,8 @@ function chancesNeedingThisPreviously_hc(cs::ChancesStructure10, to_of_hc::Int, 
     res = Array{HangingChance10}([])
     if to_of_hc == length(cs.beginnings) return res end #// Excluded, BUT UNCHECKED
     for hc in cs.beginnings[to_of_hc+1]
-        @assert !(hc.chance == new_hc.chance && hc.indexInChance == getNextIndex(new_hc.chance, new_hc.indexInChance) && !needsBefore(hc, getName(new_hc.object))) "hahahahahah"
-        if hc.chance == new_hc.chance && hc.indexInChance == getNextIndex(new_hc.chance, new_hc.indexInChance) && !(new_hc in hc.previouses) # If already there, skip
+        @assert !(hc.chance == new_hc.chance && hc.indexInChance in getNextIndexes(new_hc.chance, new_hc.indexInChance) && !needsBefore(hc, getName(new_hc.object))) "hahahahahah"
+        if hc.chance == new_hc.chance && hc.indexInChance in getNextIndexes(new_hc.chance, new_hc.indexInChance) && !(new_hc in hc.previouses) # If already there, skip
             push!(res, hc) end
     end
     return res

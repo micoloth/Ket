@@ -103,11 +103,34 @@ function getPossiblePreviouses(s::SyntaxStrip, first::SyntaxCore, iic_first::Int
 end
 
 
-function getPrevIndex(s::SyntaxCore, i::Int)
-    if s isa SyntaxStruct i - 1
-	elseif s isa SyntaxStrip Dict(3=>2, 4=>2, 2=>3)[i] end
+function getPrevIndexes(s::SyntaxCore, i::Int)::Array{Int}
+    if s isa SyntaxStruct return [i - 1]
+	elseif s isa SyntaxStrip Dict(3=>[2], 4=>[2], 2=>[1,3])[i] end
 end
-function getNextIndex(s::SyntaxCore, i::Int)
-    if s isa SyntaxStruct i + 1
-    elseif s isa SyntaxStrip Dict(3=>2,1=>2, 2=>3)[i] end
+function getNextIndexes(s::SyntaxCore, i::Int)::Array{Int}
+    if s isa SyntaxStruct return  [i + 1]
+    elseif s isa SyntaxStrip Dict(3=>[2],1=>[2], 2=>[3,4])[i] end
+end
+
+function getPrevIndex(s::SyntaxCore, i::Int, newSyntaxCoreThatShouldBeTheNewIndex::SyntaxCore)::Int
+	# THIS WHOLE THING IS DUMB. Have you noticed?   # PLEASE REMOVE !!!!
+    if s isa SyntaxStruct return i - 1
+	elseif s isa SyntaxStrip
+		idxs = getPrevIndexes(s, i)
+		if 1 in idxs && newSyntaxCoreThatShouldBeTheNewIndex == s.before return 1
+		elseif 2 in idxs && newSyntaxCoreThatShouldBeTheNewIndex == s.object return 2
+		elseif 3 in idxs && newSyntaxCoreThatShouldBeTheNewIndex == s.comma return 3
+		end
+	end
+end
+function getNextIndex(s::SyntaxCore, i::Int, newSyntaxCoreThatShouldBeTheNewIndex::SyntaxCore)::Int
+	# THIS WHOLE THING IS DUMB. Have you noticed?   # PLEASE REMOVE !!!!
+    if s isa SyntaxStruct return i + 1
+    elseif s isa SyntaxStrip
+		idxs = getNextIndexes(s, i)
+		if 4 in idxs && newSyntaxCoreThatShouldBeTheNewIndex == s.after return 1
+		elseif 2 in idxs && newSyntaxCoreThatShouldBeTheNewIndex == s.object return 2
+		elseif 3 in idxs && newSyntaxCoreThatShouldBeTheNewIndex == s.comma return 3
+		end
+	end
 end

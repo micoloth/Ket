@@ -45,14 +45,14 @@ end
 
 
 function makeNewNextFromSynt(hc_prev::HangingChance10, newObj::SyntaxInstOwner, size::Int, marginalOfNewobjName::Real)::HangingChance10
-    new_hc = HangingChance10(hc_prev.chance, newObj.s, getNextIndex(hc_prev.chance, hc_prev.indexInChance), size, hc_prev.marginalOfChance, marginalOfNewobjName) #//,newobj.P * qualcosa??
+    new_hc = HangingChance10(hc_prev.chance, newObj.s, getNextIndex(hc_prev.chance, hc_prev.indexInChance, newObj.s.name), size, hc_prev.marginalOfChance, marginalOfNewobjName) #//,newobj.P * qualcosa??
     linkWithThisNext!(hc_prev, new_hc)
     # //THERE IS ROOM FOR UPDATING currentPOfThisChanceToBeConsidered HERE --
     #     //UPDATE: this SHOULD be done inside linkWithThisNext!. Dont trust it too much tho
     return new_hc
 end
 function makeNewPrevFromSynt(hc_next::HangingChance10, newObj::SyntaxInstOwner, size::Int, marginalOfNewobjName::Real)::HangingChance10
-    new_hc = HangingChance10(hc_next.chance, newObj.s, getPrevIndex(hc_next.chance, hc_next.indexInChance), size, hc_next.marginalOfChance, marginalOfNewobjName) #//,newobj.P * qualcosa??
+    new_hc = HangingChance10(hc_next.chance, newObj.s, getPrevIndex(hc_next.chance, hc_next.indexInChance, newObj.s.name), size, hc_next.marginalOfChance, marginalOfNewobjName) #//,newobj.P * qualcosa??
     linkWithThisPrevious!(hc_next, new_hc)
     # //THERE IS ROOM FOR UPDATING currentPOfThisChanceToBeConsidered HERE
     #     //UPDATE: this SHOULD be done inside linkWithThisPrevious!. Dont trust it too much tho
@@ -69,6 +69,24 @@ function makeObjFieldAsChance_goingForward(S::Structure11, what_field::SyntaxFie
 end
 function makeObjFieldAsChance_goingBackward(S::Structure11, what_field::SyntaxField, objectFound::SyntaxInstObject, hChance::HangingChance10, objfound_from::Int, objfound_to::Int, PMarginal::Real)
     temp1 = SyntaxInstField(what_field, objectFound, 0.5)
+    # //first comment: LOL, you HERE is where computing the P GETS SERIOUS.......
+    # //second comment: Note the nice symmetry with below.
+    temp2 = SyntaxInstOwner(temp1) # Useless, i'd say
+    temp3 = makeNewPrevFromSynt(hChance, temp2, objfound_to - objfound_from, PMarginal) #  // well, i THINK it's co???
+    add(S.finisheds, objfound_from, objfound_to, temp2) # //u are goddam right, it DOESNT go into the stack //i see we all agree on this rn
+    temp3
+end
+function makeObjSimpleStringAsChance_goingForward(S::Structure11, what_SimpleString::SyntaxSimpleString, text::String, hChance::HangingChance10, objfound_from::Int, objfound_to::Int, PMarginal::Real)
+    temp1 = SyntaxInstSimpleString(what_SimpleString, text, 0.5)
+    # //first comment: LOL, you HERE is where computing the P GETS SERIOUS.......
+    # //second comment: Note the nice symmetry with below.
+    temp2 = SyntaxInstOwner(temp1) # Useless, i'd say
+    add(S.finisheds, objfound_from, objfound_to, temp2) # //u are goddam right, it DOESNT go into the stack //i see we all agree on this rn
+    temp3 = makeNewNextFromSynt(hChance, temp2, objfound_to - objfound_from, PMarginal) #  // well, i THINK it's co???
+    temp3
+end
+function makeObjSimpleStringAsChance_goingBackward(S::Structure11, what_SimpleString::SyntaxSimpleString, text::String, hChance::HangingChance10, objfound_from::Int, objfound_to::Int, PMarginal::Real)
+    temp1 = SyntaxInstSimpleString(what_SimpleString, text, 0.5)
     # //first comment: LOL, you HERE is where computing the P GETS SERIOUS.......
     # //second comment: Note the nice symmetry with below.
     temp2 = SyntaxInstOwner(temp1) # Useless, i'd say
@@ -105,6 +123,7 @@ end
 
 function dechoiced_syntaxCore(s::SyntaxInst)
     if s isa SyntaxInstChoice dechoiced_syntaxCore(s.choice)
+    elseif s isa SyntaxInstObject dechoiced_syntaxCore(s.syntax)
     else s.name
     end
 end
@@ -114,22 +133,38 @@ function processObjectFound(S::Structure11, chanceF::StackableObject)
     dechoiced_SC = dechoiced_syntaxCore(obj.syntax) # For a dumb additional check about boundless strips, thanks i hate it
     println( "having object: " , getInferredTerm(obj)|>pr_E , " at " , chanceF.from , "-" , chanceF.to - 1 , " (included)")
     # margOfObjName::Real = getP(obj.name) # //JESUS, WHAT A FUCKING MESS.............................................
+    add(S.finisheds, chanceF.from, chanceF.to, SyntaxInstOwner(obj))  #//to EXCLUDED,
+
 
     presentProductChances_goingBack = chancesNeedingThisPreviously_obj(S.hangings, chanceF.to, chanceF.whatObject)
     presentProductChances_goingForward = chancesNeedingThisNext_obj(S.hangings, chanceF.from, chanceF.whatObject)
+    created_stackable_chances = Array{StackableChance}([])
     for (hc_prev, needed_field) in presentProductChances_goingForward
         if dechoiced_SC isa SyntaxStrip && dechoiced_SC.after === nothing && dechoiced_SC == hc_prev.chance
             println("Ok this sometimes happens too. Thanks god!")
             continue end # DONT add obj that come from a finished syntaxStrips w no boundaries as objects of a bigger syntaxStrip of the same kind. Terrible idea.
         new_created_hc = makeObjFieldAsChance_goingForward(S, needed_field, chanceF.whatObject, hc_prev, chanceF.from, chanceF.to, getMarginal(S.posteriorsStructure, needed_field))
-        insert!(S.stack, new_created_hc.POfThisIfGoingForward, StackableChance(new_created_hc ,chanceF.from,chanceF.to, true, false, false)) # //wait.. But what good does temp->prob even do here then
+        push!(created_stackable_chances, StackableChance(new_created_hc ,chanceF.from,chanceF.to, true, false, false))
     end
     for (hc_next, needed_field) in presentProductChances_goingBack
         if dechoiced_SC isa SyntaxStrip && dechoiced_SC.before === nothing && dechoiced_SC == hc_next.chance
             println("Ok this sometimes happens too. Thanks god!")
             continue end # DONT add obj that come from a finished syntaxStrips w no boundaries as objects of a bigger syntaxStrip of the same kind. Terrible idea.
-        new_created_hc = makeObjFieldAsChance_goingBackward(S, needed_field, chanceF.whatObject, hc_next, chanceF.from, chanceF.to, getMarginal(S.posteriorsStructure, needed_field))
-        insert!(S.stack, new_created_hc.POfThisIfGoingForward, StackableChance(new_created_hc ,chanceF.from,chanceF.to, false, true, false ))  #wait.. But what good does temp->prob even do here then
+        # Only create a new Field if you cannot link to one you already have:
+        created_stackable_chances_same = filter(x->counts_as_the_same(x.what, hc_next), created_stackable_chances)
+        if length(created_stackable_chances_same) > 0
+            for c in created_stackable_chances_same
+                linkWithThisNext!(c.what, hc_next) #c.what->hc_next
+                c.goBackward = true
+                println("Ok Also, sometimes this happens. Nice!")
+            end
+        else
+            new_created_hc = makeObjFieldAsChance_goingBackward(S, needed_field, chanceF.whatObject, hc_next, chanceF.from, chanceF.to, getMarginal(S.posteriorsStructure, needed_field))
+            push!(created_stackable_chances, StackableChance(new_created_hc ,chanceF.from,chanceF.to, false, true, false ))  #wait.. But what good does temp->prob even do here then
+        end
+    end
+    for ss in created_stackable_chances
+        insert!(S.stack, ss.what.POfThisIfGoingForward, ss) # //wait.. But what good does temp->prob even do here Then
     end
 end
 
@@ -159,12 +194,12 @@ function processFinishedSyntax(S::Structure11, chanceF::StackableFinishedSyntax)
 
         # Even more importantly: Are you SURE that ANY hc_bw or hc_fw WILL be triggered here in this loop, at some SyntaxProduct ?
         for hc_prev::HangingChance10 in presentProductChances_goingForward
-            if hc_prev.chance == new_hc.chance && getNextIndex(hc_prev.chance, hc_prev.indexInChance) == new_hc.indexInChance
+            if hc_prev.chance == new_hc.chance && new_hc.indexInChance in getNextIndexes(hc_prev.chance, hc_prev.indexInChance)
                 linkWithThisPrevious!(new_hc, hc_prev)
             end
         end
         for hc_next::HangingChance10 in presentProductChances_goingBack
-            if hc_next.chance == new_hc.chance && getNextIndex(hc_next.chance, hc_next.indexInChance) == new_hc.indexInChance
+            if hc_next.chance == new_hc.chance && new_hc.indexInChance in getPrevIndexes(hc_next.chance, hc_next.indexInChance)
                 linkWithThisNext!(new_hc, hc_next)
             end
         end
@@ -190,7 +225,6 @@ function processFinishedSyntax(S::Structure11, chanceF::StackableFinishedSyntax)
         temp1 = thingy.builder_func(obj.s)
         temp2 = SyntaxInstObject(obj.s, thingy.P, temp1)
         insert!(S.stack, getP(temp2), StackableObject(temp2, chanceF.from, chanceF.to))
-        add(S.finisheds, chanceF.from, chanceF.to, SyntaxInstOwner(temp2))  #//to EXCLUDED,
     end
 end
 
@@ -217,66 +251,63 @@ function processChance(S::Structure11, chance::StackableChance)
     if (chance.goForward && hasEnded(chance.what)) || (chance.goBackward && hasJustBegun(chance.what))
         linkedWithAnything = true
     end
-
     if (chance.goForward && !hasEnded(chance.what) && chance.to < size(S))
         for hc_next in chancesNeedingThisPreviously_hc(S.hangings, chance.to, chance.what)
             linkWithThisNext!(chance.what, hc_next)
             linkedWithAnything = true
         end
-        # //careful here: # FIND A TGLOB, OR USE A WORD AS A VARIABLE:
-        sobjs = filter(x->x.s isa SyntaxInstObject, at(S.finisheds, chance.to,chance.to + 1))
-        @assert length(sobjs)<=1 # For now, no 2 TGlobs w the same name. This can easily change.
-        ## ^ ALSO<<<-, right now I'm just checking for tglobs, ie length ONE. I dont think it's TOO crazy to search for ALL finisheds in the right place now.....
-        new_hc_obj_created_somehow = Array{HangingChance10}([])
-        for possibleNeeded in getWhatNeedsNext(chance.what)
-            if possibleNeeded isa SyntaxField && (sobjs |>length >0) && can_be_a(getType(possibleNeeded), getInferredType(sobjs[1].s).t_out)
-                push!(new_hc_obj_created_somehow, makeObjFieldAsChance_goingForward(S, possibleNeeded, sobjs[1].s, chance.what, chance.to,chance.to + 1, 1))
-            elseif (possibleNeeded isa SyntaxField && getOneLongFieldNext(chance.what, possibleNeeded)===nothing && !occursin(S.inputVec[chance.to+1], "()[]-><{}:=.,;:_\"'+-/\\_|") # TODO: is this right? Or should be ! ?
-                    && !any(chance.what.nexts .|> (x->x.object.name == possibleNeeded && x.object.objectFound isa SyntaxInstReference && x.object.objectFound.text == S.inputVec[chance.to+1])))
-                push!(new_hc_obj_created_somehow, makeReferenceFieldChance_goingForward(S, possibleNeeded, chance))
-            elseif (possibleNeeded isa SyntaxSimpleString && !occursin(S.inputVec[chance.to+1], "()[]-><{}:=.,;:_\"'+-/\\_|")
-                && !any(chance.what.nexts .|> (x->x.object.name == possibleNeeded && x.object.text == S.inputVec[chance.to+1])))
-                push!(new_hc_obj_created_somehow, SyntaxInstSimpleString(possibleNeeded, S.inputVec[chance.to+1], 1))
-            end
-        end
-        for new_hc_obj in new_hc_obj_created_somehow
-            addEnding(S.hangings, new_hc_obj, chance.to+1)
-            insert!(S.stack, new_hc_obj.POfThisIfGoingForward, StackableChance(new_hc_obj, chance.to,chance.to + 1, true, false, true))
-            # NO: linkedWithAnything = true, cuz: let the VAR decide when its his turn
-        end
     end
-
     if chance.goBackward && !hasJustBegun(chance.what) && chance.from > 0
         for hc_prev in chancesNeedingThisNext_hc(S.hangings, chance.from, chance.what)
             linkWithThisPrevious!(chance.what, hc_prev)
             linkedWithAnything = true
         end
-        # //careful here: # FIND A TGLOB, OR USE A WORD AS A VARIABLE:
-        sobjs = filter(x->x.s isa SyntaxInstObject, at(S.finisheds, chance.from-1, chance.from))
-        @assert length(sobjs)<=1 # For now, no 2 TGlobs w the same name. This can easily change.
-        ## ^ ALSO<<<-, right now I'm just checking for tglobs, ie length ONE. I dont think it's TOO crazy to search for ALL finisheds in the right place now.....
+    end
+    if linkedWithAnything
+        for foundFinished::SizeWBounds in getAllFinalObjsLinked(chance.what, chance.from, chance.to)
+            insert!(S.stack, getP(foundFinished.s), StackableFinishedSyntax(SyntaxInstOwner(foundFinished.s), foundFinished.from, foundFinished.to))
+        end
+    end
+
+
+    if (chance.goForward && !hasEnded(chance.what) && chance.to < size(S))
+        new_hc_obj_created_somehow = Array{HangingChance10}([])
+        for possibleNeeded in getWhatNeedsNext(chance.what)
+            for (fin, to_new) in all_objects_beginning_at_that_can_be_a(S.finisheds, UInt(chance.to), possibleNeeded)# This JUST RETURNS EMPTY if possibleNeeded not SyntaxField
+                push!(new_hc_obj_created_somehow, makeObjFieldAsChance_goingForward(S, possibleNeeded, fin, chance.what, chance.to,to_new, 1))
+            end
+            # //careful here: # FIND A FINISHED, OR USE A WORD AS A VARIABLE:
+            if (possibleNeeded isa SyntaxField && getOneLongFieldNext(chance.what, possibleNeeded)===nothing && !occursin(S.inputVec[chance.to+1], "()[]-><{}:=.,;:_\"'+-/\\_|") # TODO: is this right? Or should be ! ?
+                    && !any(chance.what.nexts .|> (x->x.object.name == possibleNeeded && x.object.objectFound isa SyntaxInstReference && x.object.objectFound.text == S.inputVec[chance.to+1])))
+                push!(new_hc_obj_created_somehow, makeReferenceFieldChance_goingForward(S, possibleNeeded, chance))
+            elseif (possibleNeeded isa SyntaxSimpleString && !occursin(S.inputVec[chance.to+1], "()[]-><{}:=.,;:_\"'+-/\\_|")
+                && !any(chance.what.nexts .|> (x->x.object.name == possibleNeeded && x.object.text == S.inputVec[chance.to+1])))
+                push!(new_hc_obj_created_somehow, makeObjSimpleStringAsChance_goingForward(S, possibleNeeded, S.inputVec[chance.to+1], chance.what, chance.to,chance.to + 1, 1))
+            end
+        end
+        for new_hc_obj in new_hc_obj_created_somehow
+            addEnding(S.hangings, new_hc_obj, chance.to+1)
+            insert!(S.stack, new_hc_obj.POfThisIfGoingForward, StackableChance(new_hc_obj, chance.to,chance.to + new_hc_obj.length, true, false, true))
+        end
+    end
+    if chance.goBackward && !hasJustBegun(chance.what) && chance.from > 0
         new_hc_obj_created_somehow = Array{HangingChance10}([])
         for possibleNeeded in getWhatNeedsBefore(chance.what)
-            if possibleNeeded isa SyntaxField && (sobjs |>length >0) && can_be_a(getType(possibleNeeded), getInferredType(sobjs[1].s).t_out)
-                push!(new_hc_obj_created_somehow, makeObjFieldAsChance_goingBackward(S, possibleNeeded, sobjs[1].s, chance.what, chance.from-1, chance.from, 1))
-            elseif (possibleNeeded isa SyntaxField && getOneLongFieldPrev(chance.what, possibleNeeded) ===nothing && !occursin(S.inputVec[chance.from], "()[]-><{}:=.,;:_\"'+-/\\_|") # chance.from -1, +1 cuz Julia
+            for (fin, from_new) in all_objects_ending_at_that_can_be_a(S.finisheds, UInt(chance.from), possibleNeeded)# This JUST RETURNS EMPTY if possibleNeeded not SyntaxField
+                push!(new_hc_obj_created_somehow, makeObjFieldAsChance_goingBackward(S, possibleNeeded, fin, chance.what, from_new, chance.from, 1))
+            end
+            # //careful here: # FIND A TGLOB, OR USE A WORD AS A VARIABLE:
+            if (possibleNeeded isa SyntaxField && getOneLongFieldPrev(chance.what, possibleNeeded) ===nothing && !occursin(S.inputVec[chance.from], "()[]-><{}:=.,;:_\"'+-/\\_|") # chance.from -1, +1 cuz Julia
                 && !any(chance.what.previouses .|> (x->x.object.name == possibleNeeded && x.object.objectFound isa SyntaxInstReference && x.object.objectFound.text == S.inputVec[chance.from])))
                 push!(new_hc_obj_created_somehow, makeReferenceFieldChance_goingBackward(S, possibleNeeded, chance))
             elseif (possibleNeeded isa SyntaxSimpleString && !occursin(S.inputVec[chance.from], "()[]-><{}:=.,;:_\"'+-/\\_|") # chance.from -1, +1 cuz Julia
                 && !any(chance.what.previouses .|> (x->x.object.name == possibleNeeded && x.object.text == S.inputVec[chance.from])))
-                push!(new_hc_obj_created_somehow, SyntaxInstSimpleString(possibleNeeded, S.inputVec[chance.from], 1))
+                push!(new_hc_obj_created_somehow, makeObjSimpleStringAsChance_goingBackward(S, possibleNeeded, S.inputVec[chance.from], chance.what, chance.from-1, chance.from, 1))# chance.from -1, +1 cuz Julia
             end
         end
         for new_hc_obj in new_hc_obj_created_somehow
-            insert!(S.stack, new_hc_obj.POfThisIfGoingBackward, StackableChance(new_hc_obj, chance.from - 1, chance.from, false, true, true))
+            insert!(S.stack, new_hc_obj.POfThisIfGoingBackward, StackableChance(new_hc_obj, chance.from - new_hc_obj.length, chance.from, false, true, true))
             addBeginning(S.hangings, new_hc_obj, chance.from-1)
-            # NO: linkedWithAnything = true, cuz: let the VAR decide when its his turn
-        end
-    end
-
-    if linkedWithAnything
-        for foundFinished::SizeWBounds in getAllFinalObjsLinked(chance.what, chance.from, chance.to)
-            insert!(S.stack, getP(foundFinished.s), StackableFinishedSyntax(SyntaxInstOwner(foundFinished.s), foundFinished.from, foundFinished.to))
         end
     end
 end
@@ -310,7 +341,7 @@ process_(S::Structure11, t::StackableObject) = processObjectFound(S, t)
 
 printt(s::StackableChance) = "$(s.from) to $(s.to): Chance for $(getString(s.what.chance)), current: $(trace(s.what.object))"
 printt(s::StackableFinishedSyntax) = "$(s.from) to $(s.to): Finished $(trace(s.whatFinished.s))"
-printt(s::StackableObject) = "$(s.from) to $(s.to): Found: $(trace(s.whatObject.syntax)) (inferred to a $(s.whatObject.inferred_obj.expr|>typeof) obj, $(s.whatObject.inferred_obj.expr|>pr) of type $(s.whatObject.inferred_obj.type|>pr))"
+printt(s::StackableObject) = "$(s.from) to $(s.to): Found: $(trace(s.whatObject.syntax)) (inferred to a $(s.whatObject.inferred_obj.expr|>typeof) obj, $(s.whatObject.inferred_obj.expr|>pr_E) of type $(s.whatObject.inferred_obj.type|>pr))"
 # chance|>printt
 #S.stack.stack|>length
 # S.stack.stack[1][2]|>printt

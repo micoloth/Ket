@@ -104,6 +104,10 @@ function makeFull(m::M_it, it::CustomIterBackward)::CustomIterBackward
 end
 
 
+
+
+
+
 mutable struct FinishedsStructure10  # //SubstringStructureByMatrix
     matrix::Array{Array{Array{SyntaxInstOwner}}}
 end
@@ -193,6 +197,32 @@ function trace(FS::FinishedsStructure10)
 end
 EverythingBeginningAt(FS::FinishedsStructure10, from::UInt) = IterableForElementsStartingFrom(FS.matrix, from)  #//from INCLUDED
 EverythingEndingAt(FS::FinishedsStructure10, to::UInt) = IterableForElementsEndingAt(FS.matrix, to)  #//to EXCLUDED??-- it's the BEGINNING OF THE NEXT .
+
+
+function all_objects_ending_at_that_can_be_a(FS::FinishedsStructure10, to::UInt, field::SyntaxCore)
+    v = Array{Tuple{SyntaxInstObject, Int}}([])
+    if !(field isa SyntaxField) return v end
+    for (obj, from) in EverythingEndingAt(FS, to)
+        if obj.s isa SyntaxInstObject && can_be_a(getType(field), getInferredType(obj.s).t_out)
+            push!(v, (obj.s, from))
+        end
+    end
+    v
+end
+
+
+function all_objects_beginning_at_that_can_be_a(FS::FinishedsStructure10, from::UInt, field::SyntaxCore)
+    v = Array{Tuple{SyntaxInstObject, Int}}([])
+    if !(field isa SyntaxField) return v end
+    for (obj, to) in EverythingBeginningAt(FS, from)
+        if obj.s isa SyntaxInstObject && can_be_a(getType(field), getInferredType(obj.s).t_out)
+            push!(v, (obj.s, to))
+        end
+    end
+    v
+end
+
+
 
 
 function getBestTotalFound(FS::FinishedsStructure10)::Union{SyntaxInstOwner, Nothing}

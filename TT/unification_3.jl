@@ -787,16 +787,13 @@ function infer_type_(term::TProd, ts_computed::Array{InferResTermIn})::InferResT
         args, t = ass_reduc(args, s1), ass_reduc(t, s2)
         unified_RES_types = unified_RES_types .|> (x -> ass_reduc(x, s1))
         #  # Not sharing vars
-        full_arity = Arity(max(args |> arity, t |> arity), union(args |> usedLocsSet, t |> usedLocsSet))
+        full_arity = Arity(max(s1 |> arity, s2 |> arity), union(s1 |> usedLocsSet, s2 |> usedLocsSet))
         res = robinsonUnify(
             TAbs(args), TAbs(t.t_in), full_arity, full_arity;
             unify_tlocs_ctx = false, mode = meet_)
-        # if res isa Failed_unif_res
-        #     return Error("ELocs typed $(t.arg_types .|> pr) cannot be unified into ELocs typed $(args.arg_types .|> pr), with error '$(res)'")
         if res isa ItsLiterallyAlreadyOk
             push!(unified_RES_types, t.t_out)
             args = res.computed_type
-            full_arity = Arity(max(args |> arity, t |> arity), union(args |> usedLocsSet, t |> usedLocsSet))
             continue
         end
         if res isa Failed_unif_res
@@ -1117,16 +1114,32 @@ function build_anno_term_TAbs(term_anno::TAnno)::InferResTAnno # it's the body, 
     TAnno(res, infer_type_(res, term_anno.type))
 end
 function build_anno_term_TAnno(term_anno::TAnno, type_anno::TAnno)::InferResTAnno # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
-    if type_anno.type.t_out !==TypeUniverse()
-        throw(DomainError("Whats going on here ???????? with term $(term_anno|>pr) written to be of type: $(type_anno|>pr), which is not a TypeUniverse at all, tho ..."))
-    end
+    # if type_anno.type.t_out !==TypeUniverse()
+    #     throw(DomainError("Whats going on here ???????? with term $(term_anno|>pr) written to be of type: $(type_anno|>pr), which is not a TypeUniverse at all, tho ..."))
+    # end
     res = TAnno(term_anno.expr, type_anno.expr)
     TAnno(term_anno.expr, infer_type_(res, term_anno.type))
 end
-function build_anno_term_TProd(terms_anno::Array{TAnno})::InferResTAnno # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
-    res = TProd(terms_anno .|> x->x.expr)
-    TAnno(res, infer_type_(res, terms_anno .|> x->x.type))
+function build_anno_term_TProd(terms_anno::Array{TAnno}; dict_anno::Dict{String, TAnno}=Dict{String, TAnno}([]))::InferResTAnno # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
+    if length(dict_anno) > 0
+        (keys, vals) = collect(zip(dict_anno...))
+        original_length = length(terms_anno)
+        res = TProd(terms_anno .|> x->x.expr, Dict{String, Term}(s=>t.expr for (s,t) in dict_anno))
+        res_type = infer_type_(res, vcat(terms_anno, [vals...]) .|> x->x.type)
+        if res_type isa TermwError
+            restored_prod = TProd(res_type.term.t_out.data[1:original_length], Dict{String, Term}(s=>t for (s,t) in zip(keys, res_type.term.t_out.data[(original_length+1):end])))
+            res_type = TermwError(TTerm(res_type.term.t_in, restored_prod), res_type.error)
+        else
+            restored_prod = TProd(res_type.t_out.data[1:original_length], Dict{String, Term}(s=>t for (s,t) in zip(keys, res_type.t_out.data[(original_length+1):end])))
+            res_type = TTerm(res_type.t_in, restored_prod)
+        end
+        return TAnno(res, res_type)
+    else
+        res = TProd(terms_anno .|> x->x.expr)
+        return TAnno(res, infer_type_(res, terms_anno .|> x->x.type))
+    end
 end
+
 function build_anno_term_TSumTerm(tag, tag_name, term_anno::TAnno)::InferResTAnno
     res = TSumTerm(tag, tag_name, term_anno.expr)
     TAnno(res, infer_type_(res, term_anno.type))

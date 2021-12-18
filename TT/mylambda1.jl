@@ -168,7 +168,7 @@ subst(news::TProd, t::TSumTerm)::Term = TSumTerm(t.tag, t.tag_name, subst(news, 
 subst(news::TProd, t::TAnno)::Term = TAnno(subst(news, t.expr), t.type)
 subst(news::TProd, t::TBranches)::Term = TBranches(t.ops_chances .|> x->subst(news, x), t.tags) # Just like TApp, This should have No effect being all TAbs's, but just in case.
 subst(news::TProd, t::TLocInt)::Term = if t.var <= length(news.data) news.data[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news.data))" )) end
-subst(news::TProd, t::TLocStr)::Term = if (t.var in keys(news.data_tags)) news.data_tags[t.var] else throw(DomainError("Undefined local var named $(t.var), n args given = $(news.data_tags)" )) end
+subst(news::TProd, t::TLocStr)::Term = if (t.var in keys(news.data_tags)) news.data_tags[t.var] else throw(DomainError("Undefined local var named $(t.var), args given = $(news.data_tags)" )) end
 subst(news::TProd, t::TermwError)::Term = TermwError(subst(news, t.term), t.error)
 # subst(news::Array{Term}, t::TLocInt)::Term = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
 
@@ -477,7 +477,9 @@ reduc(TAbs(TAppSwitch(S, TProd(Array{Term}([TGlobAuto("f"), TGlobAuto("g"), TGlo
 
 f = TAbs(TLocInt(1))
 g = TAbs(TGlobAuto("y"))
-reduc(TAppSwitch(S, TProd([f, g, TGlobAuto("x")]))) |> pr
+e = TAppSwitch(S, TProd([f, g, TGlobAuto("x")]))
+e |> pr_E
+reduc(e) |> pr
 
 # Remember: At this point (not typechecked) it IS possible to be recursive!
 ycomb = TAbs(TApp([TLocInt(1), TLocInt(1)]))

@@ -98,7 +98,7 @@ trace(s::SyntaxInstReference; top=false)::String = s.text
 trace(s::SyntaxInstSimpleString; top=false)::String = s.text
 trace(s::SyntaxInstObject; top=false)::String = (
     "FOUND{$(trace(s.syntax))" *
-    (top ? (" (inferred to a $(s.inferred_obj.expr|>typeof) obj, $(s.inferred_obj.expr|>pr) of type $(s.inferred_obj.type|>pr))})}") : "}"))
+    (top ? (" (inferred to a $(s.inferred_obj.expr|>typeof) obj, $(s.inferred_obj.expr|>pr_E) of type $(s.inferred_obj.type|>pr))})}") : "}"))
 trace(s::SyntaxInstField; top=false)::String = trace(s.objectFound)
 trace(s::SyntaxInstChoice; top=false)::String = "[<$(string(s.flag))>: $(s.choice |> trace)]"
 trace(s::SyntaxInstStruct; top=false)::String = join(s.list .|> trace, " ")
@@ -182,7 +182,8 @@ collect_simpleStrings(s::SyntaxInstField)::Dict{String, String} = Dict{String, S
 collect_simpleStrings(s::SyntaxInstChoice)::Dict{String, String} = collect_simpleStrings(s.choice)
 collect_simpleStrings(s::SyntaxInstStruct)::Dict{String, String} = merge((s.list .|> (x->collect_simpleStrings(x)))...)
 function collect_fields(s::SyntaxInstStrip)::Dict{String, String}
-    throw(DomainError("When is a field ever represented by a SyntaxStrip ???"))
+    println("To be clear: A field can ABSOLUTELY be represented by a SyntaxStrip, just, I wont look into it...")
+    Dict{String, String}()
 end
 
 # HELPER: collect_objs works on Accepted_SynatxInst_type's and returns it.
