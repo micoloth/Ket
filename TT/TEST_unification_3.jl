@@ -124,14 +124,14 @@ robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_join(t1, t2)
 
 
-t1 = TProd(Dict{Id, Term}("f"=>TLocInt(1), "g"=>TGlob("G")))
-t2 = TProd(Dict{Id, Term}("g"=>TLocInt(2), "f"=>TGlob("F")))
+t1 = TProd(Array{Pair{Id, Term}}(["f"=>TLocInt(1), "g"=>TGlob("G")]))
+t2 = TProd(Array{Pair{Id, Term}}(["g"=>TLocInt(2), "f"=>TGlob("F")]))
 robinsonUnify(TAbs(t1), TAbs(t2))[1]|> (x->pr_T(x; is_an_arg=true))
 robinsonUnify(TAbs(t1), TAbs(t2))[2]|> (x->pr_T(x; is_an_arg=true))
-@test robinsonUnify(TAbs(t1), TAbs(t2))[3] == TProd(Term[], Dict{String, Term}("f" => TGlob("F", TypeUniverse()), "g" => TGlob("G", TypeUniverse())))
+@test robinsonUnify(TAbs(t1), TAbs(t2))[3] == TProd(Term[], Array{Pair{String, Term}}(["f" => TGlob("F", TypeUniverse()), "g" => TGlob("G", TypeUniverse())]))
 @test test_unify_join(t1, t2)
 
-reduc(TApp([TProd(Dict{Id, Term}("f"=>TLocStr("g"))), TAbs(TLocStr("f"))]))
+reduc(TApp([TProd(Array{Pair{Id, Term}}(["f"=>TLocStr("g")])), TAbs(TLocStr("f"))]))
 
 
 t1 = TAppAuto(TGlob("G0"), TLocInt(1))
@@ -552,7 +552,7 @@ e = TAnno(TLocInt(2), TGlob("A"))
 @test infer_type_rec(e) == TTerm(TProd(Array{Term}([TLocInt(1), TGlob("A")])), TGlob("A"))
 
 e = TAbs(TLocStr("1"))
-@test infer_type_rec(e) == TTerm(TProd(Term[], Dict{String, Term}()), TTerm(TProd(Term[], Dict{String, Term}("1" => TLocInt(1))), TLocInt(1)))
+@test infer_type_rec(e) == TTerm(TProd(Term[], Array{Pair{String, Term}}([])), TTerm(TProd(Term[], Array{Pair{String, Term}}(["1" => TLocInt(1)])), TLocInt(1)))
 
 e = TProd(Array{Term}([TLocInt(2), TLocInt(2)]))
 @test infer_type_rec(e) == TTerm(TProd(Array{Term}([TLocInt(1), TLocInt(2)])), TProd(Term[TLocInt(2), TLocInt(2)]))
@@ -612,13 +612,13 @@ e = TAbs(TApp([TProd(Array{Term}([TLocInt(1), TLocInt(1)])), TLocInt(2)]))
 infer_type_rec(e).t_out |> pr # == "[T1 x [T1 x T1]->T2]->T2"
 @test infer_type_rec(e).t_out == TTerm(TProd(Array{Term}([TLocInt(1), TTerm(TProd(Array{Term}([TLocInt(1), TLocInt(1)])), TLocInt(2))])), TLocInt(2))
 
-e = TApp([TLocStr("a"), TAnno(TAbs(TLocStr("b")), TTerm(TProd(Dict{String, Term}("a"=>TGlob("A"))), TGlob("B")))])
+e = TApp([TLocStr("a"), TAnno(TAbs(TLocStr("b")), TTerm(TProd(Array{Pair{String, Term}}(["a"=>TGlob("A")])), TGlob("B")))])
 infer_type_rec(TAnno(TAbs(TLocStr("b")), TTermAuto(TGlob("A"), TGlob("B"))))
 
-a1t = TTermEmpty(TTerm(TProd(Dict{String, Term}("1" => TLocInt(1))), TLocInt(1)))
+a1t = TTermEmpty(TTerm(TProd(Array{Pair{String, Term}}(["1" => TLocInt(1)])), TLocInt(1)))
 a2t = TTermEmpty(TTermEmpty(TGlob("B")))
 a3t = TTermEmpty(TGlob("A"))
-@test infer_type_(TProd(Array{Term}([])), Array{TTerm}([a1t, a2t, a3t])) == TTerm(TProd(Term[], Dict{String, Term}()), TProd(Term[TTerm(TProd(Term[], Dict{String, Term}("1" => TLocInt(1))), TLocInt(1)), TTerm(TProd(Term[], Dict{String, Term}()), TGlob("B", TypeUniverse())), TGlob("A", TypeUniverse())], Dict{String, Term}()))
+@test infer_type_(TProd(Array{Term}([])), Array{TTerm}([a1t, a2t, a3t])) == TTerm(TProd(Term[], Array{Pair{String, Term}}([])), TProd(Term[TTerm(TProd(Term[], Array{Pair{String, Term}}(["1" => TLocInt(1)])), TLocInt(1)), TTerm(TProd(Term[], Array{Pair{String, Term}}([])), TGlob("B", TypeUniverse())), TGlob("A", TypeUniverse())], Array{Pair{String, Term}}([])))
 
 
 # infer_type_rec(e).t_out |> pr # == "[T1 x [T1 x T1]->T2]->T2"
@@ -662,19 +662,19 @@ e = TApp([TLocInt(1), TAbs(TLocInt(1))])
 f1 = TAbs(TProd(Array{Term}([TGlobAuto("a"), TGlobAuto("b")])))
 f2 = TAbs(TProd(Array{Term}([TLocInt(2), TLocInt(1)])))
 f3 = TAbs(TProd(Array{Term}([TLocInt(2), TGlobAuto("c"), TLocInt(1), ])))
-@test infer_type_rec(TConc([f1, f2, f3])) == TTerm(TProd(Term[], Dict{String, Term}()), TTerm(TProd(Term[], Dict{String, Term}()), TProd(Term[TGlob("A", TypeUniverse()), TGlob("C", TypeUniverse()), TGlob("B", TypeUniverse())], Dict{String, Term}())))
+@test infer_type_rec(TConc([f1, f2, f3])) == TTerm(TProd(Term[], Array{Pair{String, Term}}([])), TTerm(TProd(Term[], Array{Pair{String, Term}}([])), TProd(Term[TGlob("A", TypeUniverse()), TGlob("C", TypeUniverse()), TGlob("B", TypeUniverse())], Array{Pair{String, Term}}([]))))
 infer_type_rec(TConc([f1, f2, f3])) |> pr_ctx
 
 
 f1 = TAbs(TProd(Array{Term}([TLocInt(2), TGlobAuto("b")])))
 f2 = TAbs(TProd(Array{Term}([TLocInt(2), TLocInt(1)])))
 f3 = TAbs(TProd(Array{Term}([TLocInt(2), TGlobAuto("c"), TLocInt(1), ])))
-@test infer_type_rec(TConc([f1, f2, f3])) ==TTerm(TProd(Term[], Dict{String, Term}()), TTerm(TProd(Term[TLocInt(1), TLocInt(2)], Dict{String, Term}()), TProd(Term[TLocInt(2), TGlob("C", TypeUniverse()), TGlob("B", TypeUniverse())], Dict{String, Term}())))
+@test infer_type_rec(TConc([f1, f2, f3])) ==TTerm(TProd(Term[], Array{Pair{String, Term}}([])), TTerm(TProd(Term[TLocInt(1), TLocInt(2)], Array{Pair{String, Term}}([])), TProd(Term[TLocInt(2), TGlob("C", TypeUniverse()), TGlob("B", TypeUniverse())], Array{Pair{String, Term}}([]))))
 infer_type_rec(TConc([f1, f2, f3])) |> pr_ctx
 
 
 f1 = TAbs(TProd(Array{Term}([TLocInt(2), TGlobAuto("b")])))
-@test infer_type_rec(TConc([TLocInt(1), f1])) == TTerm(TProd(Term[TTerm(TLocInt(1), TProd(Term[TLocInt(2), TLocInt(3)], Dict{String, Term}()))], Dict{String, Term}()), TTerm(TLocInt(1), TProd(Term[TLocInt(3), TGlob("B", TypeUniverse())], Dict{String, Term}())))
+@test infer_type_rec(TConc([TLocInt(1), f1])) == TTerm(TProd(Term[TTerm(TLocInt(1), TProd(Term[TLocInt(2), TLocInt(3)], Array{Pair{String, Term}}([])))], Array{Pair{String, Term}}([])), TTerm(TLocInt(1), TProd(Term[TLocInt(3), TGlob("B", TypeUniverse())], Array{Pair{String, Term}}([]))))
 infer_type_rec(TConc([TLocInt(1), f1])) |> pr_ctx
 
 
@@ -698,7 +698,7 @@ infer_type_rec(e) |> pr_ctx  # YES my boy... YESSSS :)
 
 # With letters:
 
-t1 = TTerm(TProd(Term[], Dict{String, Term}("1_" => TLocInt(1))), TLocStr("1_"))
+t1 = TTerm(TProd(Term[], Array{Pair{String, Term}}(["1_" => TLocInt(1)])), TLocStr("1_"))
 t2 = TTerm(TLocInt(1), TLocInt(2))
 robinsonUnify(t1, t2)
 robinsonUnify(t1, t2)[3] |> pr

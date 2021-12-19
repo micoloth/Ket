@@ -76,7 +76,7 @@ err_msg_lambdas(t1::TAbs, t2::TAbs) = "Different lambdas $(pr(t1)) != $(pr(t2)):
 err_msg_sumtags(t1::TSumTerm, t2::TSumTerm) = "For now, you can NEVER unify different tags: $(t1.tag_name) != $(t2.tag_name)"
 err_msg_terms(t1::Term, t2::Term) = "Different: $(pr(t1)) is really different from $(pr(t2))"
 err_msg_prods(t1::TProd, t2::TProd) = "Different lengths: $(length(t1.data)) < $(length(t2.data)), so you cannot even drop."
-err_msg_prods_tags(t1::TProd, t2::TProd) = "Some tags are in second, not in first: $(keys(t1.data_tags)) < $(keys(t2.data_tags)), so you cannot even drop them."
+err_msg_prods_tags(t1::TProd, t2::TProd) = "Some tags are in second, not in first: $(t1.data_tags .|> (x->x[1]))) < $(t2.data_tags .|> (x->x[1]))), so you cannot even drop them."
 err_msg_sums(t1::TSum, t2::TSum) = "Different lengths: $(length(t1.data)) > $(length(t2.data)), so if you are in the last case you are screwed.."
 err_msg_tags(t1::TProd, t2::TProd) = "You cant unify var_tags: $(t1) != $(t2)."
 err_msg_intsum(t1::TIntSum, t2::TIntSum) = "Different lengths: $(length(t1.ns)) > $(length(t2.ns)), so impossible to tell if these are the same..."
@@ -100,17 +100,18 @@ function meetjoin_rec_unify_(t1::TConc, t2::TConc, do_meet::Bool)::MeetJoin_rec_
     MeetJoin_rec_res(TConc(all_ress .|> x -> x.res_type), vcat((all_ress .|> x -> x.cs)...))
 end
 
-concat_(t::TProd...) = TProd(vcat((t .|> (x -> x.data))...), merge((t .|> (x -> x.data_tags))...))
+# CURRENTLY WORNG: concat_(t::TProd...) = TProd(vcat((t .|> (x -> x.data))...), merge((t .|> (x -> x.data_tags))...))
 subdict(d::Dict{Id,Term}, keys::Set{Id}) = Dict{Id,Term}(k => d[k] for k in keys)
 
 function meetjoin_rec_unify_(t1::TProd, t2::TProd, do_meet::Bool)::MeetJoin_rec_res
     t1l, t2l = t1.data |> length, t2.data |> length
-    shared_tags = intersect(keys(t1.data_tags), keys(t2.data_tags))
-    tags_1_not_2 = setdiff(keys(t1.data_tags), keys(t2.data_tags))
-    tags_2_not_1 = setdiff(keys(t2.data_tags), keys(t1.data_tags))
-    shared_res = Dict{Id,MeetJoin_rec_res}(tt => meetjoin_rec_unify_(t1.data_tags[tt], t2.data_tags[tt], do_meet) for tt in shared_tags)
+    data_dict_1, data_dict_2 = Dict{Id, Term}(t1.data_tags), Dict{Id, Term}(t2.data_tags)
+    shared_tags = intersect(keys(data_dict_1), keys(data_dict_2))
+    tags_1_not_2 = setdiff(keys(data_dict_1), keys(data_dict_2))
+    tags_2_not_1 = setdiff(keys(data_dict_2), keys(data_dict_1))
+    shared_res = Dict{Id,MeetJoin_rec_res}(tt => meetjoin_rec_unify_(data_dict_1[tt], data_dict_2[tt], do_meet) for tt in shared_tags)
     shared_res_types = Dict{Id,Term}(tt => shared_res[tt].res_type for tt in shared_tags)
-    res_types_tags = merge(shared_res_types, subdict(t1.data_tags, tags_1_not_2), subdict(t2.data_tags, tags_2_not_1))
+    res_types_tags = merge(shared_res_types, subdict(data_dict_1, tags_1_not_2), subdict(data_dict_2, tags_2_not_1))
     res_tags_cs = vcat((values(shared_res) .|>  x -> x.cs)...)
 
     t1l, t2l = t1.data |> length, t2.data |> length
@@ -121,7 +122,7 @@ function meetjoin_rec_unify_(t1::TProd, t2::TProd, do_meet::Bool)::MeetJoin_rec_
         additional_elems = (t1l > t2l) ? (t1.data[(t2l+1):end]) : (t2.data[(t1l+1):end])
         res_data_types = vcat(res_data_types, additional_elems)
     end
-    MeetJoin_rec_res(TProd(res_data_types, res_types_tags), vcat(res_tags_cs, res_data_cs))
+    MeetJoin_rec_res(TProd(res_data_types, [res_types_tags...]), vcat(res_tags_cs, res_data_cs))
 end
 
 
@@ -283,11 +284,12 @@ function imply_unify_(t1::TProd, t2::TProd)::Imply_res
         return ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_prods(t1, t2)))
     end
     cs_data = Array{Constraint}([DirectConstraint(s1, s2) for (s1, s2) in zip(t1.data, t2.data)])
-    shared_tags = intersect(keys(t1.data_tags), keys(t2.data_tags))
-    if length(setdiff(keys(t2.data_tags), keys(t1.data_tags))) > 0
+    data_dict_1, data_dict_2 = Dict{Id, Term}(t1.data_tags), Dict{Id, Term}(t2.data_tags)
+    shared_tags = intersect(keys(data_dict_1), keys(data_dict_2))
+    if length(setdiff(keys(data_dict_2), keys(data_dict_1))) > 0
         return ErrorConstraint(DirectConstraint(t1, t2), Error(err_msg_prods_tags(t1, t2)))
     end
-    cs_tags = Array{Constraint}([DirectConstraint(t1.data_tags[tt], t2.data_tags[tt]) for tt in shared_tags])
+    cs_tags = Array{Constraint}([DirectConstraint(data_dict_1[tt], data_dict_2[tt]) for tt in shared_tags])
     return vcat(cs_data, cs_tags)
 end
 
@@ -469,7 +471,7 @@ ass_reduc(c::ReverseConstraint, ts::TProd...) = ReverseConstraint(ass_reduc(c.t1
 ass_reduc(c::ErrorConstraint, ts::TProd...) = ErrorConstraint(ass_reduc(c.c, ts...), c.error)
 
 id_data(current_arity) = Array{Term}([TLocInt(i) for i in 1:current_arity])
-id_tags(current_tags) = Dict{Id,Term}(i => TLocStr(i) for i in current_tags)
+id_tags(current_tags) = Array{Pair{Id, Term}}([i => TLocStr(i) for i in current_tags])
 
 struct Arity
     data::Int
@@ -493,7 +495,7 @@ end  # THIS IS DIFFERENT IN VAR VS VAR_TAG #
 function get_subst_prod_tag(tloc::TLocStr, tt::Term, curr_arity::Arity)::TProd
     # you have ALREADY TESTED that tt does not contain tloc, that's the whole point !!!!
     subst = id_tags(curr_arity.tags)
-    subst[tloc.var] = tt # i'm PRETENDING THAT tt DOES NOT CONTAIN var
+    subst[findfirst(subst.|> (x->x[1]==tloc.var))] = (tloc.var=>tt) # i'm PRETENDING THAT tt DOES NOT CONTAIN var
     TProd(id_data(curr_arity.data), subst)
 end  # THIS IS DIFFERENT IN VAR VS VAR_TAG #
 
@@ -725,7 +727,7 @@ function infer_type_(term::TLocInt)::InferResTerm
     TTerm(TProd(Array{Term}([TLocInt(i) for i in 1:term.var])), TLocInt(term.var))
 end #  (but also kinda this is right)
 function infer_type_(term::TLocStr)::InferResTerm
-    return TTerm(TProd(Dict{Id,Term}(term.var => TLocInt(1))), TLocInt(1))  # TAbs(TLocInt(term.var)) was an idea i tried
+    return TTerm(TProd(Array{Pair{Id, Term}}([term.var => TLocInt(1)])), TLocInt(1))  # TAbs(TLocInt(term.var)) was an idea i tried
 end #  (but also kinda this is right)
 function infer_type_(term::TGlob)::InferResTerm
     if term.type isa TAbs
@@ -1124,13 +1126,13 @@ function build_anno_term_TProd(terms_anno::Array{TAnno}; dict_anno::Dict{String,
     if length(dict_anno) > 0
         (keys, vals) = collect(zip(dict_anno...))
         original_length = length(terms_anno)
-        res = TProd(terms_anno .|> x->x.expr, Dict{String, Term}(s=>t.expr for (s,t) in dict_anno))
+        res = TProd(terms_anno .|> x->x.expr, Array{Pair{String, Term}}([s=>t.expr for (s,t) in dict_anno]))
         res_type = infer_type_(res, vcat(terms_anno, [vals...]) .|> x->x.type)
         if res_type isa TermwError
-            restored_prod = TProd(res_type.term.t_out.data[1:original_length], Dict{String, Term}(s=>t for (s,t) in zip(keys, res_type.term.t_out.data[(original_length+1):end])))
+            restored_prod = TProd(res_type.term.t_out.data[1:original_length], Array{Pair{String, Term}}([s=>t for (s,t) in zip(keys, res_type.term.t_out.data[(original_length+1):end])]))
             res_type = TermwError(TTerm(res_type.term.t_in, restored_prod), res_type.error)
         else
-            restored_prod = TProd(res_type.t_out.data[1:original_length], Dict{String, Term}(s=>t for (s,t) in zip(keys, res_type.t_out.data[(original_length+1):end])))
+            restored_prod = TProd(res_type.t_out.data[1:original_length], Array{Pair{String, Term}}([s=>t for (s,t) in zip(keys, res_type.t_out.data[(original_length+1):end])]))
             res_type = TTerm(res_type.t_in, restored_prod)
         end
         return TAnno(res, res_type)

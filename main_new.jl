@@ -187,7 +187,7 @@ function order_list_of_nodes(list_of_nodes::Array{Pair{String, TAnno}})
     pos_dict = Dict(word=>i for (i, word) in enumerate(parents))
     @assert length(unique(parents)) == length(parents)
     for node in list_of_nodes
-        for child in keys(node[2].t_in.data_tags) #<- these are the REQUIRED fields
+        for child in node[2].t_in.data_tags .|> x->x[1]  #<- these are the REQUIRED fields
             if child in parents
                 add_edge!(g, pos_dict[child], pos_dict[node[1]])
             end
@@ -459,7 +459,7 @@ build_anno_term_TProd(Array{TAnno}([a1, a2, a3]))
 
 infer_type_(TProd(Array{Term}([])), Array{TTerm}([a1.type, a2.type, a3.type]))
 
-a1t = TTermEmpty(TTerm(TProd(Dict{String, Term}("1" => TLocInt(1))), TLocInt(1)))
+a1t = TTermEmpty(TTerm(TProd(Array{Pair{String, Term}}(["1" => TLocInt(1)])), TLocInt(1)))
 a1t==a1.type
 a2t = TTermEmpty(TTermEmpty(TGlob("B")))
 a2t==a2.type

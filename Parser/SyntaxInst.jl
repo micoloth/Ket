@@ -212,7 +212,7 @@ function getObjFoundFromAccepted(s::Accepted_SynatxInst_type; as_type::Union{Not
     return getInferredTerm(s) # TODO:  |> transform_in<as_type>
 end
 
-getInferredTerm(s::SyntaxInstReference)::TAnno = TAnno(TLocStr(s.text), TTerm(TProd(Dict{Id,Term}(s.text => s.type)), s.type))
+getInferredTerm(s::SyntaxInstReference)::TAnno = TAnno(TLocStr(s.text), TTerm(TProd(Array{Pair{Id, Term}}([s.text => s.type])), s.type))
 getInferredType(s::SyntaxInstReference)::Term = TTermAuto(s.type, s.type)
 
 getInferredTerm(s::SyntaxInstSimpleString)::TAnno = TAnno(TStr(s.text), TS())

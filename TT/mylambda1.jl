@@ -45,7 +45,7 @@ struct TTerm <: Term
 end
 struct TProd <: Term
     data::Array{Term}
-    data_tags::Dict{Id, Term}
+    data_tags::Array{Pair{Id, Term}}
 end
 struct TSum <: Term
     data::Array{Term}  # THIS IS A BIG PROBLEM. Thanks i hate it!
@@ -98,7 +98,7 @@ Base.:(==)(a::TAbs, b::TAbs) = Base.:(==)(a.body, b.body) && all(a.var_tags .== 
 Base.:(==)(a::TApp, b::TApp) = all(a.ops_dot_ordered .== b.ops_dot_ordered)
 Base.:(==)(a::TConc, b::TConc) = all(a.ops_dot_ordered .== b.ops_dot_ordered)
 Base.:(==)(a::TTerm, b::TTerm) = (a.t_in == b.t_in) && (a.t_out == b.t_out)
-Base.:(==)(a::TProd, b::TProd) = (length(a.data) == length(b.data)) && all(a.data .== b.data) && (a.data_tags == b.data_tags)
+Base.:(==)(a::TProd, b::TProd) = (length(a.data) == length(b.data)) && all(a.data .== b.data) && (Dict{String, Term}(a.data_tags) == Dict{String, Term}(b.data_tags))
 Base.:(==)(a::TSum, b::TSum) = Base.:(==)(a.data, b.data) && all(a.tags .== b.tags)
 Base.:(==)(a::TSumTerm, b::TSumTerm) = (a.data == b.data) && (a.tag == b.tag) && (a.tag_name == b.tag_name)
 Base.:(==)(a::TAnno, b::TAnno) = (a.expr == b.expr) && (a.type == b.type)
@@ -110,8 +110,8 @@ Base.:(==)(a::TStr, b::TStr) = (a.s == b.s)
 
 TAbs(body::Term) = TAbs(body, [string(i) for i in 1:arity(body)])
 TSum(v::Array{Term}) = TSum(v, [string(i) for i in 1:length(v)])
-TProd(v::Array{Term}) = TProd(v, Dict{Id, Term}([]))
-TProd(d::Dict{Id, Term}) = TProd(Array{Term}([]), d)
+TProd(v::Array{Term}) = TProd(v, Array{Pair{Id, Term}}([]))
+TProd(d::Array{Pair{Id, Term}}) = TProd(Array{Term}([]), d)
 TBranches(v::Array{Term}) = TBranches(v, [string(i) for i in 1:length(v)])
 TFunAuto(tin, tout) = TTerm(tin, tout)
 TTermAuto(tin, tout) = TTerm(TProd(Array{Term}([tin])), tout)
@@ -160,7 +160,7 @@ subst(news::TProd, t::TIntProd)::Term = TIntProd(t.ns .|> x->subst(news, x))
 subst(news::TProd, t::TAppend)::Term = TAppend(t.prods .|> x->subst(news, x))
 subst(news::TProd, t::TTerm)::Term = TTerm(subst(news, t.t_in), subst(news, t.t_out))
 subst(news::TProd, t::TAbs)::Term = t # TAbs(subst(news, t.body))
-subst(news::TProd, t::TProd)::Term = TProd(t.data .|> (x->subst(news, x)), Dict{Id, Term}(k=>subst(news, val) for (k, val) in t.data_tags))
+subst(news::TProd, t::TProd)::Term = TProd(t.data .|> (x->subst(news, x)), Array{Pair{Id, Term}}([k=>subst(news, val) for (k, val) in t.data_tags]))
 subst(news::TProd, t::TSum)::Term = TSum(t.data .|> (x->subst(news, x)), t.tags)
 subst(news::TProd, t::TApp)::Term = TApp(t.ops_dot_ordered .|> x->subst(news, x))
 subst(news::TProd, t::TConc)::Term = TConc(t.ops_dot_ordered .|> x->subst(news, x))
@@ -168,7 +168,7 @@ subst(news::TProd, t::TSumTerm)::Term = TSumTerm(t.tag, t.tag_name, subst(news, 
 subst(news::TProd, t::TAnno)::Term = TAnno(subst(news, t.expr), t.type)
 subst(news::TProd, t::TBranches)::Term = TBranches(t.ops_chances .|> x->subst(news, x), t.tags) # Just like TApp, This should have No effect being all TAbs's, but just in case.
 subst(news::TProd, t::TLocInt)::Term = if t.var <= length(news.data) news.data[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news.data))" )) end
-subst(news::TProd, t::TLocStr)::Term = if (t.var in keys(news.data_tags)) news.data_tags[t.var] else throw(DomainError("Undefined local var named $(t.var), args given = $(news.data_tags)" )) end
+subst(news::TProd, t::TLocStr)::Term = (pos = findfirst(x->x[1]==t.var, news.data_tags); if pos!==nothing news.data_tags[pos][2] else throw(DomainError("Undefined local var named $(t.var), args given = $(news.data_tags)" )) end)
 subst(news::TProd, t::TermwError)::Term = TermwError(subst(news, t.term), t.error)
 # subst(news::Array{Term}, t::TLocInt)::Term = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
 
@@ -187,7 +187,7 @@ reduc(t::TTerm)::Term = TTerm(t.t_in |> reduc, t.t_out |> reduc)
 reduc(t::TAbs)::Term = TAbs(reduc(t.body), t.var_tags)
 reduc(t::TApp)::Term = reduc(Array{Term}(t.ops_dot_ordered .|> reduc)) # TApp is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
 reduc(t::TConc)::Term = reduc(Array{Term}(t.ops_dot_ordered .|> reduc)) # TConc is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
-reduc(t::TProd)::Term = TProd(t.data .|> reduc, Dict{Id, Term}(k=>reduc(val) for (k, val) in t.data_tags))
+reduc(t::TProd)::Term = TProd(t.data .|> reduc, Array{Pair{Id, Term}}([k=>reduc(val) for (k, val) in t.data_tags]))
 reduc(t::TSum)::Term = TSum(t.data .|> reduc, t.tags)
 reduc(t::TSumTerm)::Term = TSumTerm(t.tag, t.tag_name, t.data |> reduc)
 reduc(t::TAnno; reduc_type=false)::Term = TAnno(t.expr |> reduc, reduc_type ? (t.type|>reduc) : t.type)
@@ -203,7 +203,7 @@ function reduc(ops::Array{Term})::Term
         elseif (ops1 isa TAbs && ops1.body isa TProd && ops2 isa TAbs)
                 ops = vcat(Array{Term}([TAbs(subst(ops1.body, ops2.body)) |> reduc]), ops[3:end])
         elseif (ops1 isa TSumTerm && ops2 isa TBranches)
-            branches = Dict{String, Term}(n=>s for (n, s) in zip(ops2.tags, ops2.ops_chances))
+            branches = Dict{String, Term}([n=>s for (n, s) in zip(ops2.tags, ops2.ops_chances)])
             ops = vcat([TApp([ops1.data, branches[ops1.tag_name]]) |> reduc], ops[3:end])
         else break
         end
@@ -367,7 +367,7 @@ usedLocsSet(t::TApp)::Set{String} = t.ops_dot_ordered .|> usedLocsSet |> (x->uni
 usedLocsSet(t::TConc)::Set{String} = t.ops_dot_ordered .|> usedLocsSet |> (x->union(Set{String}([]), x...))
 usedLocsSet(t::TTerm)::Set{String} = [t.t_in, t.t_out] .|> usedLocsSet |> (x->union(Set{String}([]), x...))
 usedLocsSet(t::TAbs)::Set{String} = Set{String}([]) # Lam(usedLocsSet(base, t.body))
-usedLocsSet(t::TProd)::Set{String} = union(Set{String}([]), (t.data .|> usedLocsSet)..., (t.data_tags |> values .|> usedLocsSet)...)
+usedLocsSet(t::TProd)::Set{String} = union(Set{String}([]), (t.data .|> usedLocsSet)..., (t.data_tags .|> (x->x[2]) .|> usedLocsSet)...)
 usedLocsSet(t::TSum)::Set{String} = t.data .|> usedLocsSet |> (x->union(Set{String}([]), x...))
 usedLocsSet(t::TSumTerm)::Set{String} = usedLocsSet(t.data)
 usedLocsSet(t::TAnno)::Set{String} = usedLocsSet(t.expr)
@@ -388,7 +388,7 @@ usedLocs(t::TIntProd)::Array{Index} = unique(vcat((t.ns .|> usedLocs)...))
 usedLocs(t::TAppend)::Array{Index} = unique(vcat((t.prods .|> usedLocs)...))
 usedLocs(t::TApp)::Array{Index} = unique(vcat((t.ops_dot_ordered .|> usedLocs)...))
 usedLocs(t::TConc)::Array{Index} = unique(vcat((t.ops_dot_ordered .|> usedLocs)...))
-usedLocs(t::TProd)::Array{Index} = unique(vcat((t.data .|> usedLocs)..., (t.data_tags |>values .|> usedLocs)...))
+usedLocs(t::TProd)::Array{Index} = unique(vcat((t.data .|> usedLocs)..., (t.data_tags .|> (x->x[2]) .|> usedLocs)...))
 usedLocs(t::TSum)::Array{Index} = unique(vcat((t.data .|> usedLocs)...))
 usedLocs(t::TSumTerm)::Array{Index} = t.data |> usedLocs
 usedLocs(t::TAbs)::Array{Index} = Array{Index}([])
@@ -411,7 +411,7 @@ arity_var(base::Index, t::TApp)::Index = t.ops_dot_ordered .|> (x->arity_var(bas
 arity_var(base::Index, t::TConc)::Index = t.ops_dot_ordered .|> (x->arity_var(base, x)) |> maximum
 arity_var(base::Index, t::TTerm)::Index = [t.t_in, t.t_out] .|> (x->arity_var(base, x)) |> maximum
 arity_var(base::Index, t::TAbs)::Index = base # Lam(arity_var(base, t.body))
-arity_var(base::Index, t::TProd)::Index = vcat((t.data .|> (x->arity_var(base, x)))..., (t.data_tags |> values .|> (x->arity_var(base, x)))...) |> (x->maximum(x, init=0))
+arity_var(base::Index, t::TProd)::Index = vcat((t.data .|> (x->arity_var(base, x)))..., (t.data_tags .|> (x->x[2]) .|> (x->arity_var(base, x)))...) |> (x->maximum(x, init=0))
 arity_var(base::Index, t::TSum)::Index = t.data .|> (x->arity_var(base, x)) |> (x->maximum(x, init=0))
 arity_var(base::Index, t::TSumTerm)::Index = arity_var(base, t.data)
 arity_var(base::Index, t::TAnno)::Index = arity_var(base, t.expr)
@@ -440,7 +440,7 @@ has_errors(t::TApp)::Bool = t.ops_dot_ordered .|> has_errors |> any
 has_errors(t::TConc)::Bool = t.ops_dot_ordered .|> has_errors |> any
 has_errors(t::TTerm)::Bool = [t.t_in, t.t_out] .|> has_errors |> any
 has_errors(t::TAbs)::Bool = t.body |> has_errors # Lam(has_errors(base, t.body))
-has_errors(t::TProd)::Bool = (t.data .|> has_errors |> any) || (t.data_tags |>values .|> has_errors |> any)
+has_errors(t::TProd)::Bool = (t.data .|> has_errors |> any) || (t.data_tags .|> (x->x[2]) .|> has_errors |> any)
 has_errors(t::TSum)::Bool = t.data .|> has_errors |> any
 has_errors(t::TSumTerm)::Bool = has_errors(t.data)
 has_errors(t::TAnno)::Bool = has_errors(t.expr)
@@ -542,3 +542,6 @@ reduc(TConc([f1, f2, f3])) |> pr
 reduc(TConc([TConc([f1, f2]), f3])) |> pr
 reduc(TConc([f1, TConc([f2, f3])])) |> pr
 
+
+
+[i for (i, s) in Array{Pair{Int, String}}([1=>"a", 2=>"b"])]
