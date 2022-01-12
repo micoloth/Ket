@@ -161,7 +161,7 @@ function builder_product(s::SyntaxInstStrip)::TAnno
 end
 function builder_productDefFields(s::SyntaxInstStrip)::TAnno
     # SyntaxStrips["productDefFields"] = auto_SyntStrip(SyntaxTerm("["), SyntaxField("productDefFields_fieldS", TLocInt(1)), SyntaxTerm(","), SyntaxTerm("]"))
-    dict = Dict{String, TAnno}(collect_simpleStrings(sstruct)["namedfield_fieldname"] => collect_fields(sstruct)["namedfield_type"] for sstruct in getObjects(s))
+    dict = Array{Pair{String, TAnno}}(collect_simpleStrings(sstruct)["namedfield_fieldname"] => collect_fields(sstruct)["namedfield_type"] for sstruct in getObjects(s))
     build_anno_term_TProd(Array{TAnno}([]); dict_anno=dict)
 end
 function builder_funcBodyDef(s::SyntaxInstStruct)::TAnno
@@ -174,22 +174,29 @@ function builder_funcConc(s::SyntaxInstStrip)::TAnno
 end
 function builder_funcAppNamedArgs(s::SyntaxInstStruct)::TAnno
     # SyntaxStructs["funcAppNamedArgs"] = auto_SyntStruct(AUSS([SyntaxField("funcAppNamedArgs_func", TTerm(TLocInt(1), TLocInt(2))), SyntaxStrips["productArgInFunc"]]))
-    dict = Dict{String, TAnno}(collect_simpleStrings(sstruct)["namedArg_Argname"] => collect_fields(sstruct)["namedArg_term"]
+    dict = Array{Pair{String, TAnno}}(collect_simpleStrings(sstruct)["namedArg_Argname"] => collect_fields(sstruct)["namedArg_term"]
                                for sstruct in getObjects(s.list[2])) # [2] is productArgInFunc !!!!
     prod_arg = build_anno_term_TProd(Array{TAnno}([]); dict_anno=dict)
     build_anno_term_TApp([prod_arg, collect_fields(s)["funcAppNamedArgs_func"]])
 end
 
 
-function order_list_of_nodes(list_of_nodes::Array{Pair{String, TAnno}})
-    parents = list_of_nodes .|> (x->x[1])
+using Graphs, MetaGraphs
+parent_(node::Pair{String, TAnno}) = node[1]
+children_(node::Pair{String, TAnno}) = node[2].type.t_in.data_tags .|> x->x[1]
+
+function order_list_of_nodes(list_of_nodes::Array)
+    # Sorts a generic DAG by calling topological_sort_by_dfs.
+    # IDEA: the DAG arrives as an array of objs such that,
+    # parent_(node) returns the PARENT, and children_(node) returns the LIST OF CHILDREN!!
+    parents = list_of_nodes .|> parent_
     g = SimpleDiGraph(length(parents))
     pos_dict = Dict(word=>i for (i, word) in enumerate(parents))
     @assert length(unique(parents)) == length(parents)
     for node in list_of_nodes
-        for child in node[2].t_in.data_tags .|> x->x[1]  #<- these are the REQUIRED fields
+        for child in children_(node)  #<- these are the REQUIRED fields
             if child in parents
-                add_edge!(g, pos_dict[child], pos_dict[node[1]])
+                add_edge!(g, pos_dict[child], pos_dict[parent_(node)])
             end
         end
     end
@@ -197,6 +204,43 @@ function order_list_of_nodes(list_of_nodes::Array{Pair{String, TAnno}})
     order = topological_sort_by_dfs(g)
     [list_of_nodes[i] for i in order]
 end
+
+tagged_prod(name::String, val::Term) = TProd(Array{Pair{Id, Term}}([name=>val]))
+# tagged_prod(name::String, val::Term) = reduc(TConc([TProd(Array{Term}([val])), TAbs(TProd(Array{Pair{Id, Term}}([name=>TLocInt(1)])))]))
+function build_app_stack(sorted_nodes::Array{Pair{String, TAnno}})::Array{TProd}
+    root_tags = id_tags(children_(sorted_nodes[1]))
+    steps = Array{TProd}([TProd(root_tags)])
+    for (name, val) in sorted_nodes
+        id_tags_prev_step = id_tags(steps[end].data_tags.|>(x->x[1]))
+        val_ = TApp([TProd(id_tags_prev_step), val.expr])
+        val_ = build_anno_term_TApp([tanned_idprod, val]) |> reduc
+        # Here I'm using vcat instead of a fancyer concat_(::Tprod...) function cuz datatags are NEVER repeated anyway...
+        push!(steps, build_anno_term_TProd(vcat(id_tags_prev_step, tagged_prod(name, val_ ).data_tags)))
+    end
+    return steps
+end
+
+# types = [
+#     TTerm(TProd(Array{Pair{String, Term}}([])), TGlob("T")),
+#     TTerm(TProd(Array{Pair{String, Term}}(["a"=>TGlob("T")])), TGlob("U")),
+#     TTerm(TProd(Array{Pair{String, Term}}(["a"=>TGlob("T"), "b"=>TGlob("U")])), TGlob("V")),
+# ]
+# dict = Array{Pair{String, TAnno}}([
+#     "c"=> TAnno(TGlob("v", types[3]), types[3]),
+#     "a"=> TAnno(TGlob("t", types[1]), types[1]),
+#     "b"=> TAnno(TGlob("u", types[2]), types[2]),
+# ])
+# values(dict) .|> (x->x[1] * " = "*(x[2]|>pr))
+# sorted_dict = order_list_of_nodes(dict);
+# sorted_dict |>values .|> (x->x[1] * " = "*(x[2]|>pr))
+# tapp = TApp([TProd(id_tags(children_(sorted_dict[2]))), sorted_dict[2][2].expr])
+# tapp|>pr_E
+# tapp|>reduc|>pr_E
+# steps = build_app_stack(sorted_dict)
+# steps .|> pr_E
+# TConc(steps .|> x->TAbs(x)) |> reduc |> pr_E
+
+# dict |> order_list_of_nodes |> build_app_stack .|> (x->TAbs(x)) |> TConc |> reduc |> pr_E
 
 
 function builder_programFlowInPars(s::SyntaxInstStrip)::TAnno
@@ -207,16 +251,17 @@ function builder_programFlowInPars(s::SyntaxInstStrip)::TAnno
     # SyntaxStrips["programFlowInPars"] = auto_SyntStrip(SyntaxTerm("{"), SyntaxStructs["namedTypedObj_or_returnObj"], SyntaxTerm(";"), SyntaxTerm("}"))
     # bindings["programFlowInPars"] = [builder_programFlowInPars]
     strip_objects = getObjects(s)
-    thorw(DomainError("BAD"))
+    # thorw(DomainError("BAD"))
     strip_objs_namedTypedObj = [sstruct.choice for sstruct in strip_objects if sstruct.flag == 0] # meaning namedTypedObj
-    dict = Array{Pair{String, TAnno}}([collect_simpleStrings(sstruct)["namedfield_fieldname"] => (collect_fields(sstruct)["namedfield_type"], collect_fields(sstruct)["namedTypedObj_term"])
-                               for sstruct in strip_objs_namedTypedObj])
-    dict = Array{Pair{String, TAnno}}([name=> build_anno_term_TAnno(term, type) for (name, (type, term)) in dict])
-    dict = order_list_of_nodes(dict)
-
-    build_anno_term_TProd(Array{TAnno}([]); dict_anno=dict)
-    prod_arg = build_anno_term_TProd(Array{TAnno}([]); dict_anno=dict)
-    build_anno_term_TApp([prod_arg, collect_fields(s)["funcAppNamedArgs_func"]])
+    strip_objs_returnObj = [sstruct.choice for sstruct in strip_objects if sstruct.flag == 1] # meaning returnObj
+    @assert length(strip_objs_returnObj) ==1
+    dict = Array{Pair{String, TAnno}}([
+        collect_simpleStrings(sstruct)["namedfield_fieldname"] => build_anno_term_TAnno(collect_fields(sstruct)["namedTypedObj_term"], collect_fields(sstruct)["namedfield_type"])
+        for sstruct in strip_objs_namedTypedObj])
+    stacked_prog = dict |> order_list_of_nodes |> build_app_stack
+    push!(stacked_prog, collect_fields(strip_objs_returnObj[1])["returnObj_term"])
+    stacked_prog = stacked_prog .|> build_anno_term_TAbs |> build_anno_term_TConc
+    stacked_prog
 end
 
 # function references_handler(d::Array{Dict})
@@ -335,6 +380,15 @@ end
 
 
 s10 = make_s10();
+text = "{return [a,t]; t:A = {2}(1=b, 2=a)}"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
+getBest(rp.structure)[1] |> (x->trace(x; top=true))
+
+
+
+s10 = make_s10();
 text = "b"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
@@ -410,6 +464,15 @@ rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
 getBest(rp.structure)[1] |> (x->trace(x; top=true))
+
+s10 = make_s10();
+text = "{1(3)(2(3))}(1={1}, 2={b}, 3=a)"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
+getBest(rp.structure)[1] |> (x->trace(x; top=true))
+
+
 
 s10 = make_s10();
 text = "{1(3)(2(3))}(1={1}, 2={b}, 3=a)"
