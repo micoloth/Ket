@@ -1,6 +1,6 @@
 
 
-include("unification_3.jl")
+include("unification_4.jl")
 # include("unification_2.jl")
 
 
@@ -34,7 +34,7 @@ include("unification_3.jl")
 
 # t1=TProd(Array{Term}([TypeUniverse(), TypeUniverse()]))
 # t2 = TypeUniverse()
-# robinsonUnify(t1, t2; mode=imply_)
+# robinsonUnify(t1, t2; mode=implydir_)
 
 # e1 = TProd(Array{Term}([TAnno(TLocStr("A"), TypeUniverse()), TAnno(TLocStr("B"), TypeUniverse())]))
 # e2 = TAnno(e1, TypeUniverse())
@@ -63,7 +63,7 @@ using Test
 
 function test_unify_imply(t1, t2)
     println("Unify ", t1 |> pr, "  and  ", t2 |> pr, ":")
-    rr = robinsonUnify(TAbs(t1), TAbs(t2); mode=imply_)
+    rr = robinsonUnify(TAbs(t1), TAbs(t2); mode=implydir_)
     if rr isa ItsLiterallyAlreadyOk
         println("apparently they are the same")
         return true
@@ -101,9 +101,9 @@ function test_unify_meet(t1, t2)
     println("reduced term: ", red |> pr)
     t1 = reduc(TApp([s1, TAbs(t1)]))
     t2 = reduc(TApp([s2, TAbs(t2)]))
-    res1 = robinsonUnify(TAbs(red), TAbs(t1); mode=imply_)
+    res1 = robinsonUnify(TAbs(red), TAbs(t1); mode=implydir_)
     res1 = !(res1 isa Failed_unif_res)
-    res2 = robinsonUnify(TAbs(red), TAbs(t2); mode=imply_)
+    res2 = robinsonUnify(TAbs(red), TAbs(t2); mode=implydir_)
     res2 = !(res2 isa Failed_unif_res)
     println("res1: $(res1), res2: $(res2)")
     return res1 && res2
@@ -185,6 +185,12 @@ t1 = TAbs(TLocInt(1))
 t2 = TGlob("G")
 # @test simplify(t1, t2) == Error("Different: ∀(T1) is really different from G")
 robinsonUnify(TAbs(t1), TAbs(t2))
+@test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
+
+t1 = TGlob("F")
+t2 = TGlob("G")
+# @test simplify(t1, t2) == Error("Different: ∀(T1) is really different from G")
+robinsonUnify(TAbs(t1), TAbs(t2); mode=implydir_)
 @test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
 
 t1 = TAbs(TLocInt(1))
@@ -369,7 +375,7 @@ t2 = TProd(Array{Term}([TGlob("A"), TSumTerm(2, "GQ", TProd(Array{Term}([TGlob("
 # K for TESTS w/ DIFFERENT NUMBER OF ITEMS NOW:
 t1 = TProd(Array{Term}([TLocInt(1), TGlob("B")]))
 t2 = TProd(Array{Term}([TGlob("A"), TLocInt(1), TLocInt(2)]))
-@test robinsonUnify(t1, t2; mode=imply_) isa Failed_unif_res
+@test robinsonUnify(t1, t2; mode=implydir_) isa Failed_unif_res
 @test test_unify_meet(t1, t2)
 
 t1 = TProd(Array{Term}([TLocInt(1), TGlob("B"), TLocInt(2)]))
@@ -388,13 +394,13 @@ t2 = TProd(Array{Term}([TGlob("A"), TGlob("B")]))
 
 t1 = TTerm(TProd(Array{Term}([TLocInt(1), TGlob("B"), TLocInt(2)])), TGlob("Z"))
 t2 = TTerm(TProd(Array{Term}([TGlob("A"), TLocInt(1)])), TGlob("Z"))
-@test robinsonUnify(t1, t2; mode=imply_) isa Failed_unif_res
+@test robinsonUnify(t1, t2; mode=implydir_) isa Failed_unif_res
 @test test_unify_meet(t1, t2)
 @test robinsonUnify(t1, t2; mode=join_)[3] == TTerm(TProd(Term[TGlob("A"), TGlob("B"), TLocInt(1)]), TGlob("Z"))
 
 t1 = TTerm(TProd(Array{Term}([TLocInt(1), TGlob("B")])), TGlob("Z"))
 t2 = TTerm(TProd(Array{Term}([TGlob("A"), TLocInt(1), TLocInt(2)])), TGlob("Z"))
-s1, s2 = robinsonUnify(t1, t2; mode=imply_)
+s1, s2 = robinsonUnify(t1, t2; mode=implydir_)
 ass_reduc(t1, s1) |> pr
 ass_reduc(t2, s2) |> pr
 @test ass_reduc(t2, s2) == TTerm(TProd(Term[TGlob("A"), TGlob("B"), TLocInt(1)]), TGlob("Z"))
@@ -408,14 +414,14 @@ t2 = TTermAuto(TTerm(TProd(Array{Term}([TGlob("A"), TLocInt(2)])), TGlob("Z")), 
 
 t1 = TTermAuto(TTerm(TProd(Array{Term}([TLocInt(1)])), TGlob("Z")), TGlob("Z"))
 t2 = TTermAuto(TTerm(TProd(Array{Term}([TGlob("A"), TLocInt(2)])), TGlob("Z")), TGlob("Z"))
-@test robinsonUnify(t1, t2; mode=imply_) isa Failed_unif_res
+@test robinsonUnify(t1, t2; mode=implydir_) isa Failed_unif_res
 @test test_unify_meet(t1, t2)
 
 t1 = TTermAuto(TTerm(TProd(Array{Term}([TLocInt(1), TLocInt(2)])), TGlob("Z")), TGlob("Z"))
 t2 = TTermAuto(TTerm(TProd(Array{Term}([TGlob("A")])), TGlob("Z")), TGlob("Z"))
 t1 |> pr
 t2 |> pr
-s1, s2 = robinsonUnify(t1, t2; mode=imply_)
+s1, s2 = robinsonUnify(t1, t2; mode=implydir_)
 ass_reduc(t1, s1) |> pr
 ass_reduc(t2, s2) |> pr
 @test ass_reduc(t1, s1) == TTerm(TProd(Term[TTerm(TProd(Term[TGlob("A"), TLocInt(1)]), TGlob("Z"))]), TGlob("Z"))
@@ -681,8 +687,7 @@ infer_type_rec(TConc([TLocInt(1), f1])) |> pr_ctx
 SType |> pr
 S |> pr
 infer_type_rec(S) |> pr_ctx  # YES my boy... YES :)
-@test infer_type_rec(S) == TTerm(TProd(Term[]), TTerm(TProd(Term[TTerm(TProd(Term[TLocInt(1)]), TTerm(TProd(Term[TLocInt(2)]), TLocInt(3))), TTerm(TProd(Term[TLocInt(1)]), TLocInt(2)), TLocInt(1)]), TLocInt(3)))
-
+@test infer_type_rec(S) == TTerm(TProd(Term[]), TTerm(TProd(Term[TTerm(TProd(Term[TLocInt(2)]), TTerm(TProd(Term[TLocInt(1)]), TLocInt(3))), TTerm(TProd(Term[TLocInt(2)]), TLocInt(1)), TLocInt(2)]), TLocInt(3)))
 
 
 proj1_1 = TApp([TLocInt(1), TAbs(TLocInt(1))])
@@ -727,17 +732,20 @@ infer_type_rec(e) |> pr_ctx  # YES my boy... YESSSS :)
 e1 = TAnno(TAbs(TGlobAuto("b")), TTermAuto(TGlob("A"), TGlob("B")))
 e2 = TGlobAuto("a")
 e = TAppAuto(e1, e2)
-infer_type_rec(e)|>pr
+e |> pr_E
+infer_type_rec(e) |> pr
 
 e1 = TAnno(TAbs(TGlobAuto("b")), TTermAuto(TGlob("A"), TGlob("B")))
 e2 = TGlobAuto("c")
 e = TAppAuto(e1, e2)
-infer_type_rec(e)|>pr # GREAT
+e |> pr_E
+infer_type_rec(e) |> pr # GREAT
+@test infer_type_rec(e) isa TermwError
 
 
 e = TProd([TAnno(TLocInt(1), TGlob("A")), TProd([TLocInt(1), TAnno(TLocInt(1), TGlob("A"))]), TAnno(TLocInt(1), TGlob("B"))])
-e|> pr_E
-infer_type_rec(e)|>pr # GREAT
+e |> pr_E
+infer_type_rec(e) |> pr # GREAT
 
 
 end # COMMENT TESTS
