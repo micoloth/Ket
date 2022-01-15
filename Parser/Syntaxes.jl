@@ -105,11 +105,11 @@ end
 
 function getPrevIndexes(s::SyntaxCore, i::Int)::Array{Int}
     if s isa SyntaxStruct return [i - 1]
-	elseif s isa SyntaxStrip Dict(3=>[2], 4=>[2], 2=>[1,3])[i] end
+	elseif s isa SyntaxStrip Dict(3=>[2], 4=>[2], 2=>[1,3], 1=>[])[i] end
 end
 function getNextIndexes(s::SyntaxCore, i::Int)::Array{Int}
     if s isa SyntaxStruct return  [i + 1]
-    elseif s isa SyntaxStrip Dict(3=>[2],1=>[2], 2=>[3,4])[i] end
+    elseif s isa SyntaxStrip Dict(3=>[2],1=>[2], 2=>[3,4], 4=>[])[i] end
 end
 
 function getPrevIndex(s::SyntaxCore, i::Int, newSyntaxCoreThatShouldBeTheNewIndex::SyntaxCore)::Int

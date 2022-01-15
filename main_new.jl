@@ -161,7 +161,7 @@ function builder_product(s::SyntaxInstStrip)::TAnno
 end
 function builder_productDefFields(s::SyntaxInstStrip)::TAnno
     # SyntaxStrips["productDefFields"] = auto_SyntStrip(SyntaxTerm("["), SyntaxField("productDefFields_fieldS", TLocInt(1)), SyntaxTerm(","), SyntaxTerm("]"))
-    dict = Array{Pair{String, TAnno}}(collect_simpleStrings(sstruct)["namedfield_fieldname"] => collect_fields(sstruct)["namedfield_type"] for sstruct in getObjects(s))
+    dict = Array{Pair{String, TAnno}}([collect_simpleStrings(sstruct)["namedfield_fieldname"]=> collect_fields(sstruct)["namedfield_type"] for sstruct in getObjects(s)])
     build_anno_term_TProd(Array{TAnno}([]); dict_anno=dict)
 end
 function builder_funcBodyDef(s::SyntaxInstStruct)::TAnno
@@ -174,16 +174,21 @@ function builder_funcConc(s::SyntaxInstStrip)::TAnno
 end
 function builder_funcAppNamedArgs(s::SyntaxInstStruct)::TAnno
     # SyntaxStructs["funcAppNamedArgs"] = auto_SyntStruct(AUSS([SyntaxField("funcAppNamedArgs_func", TTerm(TLocInt(1), TLocInt(2))), SyntaxStrips["productArgInFunc"]]))
-    dict = Array{Pair{String, TAnno}}(collect_simpleStrings(sstruct)["namedArg_Argname"] => collect_fields(sstruct)["namedArg_term"]
-                               for sstruct in getObjects(s.list[2])) # [2] is productArgInFunc !!!!
-    prod_arg = build_anno_term_TProd(Array{TAnno}([]); dict_anno=dict)
+    namedArgsList = Array{Pair{String, TAnno}}([Pair{String, TAnno}(collect_simpleStrings(sstruct)["namedArg_Argname"], collect_fields(sstruct)["namedArg_term"])
+                               for sstruct in getObjects(s.list[2])])
+    # ^ s.list[2] is productArgInFunc, that is the Named Args list. namedArgsList colects all (name, obj) pairs.
+    prod_arg = build_anno_term_TProd(Array{TAnno}([]); dict_anno=namedArgsList)
     build_anno_term_TApp([prod_arg, collect_fields(s)["funcAppNamedArgs_func"]])
 end
-
+function builder_concat_dot(s::SyntaxInstStrip)
+    # SyntaxStrips["concat_dot"] = auto_SyntStrip(nothing, SyntaxField("typearrowStrip_first", TTerm(TLocInt(1), TLocInt(2))), ".", nothing)
+    build_anno_term_TConc(collect_strip_tannos(s))
+end
 
 using Graphs, MetaGraphs
 parent_(node::Pair{String, TAnno}) = node[1]
 children_(node::Pair{String, TAnno}) = node[2].type.t_in.data_tags .|> x->x[1]
+children_wtypes(node::Pair{String, TAnno}) = node[2].type.t_in.data_tags
 
 function order_list_of_nodes(list_of_nodes::Array)
     # Sorts a generic DAG by calling topological_sort_by_dfs.
@@ -208,14 +213,15 @@ end
 tagged_prod(name::String, val::Term) = TProd(Array{Pair{Id, Term}}([name=>val]))
 # tagged_prod(name::String, val::Term) = reduc(TConc([TProd(Array{Term}([val])), TAbs(TProd(Array{Pair{Id, Term}}([name=>TLocInt(1)])))]))
 function build_app_stack(sorted_nodes::Array{Pair{String, TAnno}})::Array{TProd}
-    root_tags = id_tags(children_(sorted_nodes[1]))
-    steps = Array{TProd}([TProd(root_tags)])
+    root_tags = id_tags_tanned(children_wtypes(sorted_nodes[1]))
+    steps = Array{TProd}([build_anno_term_TProd(Array{TAnno}([]); dict_anno=root_tags)])
     for (name, val) in sorted_nodes
-        id_tags_prev_step = id_tags(steps[end].data_tags.|>(x->x[1]))
+        id_tags_prev_step = id_tags_tanned(steps[end].data_tags.|>(x->x[1]))
         val_ = TApp([TProd(id_tags_prev_step), val.expr])
         val_ = build_anno_term_TApp([tanned_idprod, val]) |> reduc
         # Here I'm using vcat instead of a fancyer concat_(::Tprod...) function cuz datatags are NEVER repeated anyway...
-        push!(steps, build_anno_term_TProd(vcat(id_tags_prev_step, tagged_prod(name, val_ ).data_tags)))
+        all_tanned_tags = vcat(id_tags_prev_step, tagged_prod(name, val_ ).data_tags)
+        push!(steps, build_anno_term_TProd(Array{TAnno}([]); dict_anno=all_tanned_tags))
     end
     return steps
 end
@@ -225,17 +231,20 @@ end
 #     TTerm(TProd(Array{Pair{String, Term}}(["a"=>TGlob("T")])), TGlob("U")),
 #     TTerm(TProd(Array{Pair{String, Term}}(["a"=>TGlob("T"), "b"=>TGlob("U")])), TGlob("V")),
 # ]
+# types.|>pr
+
 # dict = Array{Pair{String, TAnno}}([
 #     "c"=> TAnno(TGlob("v", types[3]), types[3]),
 #     "a"=> TAnno(TGlob("t", types[1]), types[1]),
 #     "b"=> TAnno(TGlob("u", types[2]), types[2]),
 # ])
-# values(dict) .|> (x->x[1] * " = "*(x[2]|>pr))
+# dict .|> (x->x[1] * " = "*(x[2]|>pr))
 # sorted_dict = order_list_of_nodes(dict);
-# sorted_dict |>values .|> (x->x[1] * " = "*(x[2]|>pr))
+# sorted_dict .|> (x->x[1] * " = "*(x[2]|>pr))
 # tapp = TApp([TProd(id_tags(children_(sorted_dict[2]))), sorted_dict[2][2].expr])
 # tapp|>pr_E
 # tapp|>reduc|>pr_E
+# sorted_nodes = sorted_dict
 # steps = build_app_stack(sorted_dict)
 # steps .|> pr_E
 # TConc(steps .|> x->TAbs(x)) |> reduc |> pr_E
@@ -343,9 +352,6 @@ function make_s10()
     SyntaxStructs["funcBodyDef"] = auto_SyntStruct(AUSS([SyntaxTerm("{"), SyntaxField("funcBodyDef_body", TLocInt(1)), SyntaxTerm("}")]))
     bindings["funcBodyDef"] = [builder_funcBodyDef]
 
-    SyntaxStrips["funcConc"] = auto_SyntStrip(nothing,  SyntaxField("funcConc_func", TLocInt(1)), SyntaxTerm("."), nothing)
-    bindings["funcConc"] = [builder_funcConc]
-
     SyntaxStructs["namedArg"] = auto_SyntStruct(AUSS([SyntaxSimpleString("namedArg_Argname"), "=", SyntaxField("namedArg_term", TLocInt(1))]))
     SyntaxStrips["productArgInFunc"] = auto_SyntStrip(SyntaxTerm("("), SyntaxStructs["namedArg"], SyntaxTerm(","), SyntaxTerm(")"))
     SyntaxStructs["funcAppNamedArgs"] = auto_SyntStruct(AUSS([SyntaxField("funcAppNamedArgs_func", TTerm(TLocInt(1), TLocInt(2))), SyntaxStrips["productArgInFunc"]]))
@@ -356,6 +362,11 @@ function make_s10()
     SyntaxChoicess["namedTypedObj_or_returnObj"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["namedTypedObj"], SyntaxStructs["returnObj"]]))
     SyntaxStrips["programFlowInPars"] = auto_SyntStrip(SyntaxTerm("{"), SyntaxChoicess["namedTypedObj_or_returnObj"], SyntaxTerm(";"), SyntaxTerm("}"))
     bindings["programFlowInPars"] = [builder_programFlowInPars]
+
+    SyntaxStrips["concat_dot"] = auto_SyntStrip(nothing, SyntaxField("concat_dot_func", TTerm(TLocInt(1), TLocInt(2))), ".", nothing)
+    bindings["concat_dot"] =[builder_concat_dot]
+    # SyntaxStrips["funcConc"] = auto_SyntStrip(nothing,  SyntaxField("funcConc_func", TLocInt(1)), SyntaxTerm("."), nothing)
+    # bindings["funcConc"] = [builder_funcConc]
 
     s10p = s10.posteriorsStructure
     for (name, s) in SyntaxTerms  addSyntax!(s10p, name, s) end
@@ -379,12 +390,12 @@ function make_s10()
 end
 
 
-s10 = make_s10();
-text = "{return [a,t]; t:A = {2}(1=b, 2=a)}"
-rp = RandomParser10("", [], s10);
-parse(rp, text)
-rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+# s10 = make_s10();
+# text = "{return [a,t]; t:A = {2}(1=b, 2=a)}"
+# rp = RandomParser10("", [], s10);
+# parse(rp, text)
+# rp.structure|>trace
+# getBest(rp.structure)[1] |> (x->trace(x; top=true))
 
 
 
@@ -436,6 +447,7 @@ rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
 getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBest(rp.structure)[1].s|>getInferredTerm |>x->x.type
 
 s10 = make_s10();
 text = "{g(k)}"
@@ -473,16 +485,33 @@ rp.structure|>trace
 getBest(rp.structure)[1] |> (x->trace(x; top=true))
 
 
-
 s10 = make_s10();
-text = "{1(3)(2(3))}(1={1}, 2={b}, 3=a)"
+text = "f.g.h"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
 getBest(rp.structure)[1] |> (x->trace(x; top=true))
 
 
+s10 = make_s10();
+text = "f.g.{1}"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
+getBest(rp.structure)[1] |> (x->trace(x; top=true))
+
+s10 = make_s10();
+text = "{2}.f.g"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
+getBest(rp.structure)[1] |> (x->trace(x; top=true))
+
+
+
 rp.structure.finisheds.matrix[1][13]
+
+
 
 
 
@@ -496,7 +525,7 @@ request.type |> pr
 got = rp.structure.finisheds.matrix[0+1][12] |> x->filter(y->y.s isa SyntaxInstObject, x) |> x->x[1].s.inferred_obj
 got.expr |> pr
 got.type |> pr
-robinsonUnify(got.type.t_out, request.type.t_out; mode=imply_)
+robinsonUnify(got.type.t_out, request.type.t_out; mode=implydir_)
 can_be_a(got.type.t_out, request.type.t_out)
 
 a1 = rp.structure.finisheds.matrix[15+1][18-15] |> x->filter(y->y.s isa SyntaxInstObject, x) |> x->x[1].s.inferred_obj

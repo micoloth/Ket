@@ -449,6 +449,26 @@ has_errors(t::TSumTerm)::Bool = has_errors(t.data)
 has_errors(t::TermwError)::Bool = true
 
 
+errors(t::TGlob)::Array{Error} = Array{Error}([])
+errors(t::TLocInt)::Array{Error} = Array{Error}([])
+errors(t::TLocStr)::Array{Error} = Array{Error}([])
+errors(t::TTop)::Array{Error} = Array{Error}([])
+errors(t::TypeUniverse)::Array{Error} = Array{Error}([])
+errors(t::TN)::Array{Error} = Array{Error}([])
+errors(t::TS)::Array{Error} = Array{Error}([])
+errors(t::TInt)::Array{Error} = Array{Error}([])
+errors(t::TIntSum)::Array{Error} = vcat((t.ns .|> errors)...)
+errors(t::TIntProd)::Array{Error} = vcat((t.ns .|> errors)...)
+errors(t::TAppend)::Array{Error} = vcat((t.prods .|> errors)...)
+errors(t::TApp)::Array{Error} = vcat((t.ops_dot_ordered .|> errors)...)
+errors(t::TConc)::Array{Error} = vcat((t.ops_dot_ordered .|> errors)...)
+errors(t::TProd)::Array{Error} = vcat((t.data .|> errors)..., (t.data_tags .|> (x->x[2]) .|> errors)...)
+errors(t::TSum)::Array{Error} = vcat((t.data .|> errors)...)
+errors(t::TSumTerm)::Array{Error} = t.data |> errors
+errors(t::TAbs)::Array{Error} = Array{Error}([])
+errors(t::TTerm)::Array{Error} = vcat(t.t_in |> errors, t.t_out |> errors)
+errors(t::TermwError)::Array{Error} = [t.error]
+
 
 # TGlob   TGlob
 # TLocInt   TLocInt

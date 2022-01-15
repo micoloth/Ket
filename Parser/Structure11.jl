@@ -14,7 +14,7 @@ end
 ScopedTypeInference() = ScopedTypeInference([])
 function can_be_a(request::Term, chance::Term)::Bool # These are the TYPES! ofc
     if (request === chance) true
-    elseif robinsonUnify(chance, request; mode=imply_) isa Failed_unif_res
+    elseif robinsonUnify(chance, request; mode=implydir_) isa Failed_unif_res
         false
     else
         true
@@ -248,7 +248,8 @@ function processChance(S::Structure11, chance::StackableChance)
     # when another chance tries to do it from the other side, it CREATES IT AGAIN!!
 
     linkedWithAnything = false
-    if (chance.goForward && hasEnded(chance.what)) || (chance.goBackward && hasJustBegun(chance.what))
+    if ((chance.goForward && hasEnded(chance.what) && length(chancesNeedingThisPreviously_hc(S.hangings, chance.to, chance.what))==0)
+        || (chance.goBackward && hasJustBegun(chance.what)) && length(chancesNeedingThisNext_hc(S.hangings, chance.from, chance.what))==0)
         linkedWithAnything = true
     end
     if (chance.goForward && !hasEnded(chance.what) && chance.to < size(S))
@@ -276,7 +277,7 @@ function processChance(S::Structure11, chance::StackableChance)
             for (fin, to_new) in all_objects_beginning_at_that_can_be_a(S.finisheds, UInt(chance.to), possibleNeeded)# This JUST RETURNS EMPTY if possibleNeeded not SyntaxField
                 push!(new_hc_obj_created_somehow, makeObjFieldAsChance_goingForward(S, possibleNeeded, fin, chance.what, chance.to,to_new, 1))
             end
-            # //careful here: # FIND A FINISHED, OR USE A WORD AS A VARIABLE:
+            # //careful here: # USE A WORD AS A VARIABLE:
             if (possibleNeeded isa SyntaxField && getOneLongFieldNext(chance.what, possibleNeeded)===nothing && !occursin(S.inputVec[chance.to+1], "()[]-><{}:=.,;:_\"'+-/\\_|") # TODO: is this right? Or should be ! ?
                     && !any(chance.what.nexts .|> (x->x.object.name == possibleNeeded && x.object.objectFound isa SyntaxInstReference && x.object.objectFound.text == S.inputVec[chance.to+1])))
                 push!(new_hc_obj_created_somehow, makeReferenceFieldChance_goingForward(S, possibleNeeded, chance))
@@ -296,7 +297,7 @@ function processChance(S::Structure11, chance::StackableChance)
             for (fin, from_new) in all_objects_ending_at_that_can_be_a(S.finisheds, UInt(chance.from), possibleNeeded)# This JUST RETURNS EMPTY if possibleNeeded not SyntaxField
                 push!(new_hc_obj_created_somehow, makeObjFieldAsChance_goingBackward(S, possibleNeeded, fin, chance.what, from_new, chance.from, 1))
             end
-            # //careful here: # FIND A TGLOB, OR USE A WORD AS A VARIABLE:
+            # //careful here: # USE A WORD AS A VARIABLE:
             if (possibleNeeded isa SyntaxField && getOneLongFieldPrev(chance.what, possibleNeeded) ===nothing && !occursin(S.inputVec[chance.from], "()[]-><{}:=.,;:_\"'+-/\\_|") # chance.from -1, +1 cuz Julia
                 && !any(chance.what.previouses .|> (x->x.object.name == possibleNeeded && x.object.objectFound isa SyntaxInstReference && x.object.objectFound.text == S.inputVec[chance.from])))
                 push!(new_hc_obj_created_somehow, makeReferenceFieldChance_goingBackward(S, possibleNeeded, chance))
@@ -365,4 +366,8 @@ function doTheBestYouCan(S::Structure11)
 end
 
 getBest(S::Structure11) = filter(x->x.s isa SyntaxInstObject, at(S.finisheds, 0, size(S.finisheds)))
+
+
+score(s::SyntaxInstObject, from::Int, to::Int) = to - from # For now, just prefer the long ones
+# function getBests(S::Structure11) = filter(x->x.s isa SyntaxInstObject, at(S.finisheds, 0, size(S.finisheds)))
 

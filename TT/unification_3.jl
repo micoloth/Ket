@@ -346,6 +346,7 @@ ass_reduc(c::ErrorConstraint, ts::TProd...) = ErrorConstraint(ass_reduc(c.c, ts.
 
 id_data(current_arity) = Array{Term}([TLocInt(i) for i in 1:current_arity])
 id_tags(current_tags) = Array{Pair{Id, Term}}([i => TLocStr(i) for i in current_tags])
+id_tags_tanned(current_tags_w_type::Array{Pair{Id, Term}}) = Array{Pair{Id, TAnno}}([k => Tanno(TLocStr(k), type) for (k,type) in current_tags_w_type])
 
 struct Arity
     data::Int
@@ -447,7 +448,7 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
     end
 
     # 2. unify term and/or produce Eqconstraints
-    # if mode == imply_
+    # if mode == implydir_
     #     STACK = Array{Constraint}([DirectConstraint(t1, t2)])
     #     ERRORSTACK = Array{ErrorConstraint}([])
     # else
@@ -478,14 +479,14 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
                 append!(STACK, cs_inside.cs)
             end
         elseif ct1 isa TLocStr && ct2 isa TLocStr
-            # NOTE: it would be NICE if i reworked Imply_ mode so that this DOESNT happen ... println("Does locloc Still happen? Ever ????? (Here, w/ $(ct1) and $(ct2))")
+            # NOTE: it would be NICE if i reworked implydir_ mode so that this DOESNT happen ... println("Does locloc Still happen? Ever ????? (Here, w/ $(ct1) and $(ct2))")
             if !(ct1.var == ct2.var) # cannot hurt can it?
                 # throw(DomainError("This never happens.. Right.. Right?? $(ct1) required to be $(ct2)"))
                 push!(ERRORSTACK, ErrorConstraint(c, "You are asking to unify these names, which is not a thing"))
             end
             # var, tt = ct1.var, ct2 # it's ARBITRARY since these names have no meaning anyway
         elseif ct1 isa TLocInt && ct2 isa TLocInt
-            # NOTE: it would be NICE if i reworked Imply_ mode so that this DOESNT happen ... println("Does locloc Still happen? Ever ????? (Here, w/ $(ct1) and $(ct2))")
+            # NOTE: it would be NICE if i reworked implydir_ mode so that this DOESNT happen ... println("Does locloc Still happen? Ever ????? (Here, w/ $(ct1) and $(ct2))")
             if !(ct1.var == ct2.var)
                 current_arity, current_total_subst = do_the_subst_thing!(ct1, ct2, current_arity, current_total_subst, STACK, ERRORSTACK)
             end
@@ -600,7 +601,7 @@ function infer_type_(term::TAnno, t_computed::InferResTermIn)::InferResTerm # IM
             else ass_reduc(t_computed.t_in, substs[1]) end  # HOPEFULLY this is a Type, NOT a body
     res = if !(substs isa Failed_unif_res) TTerm(args, ass_reduc(term_type, substs[2]))
             else TermwError(TTerm(args, term_type), Error("Wrong annotation: " * get_string(substs[4]))) end
-    # NOTE^ :  mode=imply_ doesnt even return a res_type, even less one with an error! Of course
+    # NOTE^ :  mode=implydir_ doesnt even return a res_type, even less one with an error! Of course
     res
 end
 
@@ -955,12 +956,13 @@ function build_anno_term_TAnno(term_anno::TAnno, type_anno::TAnno)::InferResTAnn
     res = TAnno(term_anno.expr, type_anno.expr)
     TAnno(term_anno.expr, infer_type_(res, term_anno.type))
 end
-function build_anno_term_TProd(terms_anno::Array{TAnno}; dict_anno::Dict{String, TAnno}=Dict{String, TAnno}([]))::InferResTAnno # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
+
+function build_anno_term_TProd(terms_anno::Array{TAnno}; dict_anno::Array{Pair{String, TAnno}}=Array{Pair{String, TAnno}}([]))::InferResTAnno # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
     if length(dict_anno) > 0
         (keys, vals) = collect(zip(dict_anno...))
         original_length = length(terms_anno)
         res = TProd(terms_anno .|> x->x.expr, Array{Pair{String, Term}}([s=>t.expr for (s,t) in dict_anno]))
-        res_type = infer_type_(res, vcat(terms_anno, [vals...]) .|> x->x.type)
+        res_type = infer_type_(res, Array{InferResTermIn}(vcat(terms_anno, [vals...]) .|> x->x.type))
         if res_type isa TermwError
             restored_prod = TProd(res_type.term.t_out.data[1:original_length], Array{Pair{String, Term}}([s=>t for (s,t) in zip(keys, res_type.term.t_out.data[(original_length+1):end])]))
             res_type = TermwError(TTerm(res_type.term.t_in, restored_prod), res_type.error)
@@ -974,6 +976,13 @@ function build_anno_term_TProd(terms_anno::Array{TAnno}; dict_anno::Dict{String,
         return TAnno(res, infer_type_(res, terms_anno .|> x->x.type))
     end
 end
+
+# build_anno_term_TProd(Array{TAnno}([]); dict_anno=[
+#     Pair{String, TAnno}("a", TAnno(TGlobAuto("aa"), TGlobAutoCtx("AA").type)),
+#     Pair{String, TAnno}("b", TAnno(TGlobAuto("bb"), TGlobAutoCtx("BB").type)),
+#     ])|> pr_E
+
+
 
 function build_anno_term_TSumTerm(tag, tag_name, term_anno::TAnno)::InferResTAnno
     res = TSumTerm(tag, tag_name, term_anno.expr)
