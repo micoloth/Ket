@@ -14,7 +14,7 @@ end
 ScopedTypeInference() = ScopedTypeInference([])
 function can_be_a(request::Term, chance::Term)::Bool # These are the TYPES! ofc
     if (request === chance) true
-    elseif robinsonUnify(chance, request; mode=implydir_) isa Failed_unif_res
+    elseif failed_unif_res(robinsonUnify(chance, request; mode=implydir_))
         false
     else
         true
@@ -365,9 +365,38 @@ function doTheBestYouCan(S::Structure11)
     end
 end
 
-getBest(S::Structure11) = filter(x->x.s isa SyntaxInstObject, at(S.finisheds, 0, size(S.finisheds)))
+getBestObjects(S::Structure11)::Array{SyntaxInstObject} = getBestObjects(S, 0, size(S.finisheds))
+getBestObjects(S::Structure11, from, to)::Array{SyntaxInstObject} = at(S.finisheds, from, to) .|> (x->x.s) |> y->filter(x->x isa SyntaxInstObject, y)
+
+
+function getBestOptions(S::Structure11; n_candidates::Int=7)
+    ambiguity=false
+    results = Set{SyntaxInstObject}([])
+    for s in size(S.finisheds):-1:1
+        positions = [(i, i+s) for i in 0:(size(S.finisheds)-s)]
+        for (from,to) in positions
+            objs = getBestObjects(S, from, to)
+            if length(objs) > 1 ambiguity = true end
+            for obj in objs union!(results, getMainComponents(obj, 3)) end
+            if length(results)>n_candidates return results end
+        end
+    end
+    if ambiguity println("Ambiguity !!!") end
+    results
+end
+
+
+results = Set{Int}([])
+union!(results, [3,4,4])
+
+
 
 
 score(s::SyntaxInstObject, from::Int, to::Int) = to - from # For now, just prefer the long ones
 # function getBests(S::Structure11) = filter(x->x.s isa SyntaxInstObject, at(S.finisheds, 0, size(S.finisheds)))
+
+
+
+
+
 

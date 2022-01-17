@@ -64,27 +64,28 @@ using Test
 function test_unify_imply(t1, t2)
     println("Unify ", t1 |> pr, "  and  ", t2 |> pr, ":")
     rr = robinsonUnify(TAbs(t1), TAbs(t2); mode=implydir_)
-    if rr isa ItsLiterallyAlreadyOk
+    if rr |> itsLiterallyAlreadyOk
         println("apparently they are the same")
         return true
     end
-    (s1, s2, _) = rr
-    red1 = reduc(TApp([s1, TAbs(t1)]))
+    s1, s2 = rr.preSubst1, rr.preSubst2
+    red1 = s1 !== nothing ? reduc(TApp([s1, TAbs(t1)])) : t1
+    red2 = reduc(TApp([s2, TAbs(t2)]))
     println("reduced term: ", red1 |> pr)
-    res = (red1 == reduc(TApp([s2, TAbs(t2)])))
+    res = (red1 == red2)
     println(res)
     return res
 end
 function test_unify_join(t1, t2)
     println("Unify ", t1 |> pr, "  and  ", t2 |> pr, ":")
     rr = robinsonUnify(TAbs(t1), TAbs(t2); mode=join_)
-    if rr isa ItsLiterallyAlreadyOk
+    if rr |> itsLiterallyAlreadyOk
         println("apparently they are the same")
         return true
     end
-    (s1, s2, red) = rr
+    s1, s2, red = rr.preSubst1, rr.preSubst2, rr.res
     println("reduced term: ", red |> pr)
-    res1 = (red == reduc(TApp([s1, TAbs(t1)])))
+    res1 = (red == (s1 !== nothing ? reduc(TApp([s1, TAbs(t1)])) : t1))
     res2 = (red == reduc(TApp([s2, TAbs(t2)])))
     println("res1: $(res1), res2: $(res2)")
     return res1 && res2
@@ -93,7 +94,7 @@ function test_unify_meet(t1, t2)
     # The idea being that this works for DIFFERENT PROD LEMGTHS, too !!!
     println("Unify ", t1 |> pr, "  and  ", t2 |> pr, ":")
     rr = robinsonUnify(TAbs(t1), TAbs(t2); mode=meet_)
-    if rr isa ItsLiterallyAlreadyOk
+    if rr |> itsLiterallyAlreadyOk
         println("apparently they are the same")
         return true
     end
@@ -102,9 +103,9 @@ function test_unify_meet(t1, t2)
     t1 = reduc(TApp([s1, TAbs(t1)]))
     t2 = reduc(TApp([s2, TAbs(t2)]))
     res1 = robinsonUnify(TAbs(red), TAbs(t1); mode=implydir_)
-    res1 = !(res1 isa Failed_unif_res)
+    res1 = !(res1 |> failed_unif_res)
     res2 = robinsonUnify(TAbs(red), TAbs(t2); mode=implydir_)
-    res2 = !(res2 isa Failed_unif_res)
+    res2 = !(res2 |> failed_unif_res)
     println("res1: $(res1), res2: $(res2)")
     return res1 && res2
 end
@@ -113,7 +114,7 @@ end
 eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> all
 
 
-@testset "unification_2" begin  # COMMENT TESTS
+# @testset "unification_2" begin  # COMMENT TESTS
 
 
 t1 = TAppAuto(TGlob("G0"), TLocInt(1))
@@ -126,9 +127,9 @@ robinsonUnify(TAbs(t1), TAbs(t2))
 
 t1 = TProd(Array{Pair{Id, Term}}(["f"=>TLocInt(1), "g"=>TGlob("G")]))
 t2 = TProd(Array{Pair{Id, Term}}(["g"=>TLocInt(2), "f"=>TGlob("F")]))
-robinsonUnify(TAbs(t1), TAbs(t2))[1]|> (x->pr_T(x; is_an_arg=true))
-robinsonUnify(TAbs(t1), TAbs(t2))[2]|> (x->pr_T(x; is_an_arg=true))
-@test robinsonUnify(TAbs(t1), TAbs(t2))[3] == TProd(Term[], Array{Pair{String, Term}}(["f" => TGlob("F", TypeUniverse()), "g" => TGlob("G", TypeUniverse())]))
+robinsonUnify(TAbs(t1), TAbs(t2)).preSubst1 |> (x->pr_T(x; is_an_arg=true))
+robinsonUnify(TAbs(t1), TAbs(t2)).preSubst2 |> (x->pr_T(x; is_an_arg=true))
+@test robinsonUnify(TAbs(t1), TAbs(t2)).res == TProd(Term[], Array{Pair{String, Term}}(["f" => TGlob("F", TypeUniverse()), "g" => TGlob("G", TypeUniverse())]))
 @test test_unify_join(t1, t2)
 
 reduc(TApp([TProd(Array{Pair{Id, Term}}(["f"=>TLocStr("g")])), TAbs(TLocStr("f"))]))
@@ -170,9 +171,9 @@ robinsonUnify(TAbs(t1), TAbs(t2))
 
 t1 = TAbs(TLocInt(1))
 t2 = TAbs(TLocInt(2))
-# simplify(t1, t2) isa Failed_unif_res
+# simplify(t1, t2) |> failed_unif_res
 robinsonUnify(TAbs(t1), TAbs(t2))
-@test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
+@test robinsonUnify(TAbs(t1), TAbs(t2)) |> failed_unif_res
 
 t1 = TAbs(TLocInt(1))
 t2 = TLocInt(3)
@@ -185,13 +186,13 @@ t1 = TAbs(TLocInt(1))
 t2 = TGlob("G")
 # @test simplify(t1, t2) == Error("Different: ∀(T1) is really different from G")
 robinsonUnify(TAbs(t1), TAbs(t2))
-@test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
+@test robinsonUnify(TAbs(t1), TAbs(t2)) |> failed_unif_res
 
 t1 = TGlob("F")
 t2 = TGlob("G")
 # @test simplify(t1, t2) == Error("Different: ∀(T1) is really different from G")
 robinsonUnify(TAbs(t1), TAbs(t2); mode=implydir_)
-@test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
+@test robinsonUnify(TAbs(t1), TAbs(t2)) |> failed_unif_res
 
 t1 = TAbs(TLocInt(1))
 t2 = TAbs(TLocInt(1))
@@ -220,13 +221,13 @@ t1 = TAppAuto(TGlob("G2"), TGlob("G3"))
 t2 = TAppAuto(TGlob("G2"), TAbs(TAppAuto(TLocInt(1), TGlob("G3"))))
 # simplify(t1, t2)  == Error("Different: T3 is really different from ∀([Just (T3).(T1)])")  # Globals cannot be "solved", and that's ok
 robinsonUnify(TAbs(t1), TAbs(t2))
-@test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
+@test robinsonUnify(TAbs(t1), TAbs(t2)) |> failed_unif_res
 
 t1 = TAbs(TAppAuto(TGlob("F"), TLocInt(1)))
 t2 = TAbs(TAppAuto(TGlob("F"), TLocInt(2)))
-# simplify(t1, t2) isa Failed_unif_res  # LAMBDAS CANNOT BE UNIFIED (below, they are preapplied, which is a whole different discussion!!!)
+# simplify(t1, t2) |> failed_unif_res  # LAMBDAS CANNOT BE UNIFIED (below, they are preapplied, which is a whole different discussion!!!)
 robinsonUnify(TAbs(t1), TAbs(t2))
-@test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
+@test robinsonUnify(TAbs(t1), TAbs(t2)) |> failed_unif_res
 
 t1 = TApp([TProd(Array{Term}([TGlob("X"), TGlob("Y")])), TAbs(TAppAuto(TGlob("F"), TLocInt(1)))])
 t2 = TApp([TProd(Array{Term}([TGlob("Y"), TGlob("X")])), TAbs(TAppAuto(TGlob("F"), TLocInt(2)))])
@@ -239,7 +240,7 @@ t1 = TApp([TProd(Array{Term}([TGlob("X"), TGlob("Y")])), TAbs(TAppAuto(TGlob("F"
 t2 = TApp([TProd(Array{Term}([TGlob("X"), TGlob("Y")])), TAbs(TAppAuto(TGlob("F"), TLocInt(2)))])
 # @test simplify(t1, t2) == Error("Different: X is really different from Y")
 robinsonUnify(TAbs(t1), TAbs(t2))
-@test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
+@test robinsonUnify(TAbs(t1), TAbs(t2)) |> failed_unif_res
 
 t1 = TApp([TProd(Array{Term}([TLocInt(3), TLocInt(2)])), TAbs(TAppAuto(TGlob("F"), TLocInt(1)))])
 t2 = TApp([TProd(Array{Term}([TLocInt(1), TLocInt(4)])), TAbs(TAppAuto(TGlob("F"), TLocInt(2)))])
@@ -251,7 +252,7 @@ robinsonUnify(TAbs(t1), TAbs(t2))
 t1 = TApp([TProd(Array{Term}([TGlob("X"), TLocInt(2)])), TAbs(TAppAuto(TLocInt(2), TLocInt(1)))])
 t2 = TApp([TProd(Array{Term}([TLocInt(1), TLocInt(4)])), TAbs(TAppAuto(TGlob("F"), TLocInt(2)))])
 # simplify(t1, t2)  == [SparseSubst(TGlob("X"), TLocInt(4)), SparseSubst(TLocInt(2), TGlob("F"))]
-s1, s2 = robinsonUnify(TAbs(t1), TAbs(t2))
+robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
 
@@ -274,7 +275,7 @@ t1 = TProd(Array{Term}([TLocInt(1), TLocInt(1)]))
 t2 = TProd(Array{Term}([TGlob("F"), TGlob("G")])) # OUCHHHH
 # eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(1), TGlob("G")), SparseSubst(TLocInt(1), TGlob("F"))])
 robinsonUnify(TAbs(t1), TAbs(t2)) # Error, nice
-@test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
+@test robinsonUnify(TAbs(t1), TAbs(t2)) |> failed_unif_res
 
 t1 = TProd(Array{Term}([TLocInt(1), TGlob("F")]))
 t2 = TProd(Array{Term}([TGlob("G"), TLocInt(1)])) # otoh, this SHOULD keep working..
@@ -287,12 +288,16 @@ t1 = TProd(Array{Term}([TLocInt(1), TLocInt(1)]))
 t2 = TProd(Array{Term}([TLocInt(1), TTermAuto(TGlob("A"), TLocInt(1))]))
 # eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(1), TLocInt(1)), SparseSubst(TLocInt(1), TTermAuto(TGlob("A"), TLocInt(1)))])
 robinsonUnify(TAbs(t1), TAbs(t2)) # Recursive Error, nice!
-@test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
+@test robinsonUnify(TAbs(t1), TAbs(t2)) |> failed_unif_res
 
 t1 = TProd(Array{Term}([TLocInt(1), TLocInt(1), TLocInt(2), TLocInt(2)]))
 t2 = TProd(Array{Term}([TLocInt(1), TLocInt(2), TLocInt(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLocInt(1)))]))
 # eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLocInt(1)))), SparseSubst(TLocInt(1), TLocInt(1)), SparseSubst(TLocInt(2), TLocInt(2)), SparseSubst(TLocInt(1), TLocInt(2))])
-@test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
+t1|>pr
+t2|>pr
+t1|>reduc|>pr
+t2|>reduc|>pr
+@test robinsonUnify(TAbs(t1), TAbs(t2)) |> failed_unif_res
 
 t1 = TProd(Array{Term}([TLocInt(1), TLocInt(1), TLocInt(2), TLocInt(2)]))
 t2 = TProd(Array{Term}([TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C"))), TLocInt(2), TLocInt(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLocInt(1)))]))
@@ -312,19 +317,19 @@ t1 = TProd(Array{Term}([TLocInt(1), TLocInt(1), TLocInt(2), TLocInt(2)]))
 t2 = TProd(Array{Term}([TGlob("F"), TLocInt(3), TLocInt(3), TGlob("G")]))
 # eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(2), TGlob("G")), SparseSubst(TLocInt(1), TLocInt(3)), SparseSubst(TLocInt(1), TGlob("F")), SparseSubst(TLocInt(2), TLocInt(3))])
 robinsonUnify(TAbs(t1), TAbs(t2)) # Error, nice
-@test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
+@test robinsonUnify(TAbs(t1), TAbs(t2)) |> failed_unif_res
 
 t1 = TAbs(TGlob("A"))
 t2 =  TGlob("A")
 # simplify(t1, t2) # Nope, and that's fine
 robinsonUnify(t1, t2)
-@test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
+@test robinsonUnify(TAbs(t1), TAbs(t2)) |> failed_unif_res
 
 t1 = TProd(Array{Term}([TLocInt(1), TLocInt(1), TLocInt(2), TLocInt(2)]))
 t2 = TProd(Array{Term}([TGlob("F"), TLocInt(1), TLocInt(1), TGlob("G")]))
 # eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(2), TLocInt(1)), SparseSubst(TLocInt(1), TLocInt(1)), SparseSubst(TLocInt(2), TGlob("G")), SparseSubst(TLocInt(1), TGlob("F")), ])
 robinsonUnify(TAbs(t1), TAbs(t2)) # Error, nice
-@test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
+@test robinsonUnify(TAbs(t1), TAbs(t2)) |> failed_unif_res
 
 t1, t2 = TLocInt(3), TAbs(TTermAuto(TGlob("A"), TLocInt(2)))
 @test test_unify_imply(t1, t2.body)
@@ -369,13 +374,13 @@ t2 = TProd(Array{Term}([TGlob("A"), TLocInt(2)]))
 
 t1 = TProd(Array{Term}([TLocInt(1), TSumTerm(1, "EQ", TProd(Array{Term}([TGlob("E"), TLocInt(2)])))]))
 t2 = TProd(Array{Term}([TGlob("A"), TSumTerm(2, "GQ", TProd(Array{Term}([TGlob("E"), TLocInt(2)])))]))
-@test robinsonUnify(t1, t2) isa Failed_unif_res
+@test robinsonUnify(t1, t2) |> failed_unif_res
 
 
 # K for TESTS w/ DIFFERENT NUMBER OF ITEMS NOW:
 t1 = TProd(Array{Term}([TLocInt(1), TGlob("B")]))
 t2 = TProd(Array{Term}([TGlob("A"), TLocInt(1), TLocInt(2)]))
-@test robinsonUnify(t1, t2; mode=implydir_) isa Failed_unif_res
+@test robinsonUnify(t1, t2; mode=implydir_) |> failed_unif_res
 @test test_unify_meet(t1, t2)
 
 t1 = TProd(Array{Term}([TLocInt(1), TGlob("B"), TLocInt(2)]))
@@ -384,19 +389,19 @@ t2 = TProd(Array{Term}([TGlob("A"), TLocInt(1)]))
 
 t1 = TProd(Array{Term}([TGlob("A"), TGlob("B")]))
 t2 = TProd(Array{Term}([TGlob("A"), TGlob("B")]))
-@test robinsonUnify(t1, t2) isa ItsLiterallyAlreadyOk
+@test robinsonUnify(t1, t2) |> itsLiterallyAlreadyOk
 @test test_unify_meet(t1, t2)
 
 t1 = TProd(Array{Term}([TGlob("A"), TGlob("B"), TGlob("C")]))
 t2 = TProd(Array{Term}([TGlob("A"), TGlob("B")]))
-@test robinsonUnify(t1, t2) isa ItsLiterallyAlreadyOk
+@test robinsonUnify(t1, t2) |> itsLiterallyAlreadyOk
 @test test_unify_meet(t1, t2)
 
 t1 = TTerm(TProd(Array{Term}([TLocInt(1), TGlob("B"), TLocInt(2)])), TGlob("Z"))
 t2 = TTerm(TProd(Array{Term}([TGlob("A"), TLocInt(1)])), TGlob("Z"))
-@test robinsonUnify(t1, t2; mode=implydir_) isa Failed_unif_res
+@test robinsonUnify(t1, t2; mode=implydir_) |> failed_unif_res
 @test test_unify_meet(t1, t2)
-@test robinsonUnify(t1, t2; mode=join_)[3] == TTerm(TProd(Term[TGlob("A"), TGlob("B"), TLocInt(1)]), TGlob("Z"))
+@test robinsonUnify(t1, t2; mode=join_).res == TTerm(TProd(Term[TGlob("A"), TGlob("B"), TLocInt(1)]), TGlob("Z"))
 
 t1 = TTerm(TProd(Array{Term}([TLocInt(1), TGlob("B")])), TGlob("Z"))
 t2 = TTerm(TProd(Array{Term}([TGlob("A"), TLocInt(1), TLocInt(2)])), TGlob("Z"))
@@ -414,7 +419,7 @@ t2 = TTermAuto(TTerm(TProd(Array{Term}([TGlob("A"), TLocInt(2)])), TGlob("Z")), 
 
 t1 = TTermAuto(TTerm(TProd(Array{Term}([TLocInt(1)])), TGlob("Z")), TGlob("Z"))
 t2 = TTermAuto(TTerm(TProd(Array{Term}([TGlob("A"), TLocInt(2)])), TGlob("Z")), TGlob("Z"))
-@test robinsonUnify(t1, t2; mode=implydir_) isa Failed_unif_res
+@test robinsonUnify(t1, t2; mode=implydir_) |> failed_unif_res
 @test test_unify_meet(t1, t2)
 
 t1 = TTermAuto(TTerm(TProd(Array{Term}([TLocInt(1), TLocInt(2)])), TGlob("Z")), TGlob("Z"))
@@ -434,11 +439,11 @@ t1 = TProd(Array{Term}([TGlob("F"), TLocInt(1), TLocInt(1)]))
 t2 = TProd(Array{Term}([TLocInt(1), TGlob("G")]))
 # simplify(SparseSubst(t1, t2))
 test_unify_imply(t1, t2) # Yeah it's false, it's fine tho
-@test robinsonUnify(t1, t2; mode=meet_)[3] == TProd(Term[TGlob("F"), TGlob("G"), TGlob("G")])
+@test robinsonUnify(t1, t2; mode=meet_).res == TProd(Term[TGlob("F"), TGlob("G"), TGlob("G")])
 
 t1 = TProd(Array{Term}([TGlob("F"), TLocInt(1), TLocInt(1)]))
 t2 = TProd(Array{Term}([TLocInt(1), TGlob("G")]))
-@test robinsonUnify(t1, t2)[3] == TProd(Term[TGlob("F"), TGlob("G")])
+@test robinsonUnify(t1, t2).res == TProd(Term[TGlob("F"), TGlob("G")])
 # # ^ SILENT DROPPING
 
 t1 = TProd(Array{Term}([TLocInt(1), TGlob("G")]))
@@ -706,7 +711,7 @@ infer_type_rec(e) |> pr_ctx  # YES my boy... YESSSS :)
 t1 = TTerm(TProd(Term[], Array{Pair{String, Term}}(["1_" => TLocInt(1)])), TLocStr("1_"))
 t2 = TTerm(TLocInt(1), TLocInt(2))
 robinsonUnify(t1, t2)
-robinsonUnify(t1, t2)[3] |> pr
+robinsonUnify(t1, t2).res |> pr
 @test test_unify_join(t1, t2)
 @test test_unify_imply(t1, t2)
 
@@ -748,7 +753,7 @@ e |> pr_E
 infer_type_rec(e) |> pr # GREAT
 
 
-end # COMMENT TESTS
+# end # COMMENT TESTS
 
 include("unification_3.jl")
 

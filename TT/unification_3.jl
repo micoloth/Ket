@@ -50,6 +50,9 @@ RecUnifyRes(res::Term) = RecUnifyRes([], TLocInt(1), TLocInt(1), res, [])
 RecUnifyRes(res::Term, preSubst::Array{SparseSubst}) = RecUnifyRes(preSubst, TLocInt(1), TLocInt(1), res, [])
 RecUnifyRes(res::Term, e::ErrorConstraint) = RecUnifyRes([], TLocInt(1), TLocInt(1), res, [e])
 RecUnifyResErr(res::Term, e::ErrorConstraint) = RecUnifyRes([], TLocInt(1), TLocInt(1), TermwError(res, e.error), [e])
+merge_res(rs::Array{RecUnifyRes}, how) = merge_res(rs, how(Array{Term}(rs .|> x->x.res)))
+merge_res(rs::Array{RecUnifyRes}, res::Term) = RecUnifyRes(vcat((rs.|> x->x.preSubst)...), TLocInt(1), TLocInt(1), res, vcat((rs.|> x->x.errors)...))
+
 
 err_msg_app(t1::TApp, t2::TApp) = "Different bodies: $(length(t1.ops_dot_ordered)) != $(length(t2.ops_dot_ordered))"
 err_msg_lambdas(t1::TAbs, t2::TAbs) = "Different lambdas $(pr(t1)) != $(pr(t2)): I know I'm being picky, but impossible to tell if these are the same: $([t1.body, t2.body])"
@@ -69,6 +72,9 @@ err_msg_strings(t1::Term, t2::Term) = "Different strings"
 err_msg_recursive(tloc, t) = Error("$(tloc) == $(t) is not a thing (recursive)")
 
 
+append!([1,2], [1,3], [3,4])
+
+
 @enum Unify_mode meet_ = 1 join_ = 2 implydir_ = 3 implyrev_ = 4
 flip_dic = Dict{Unify_mode, Unify_mode}(meet_=> join_, join_=>meet_, implydir_=>implyrev_, implyrev_=>implydir_)
 flip(m::Unify_mode) = flip_dic[m]
@@ -80,7 +86,7 @@ function rec_unify_(t1::TApp, t2::TApp, mode::Unify_mode)::RecUnifyRes
         RecUnifyResErr(t2, ErrorC(t1, t2, err_msg_app))
     else
         all_ress = [rec_unify_(f1, f2, mode) for (f1, f2) in zip(t1.ops_dot_ordered, t2.ops_dot_ordered)]
-        RecUnifyRes(TApp(all_ress .|> x -> x.res), vcat((all_ress .|> x -> x.preSubst)...))
+        merge_res(all_ress, TApp) # DEFAULT postSubst's !!!
     end
 end
 
@@ -89,7 +95,7 @@ function rec_unify_(t1::TConc, t2::TConc, mode::Unify_mode)::RecUnifyRes
         return RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_app))
     end
         all_ress = [rec_unify_(f1, f2, mode) for (f1, f2) in zip(t1.ops_dot_ordered, t2.ops_dot_ordered)]
-        RecUnifyRes(TConc(all_ress .|> x -> x.res), vcat((all_ress .|> x -> x.preSubst)...))
+        merge_res(all_ress, TConc) # DEFAULT postSubst's !!!
 end
 
 # CURRENTLY WORNG: concat_(t::TProd...) = TProd(vcat((t .|> (x -> x.data))...), merge((t .|> (x -> x.data_tags))...))
@@ -109,16 +115,19 @@ function rec_unify_(t1::TProd, t2::TProd, mode::Unify_mode)::RecUnifyRes
     shared_res_types = Dict{Id,Term}(tag => res.res for (tag, res) in shared_res)
     res_types_tags = merge(shared_res_types, subdict(data_dict_1, tags_1_not_2), subdict(data_dict_2, tags_2_not_1))
     res_tags_cs::Array{SparseSubst} = vcat((values(shared_res) .|>  x -> x.preSubst)...)
+    res_tags_errs::Array{ErrorConstraint} = vcat((values(shared_res) .|>  x -> x.errors)...)
 
     all_ress = [rec_unify_(f1, f2, mode) for (f1, f2) in zip(t1.data, t2.data)] # Potentially turn into a monad (not really urgent tho)
     # IMPORTANT: zip stops @ the LEAST number of elems!
     res_data_types = Array{Term}(all_ress .|> x -> x.res)
     res_data_cs::Array{SparseSubst} = vcat((all_ress .|> x -> x.preSubst)...)
+    res_data_errs::Array{ErrorConstraint} = vcat((all_ress .|> x -> x.errors)...)
     if t1l != t2l && mode==meet_
         additional_elems = (t1l > t2l) ? (t1.data[(t2l+1):end]) : (t2.data[(t1l+1):end])
         res_data_types = vcat(res_data_types, additional_elems)
     end
-    RecUnifyRes(TProd(res_data_types, [res_types_tags...]), vcat(res_tags_cs, res_data_cs))
+    RecUnifyRes(vcat(res_tags_cs, res_data_cs), TLocInt(1), TLocInt(1), TProd(res_data_types, [res_types_tags...]), vcat(res_data_errs, res_tags_errs))
+    # ^ HERE you can improve postSubst's a lot !!!
 end
 
 
@@ -139,7 +148,7 @@ function rec_unify_(t1::TSum, t2::TSum, mode::Unify_mode)::RecUnifyRes
     if length(errors) > 0
         res_type = TermwError(res_type, "E" * join(errors .|> string, ""))
     end
-    RecUnifyRes(res_type, vcat((all_ress .|> x -> x.preSubst)...))
+    merge_res(all_ress, res_type)
 end
 
 
@@ -209,10 +218,18 @@ function rec_unify_(t1::TLoc, t2::TLoc, mode::Unify_mode)::RecUnifyRes
     end
 end
 function rec_unify_(t1::TLoc, t2::Term, mode::Unify_mode)::RecUnifyRes
-    RecUnifyRes(t2, Array{SparseSubst}([SparseSubst(t1, t2)]))
+    if !check_not_recursive(t1, t2)
+        RecUnifyResErr(t2, ErrorC(t1, t2, err_msg_recursive))
+    else
+        RecUnifyRes(t2, Array{SparseSubst}([SparseSubst(t1, t2)]))
+    end
 end
 function rec_unify_(t1::Term, t2::TLoc, mode::Unify_mode)::RecUnifyRes
-    RecUnifyRes(t1, Array{SparseSubst}([SparseSubst(t2, t1)]))
+    if !check_not_recursive(t2, t1)
+        RecUnifyResErr(t1, ErrorC(t2, t1, err_msg_recursive))
+    else
+        RecUnifyRes(t1, Array{SparseSubst}([SparseSubst(t2, t1)]))
+    end
     # TODOTODO: This relies HEAVILY on the fact that names have been UNIFIED between t1 and t2. Is this ALWAYS what we want ???
 end
 
@@ -362,58 +379,29 @@ function get_full_subst(tloc::TLocStr, tt::Term, curr_arity::Arity)::TProd
 end  # THIS IS DIFFERENT IN VAR VS VAR_TAG #
 get_full_subst(s::SparseSubst, curr_arity::Arity) = get_full_subst(s.t1, s.t2, curr_arity)
 
-
-function share_ctx_tlocs_names(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity)
-    s1 = TProd(Array{Term}([TLocInt(i) for i = 1:t1arity.data]), id_tags(t1arity.tags))
-    s2 = TProd(Array{Term}([TLocInt(i) for i = (t1arity.data+1):(t1arity.data+t2arity.data)]), id_tags(t2arity.tags))
-    TApp([s1, t1]), TApp([s2, t2])
-end
 function share_ctx_tlocs_names_get_substs(t1arity::Arity, t2arity::Arity)
     s1 = TProd(Array{Term}([TLocInt(i) for i = 1:t1arity.data]), id_tags(t1arity.tags))
     s2 = TProd(Array{Term}([TLocInt(i) for i = (t1arity.data+1):(t1arity.data+t2arity.data)]), id_tags(t2arity.tags))
     s1, s2
 end
 
-struct ItsLiterallyAlreadyOk
-    computed_type::Term
+struct UnifyRes
+    preSubst1::Union{TProd, Nothing}
+    preSubst2::Union{TProd, Nothing}
+    postSubst1::Union{Term, Nothing}
+    postSubst2::Union{Term, Nothing}
+    res::Term
+    errors::Array{ErrorConstraint}
 end
-
-function get_first_pair_of_matching_indices(v::Array) #  This changed !!!
-    for i = 1:length(v)
-        for j = i+1:length(v)
-            if v[i] == v[j]
-                return (i, j)
-            end
-        end
-    end
-    nothing
-end
-function get_loc_loc_constraint(v)
-    for i = 1:length(v)
-        if !(v[i] isa ErrorConstraint) && (v[i].t1 isa TLoc && v[i].t2 isa TLoc)
-            return i
-        end
-    end
-    nothing
-end
-
-Succeded_unif_res = Tuple{TProd,TProd,Term}
-Failed_unif_res = Tuple{TProd,TProd,Term,Array{ErrorConstraint}}
+itsLiterallyAlreadyOk(u::UnifyRes) = u.preSubst1===nothing && u.preSubst2===nothing
+failed_unif_res(u::UnifyRes) = u.errors|>length >0
 
 function do_the_subst_thing!(subst::SparseSubst, current_arity, current_total_subst, STACK, ERRORSTACK)
-    if !check_not_recursive(subst.t1, subst.t2)
-        push!(ERRORSTACK, ErrorC(subst.t1, subst.t2, err_msg_recursive))
-        return current_arity, current_total_subst
-    end
     new_subst = get_full_subst(subst, current_arity)
     current_total_subst = Array{TProd}(ass_smart_reduc(current_total_subst..., new_subst))
     current_arity = Arity(arity(current_total_subst[end]), usedLocsSet(current_total_subst[end])) # The beauty of this is this is Enough... I HOPE LOL
-    for i = 1:length(STACK)
-        STACK[i] = ass_reduc(STACK[i], new_subst)
-    end
-    for i = 1:length(ERRORSTACK)
-        ERRORSTACK[i] = ass_reduc(ERRORSTACK[i], new_subst)
-    end
+    for i = 1:length(STACK) STACK[i] = ass_reduc(STACK[i], new_subst) end
+    for i = 1:length(ERRORSTACK) ERRORSTACK[i] = ass_reduc(ERRORSTACK[i], new_subst) end
     # ^ Really, this is the EASY way:
     # EACH EqConstraint GETS >ALL< SUBSTS, ONE BY ONE, FROM THE MOMENT IT ENTERS THE STACK ONWARD.
     # A Better way would be: TRACK When each Contraint enters the stack. When you Consider that contraint,
@@ -434,98 +422,66 @@ function get_first_pair_of_matching_indices(v::Array)
     nothing
 end
 
-function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify_tlocs_ctx::Bool = true, mode::Unify_mode = join_)::Union{Succeded_unif_res,Failed_unif_res,ItsLiterallyAlreadyOk}
-    there_are_errors::Bool = false
+function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify_tlocs_ctx::Bool = true, mode::Unify_mode = join_)::UnifyRes
+
+    current_total_subst = Array{TProd}([]) # SMART_REDUCED VERSION # (Can be a single [TProd] or the whole list)
+    t1, t2 = t1.body|>reduc, t2.body|>reduc
 
     # 1. Share TLocs
     if unify_tlocs_ctx # THIS IS DIFFERENT IN VAR VS VAR_TAG # IS IT ENOUGH TO NOT DO THIS ???? #
         current_arity = Arity(t1arity.data + t2arity.data, union(t1arity.tags, t2arity.tags))
-        t1, t2 = share_ctx_tlocs_names(t1, t2, t1arity, t2arity)
+        s1, s2 = share_ctx_tlocs_names_get_substs(t1arity, t2arity)
+        t2 = ass_reduc(t2, s2) # s1 SHOULD always be Id
     else
         # This means Sharing of names has ALREADY HAPPENED !!!
         current_arity = Arity(max(t1arity.data, t2arity.data), union(t1arity.tags, t2arity.tags))
-        t1, t2 = t1.body, t2.body
     end
 
     # 2. unify term and/or produce Eqconstraints
-    # if mode == implydir_
-    #     STACK = Array{SparseSubst}([DirectConstraint(t1, t2)])
-    #     ERRORSTACK = Array{ErrorConstraint}([])
-    # else
-    t1, t2 = reduc(t1), reduc(t2)
     res = rec_unify_(t1, t2, mode)
-    res_type::Term, STACK = res.res, res.preSubst
-    ERRORSTACK = Array{ErrorConstraint}(filter(x -> x isa ErrorConstraint, STACK))
-    STACK = filter(x -> !(x isa ErrorConstraint), STACK)
-    # NOTE: rec_unify_ WILL return ErrorConstraint's now, about tags.
-    if has_errors(res_type)
-        there_are_errors = true
-    end
-    # end
+    res_type::Term, STACK, ERRORSTACK = res.res, res.preSubst, res.errors
 
     # 3. Solve all constraints: Substitute away all the constrains, one by one
-    current_total_subst = Array{TProd}([]) # SMART_REDUCED VERSION # (Can be a single [TProd] or the whole list)
     # ^ Still, to pass into get_reduc_subst IN THIS ORDER
 
+    # 3.1 Turn each x=A, x=B into x= meet(say)(A, B)
     while (ij = get_first_pair_of_matching_indices(STACK .|> (x -> x.t1.var))) !== nothing
         tloc, ct1, ct2 = STACK[ij[1]].t1, STACK[ij[1]].t2, STACK[ij[2]].t2
         deleteat!(STACK, ij[2])
         deleteat!(STACK, ij[1])
-        if !check_not_recursive(tloc, ct1)
-            push!(ERRORSTACK, ErrorC(tloc, ct1, err_msg_recursive))
-            continue
-        end
-        if !check_not_recursive(tloc, ct2)
-            push!(ERRORSTACK, ErrorC(tloc, ct2, err_msg_recursive))
-            continue
-        end
-        unif_res = rec_unify_(ct1, ct2, mode) # Wait.. Are you COMPLETELY SURE you NEVER want a !MODE here ??? ??? ??? ???
+        unif_res = rec_unify_(ct1, ct2, mode)
+        # ^ Wait.. Are you COMPLETELY SURE you NEVER want a !MODE here ??? ??? ??? ???
         push!(STACK, SparseSubst(tloc, unif_res.res))
-        if length(unif_res.errors) > 0
-            append!(ERRORSTACK, unif_res.errors)
-        else
-            append!(STACK, unif_res.preSubst)
+        if length(unif_res.errors) > 0 append!(ERRORSTACK, unif_res.errors)
+        else append!(STACK, unif_res.preSubst)
         end
     end
 
+    # 3.2 simply subst away each constraint.
     while (length(STACK) > 0)
         c = pop!(STACK)
-        ct1, ct2 = c.t1, c.t2
-        if ct1 == ct2 continue
-        elseif ct1 isa TLocStr && ct2 isa TLocStr
-            # THIS I DONT WANT, for now:
-            push!(ERRORSTACK, ErrorConstraint(ct1, ct2, "You are asking to unify these names, which is not a thing"))
-            # var, tt = ct1.var, ct2 # it's ARBITRARY since these names have no meaning anyway
+        if c.t1 == c.t2 continue
+        elseif c.t1 isa TLocStr && c.t2 isa TLocStr # THIS I DONT WANT, for now:
+            push!(ERRORSTACK, ErrorConstraint(c.t1, c.t2, "You are asking to unify these names, which is not a thing"))
+            # var, tt = c.t1.var, c.t2 # it's ARBITRARY since these names have no meaning anyway
         else  # i MIGHT want to use DIFFERENT prioritization of who to subst, but NOT NOW.
             current_arity, current_total_subst = do_the_subst_thing!(c, current_arity, current_total_subst, STACK, ERRORSTACK)
         end
     end
 
-    if length(current_total_subst) == 0 && !there_are_errors && length(ERRORSTACK) == 0
-        return ItsLiterallyAlreadyOk((mode == implydir_ || mode == implyrev_) ? t2 : res_type)
-    elseif length(current_total_subst) == 0
-        return Failed_unif_res([TProd(Array{Term}([])), TProd(Array{Term}([])), res_type, ERRORSTACK])
-    end
-    final_subst = ass_reduc(current_total_subst...)
-    subst1 = TProd(final_subst.data[1:t1arity.data], final_subst.data_tags)
-    subst2 = if unify_tlocs_ctx
-        TProd(final_subst.data[(t1arity.data+1):(t1arity.data+t2arity.data)], final_subst.data_tags)
+    # 4. Cook up result
+    s1, s2, res_type = if length(current_total_subst) == 0 && unify_tlocs_ctx
+            nothing, (s2.data|> length == 0 ? nothing : s2), res_type
+    elseif length(current_total_subst) == 0 && !unify_tlocs_ctx
+            nothing, nothing, t2, res_type
+    elseif unify_tlocs_ctx
+        final_subst = ass_reduc(current_total_subst...);
+        ass_reduc(s1, final_subst), ass_reduc(s2, final_subst), ass_reduc(res_type, final_subst)
     else
-        TProd(final_subst.data[1:t2arity.data], final_subst.data_tags)
+        final_subst = ass_reduc(current_total_subst...);
+        final_subst, final_subst, ass_reduc(res_type, final_subst)
     end
-    # subst1, subst2 = final_subst, final_subst
-    # res_type = if ((mode == implydir_ || mode == implyrev_))
-    #     TGlob("O") # Why nothing: USE >>t2<< ( The Original one, NOT the Shared version)
-    # else
-    #     ass_reduc(res_type, final_subst)
-    # end
-    res_type = ass_reduc(res_type, final_subst)
-
-    if there_are_errors || length(ERRORSTACK) > 0
-        return Failed_unif_res([subst1, subst2, res_type, ERRORSTACK])
-    else
-        return Succeded_unif_res([subst1, subst2, res_type])
-    end
+    UnifyRes(s1, s2, nothing, nothing, res_type, ERRORSTACK)
 end
 
 # The following handles ALL THE CONFUSION ARISING FROM having or not having the Forall() at random.
@@ -593,18 +549,17 @@ function infer_type_rec(term::TS)::InferResTerm
 end
 
 
-
 function infer_type_(term::TAnno, t_computed::InferResTermIn)::InferResTerm # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
-    substs = robinsonUnify(t_computed.t_out, term.type, mode = implydir_)
-    if substs isa ItsLiterallyAlreadyOk
+    unif_res = robinsonUnify(t_computed.t_out, term.type, mode = implydir_)
+    if itsLiterallyAlreadyOk(unif_res)
         return TTerm(t_computed.t_in, term.type)
     end
     term_type = if term.type isa TAbs term.type.body
             else term.type end   # Oh fuck what am i doing
     args = if (t_computed.t_in.data |> length == 0) TProd(Array{Term}([]))
-            else ass_reduc(t_computed.t_in, substs[1]) end  # HOPEFULLY this is a Type, NOT a body
-    res = if !(substs isa Failed_unif_res) TTerm(args, ass_reduc(term_type, substs[2]))
-            else TermwError(TTerm(args, term_type), Error("Wrong annotation: " * pr(substs[4]))) end
+            else ass_reduc(t_computed.t_in, unif_res.preSubst1) end  # HOPEFULLY this is a Type, NOT a body
+    res = if !(failed_unif_res(unif_res)) TTerm(args, ass_reduc(term_type, unif_res.preSubst2))
+            else TermwError(TTerm(args, term_type.res), Error("Wrong annotation: " * pr(unif_res.errors))) end
     # NOTE^ :  mode=implydir_ doesnt even return a res_type, even less one with an error! Of course
     res
 end
@@ -626,22 +581,16 @@ function infer_type_(term::TProd, ts_computed::Array{InferResTermIn})::InferResT
         unified_RES_types = unified_RES_types .|> (x -> ass_reduc(x, s1))
         #  # Not sharing vars
         full_arity = Arity(max(s1 |> arity, s2 |> arity), union(s1 |> usedLocsSet, s2 |> usedLocsSet))
-        res = robinsonUnify(
+        unif_res = robinsonUnify(
             TAbs(args), TAbs(t.t_in), full_arity, full_arity;
             unify_tlocs_ctx = false, mode = meet_)
-        if res isa ItsLiterallyAlreadyOk
+        if itsLiterallyAlreadyOk(unif_res)
             push!(unified_RES_types, t.t_out)
-            args = res.computed_type
+            args = unif_res.res
             continue
         end
-        if res isa Failed_unif_res
-            s1, s2, meeted, errors = res
-            append!(all_errors, errors)
-            # : if has_errors(meeted) # Dunno what to do :(
-        else
-            s1, s2, meeted = res
-        end
-        args = meeted
+        s1, s2, args, errors = unif_res.preSubst1, unif_res.preSubst2, unif_res.res, unif_res.errors
+        append!(all_errors, errors)
         unified_RES_types = unified_RES_types .|> (x -> ass_reduc(x, s1)) # if they BECAME EQUAL to the stuff "args" comes from, this should work.. No?
         push!(unified_RES_types, ass_reduc(t.t_out, s2))
         full_arity = Arity(max(s1 |> arity, s2 |> arity), union(s1 |> usedLocsSet, s2 |> usedLocsSet)) # god i HOPE this makes sense.....
@@ -671,14 +620,14 @@ function unify_funcs_to_tterms_(ts_computed)
     ts_computed_2 = Array{TTerm}([])
     for t in ts_computed
         fake_tterm = TTerm(TLocInt(1), TLocInt(2))
-        tterm_subst = robinsonUnify(t.t_out, fake_tterm, t |> get_arity_obj, fake_tterm |> get_arity_obj; mode = implydir_)
+        unif_res = robinsonUnify(t.t_out, fake_tterm, t |> get_arity_obj, fake_tterm |> get_arity_obj; mode = implydir_)
         # NOTE^ :  mode=implydir_ doesnt even return a res_type, even less one with an error! Of course
-        if tterm_subst isa Failed_unif_res
-            return TermwError(TConc(ts_computed .|> (x -> x.t_out)), Error("Calling non function: " * pr(tterm_subst[4]))) #y'know what? Yes this is violent.. I don't care
-        elseif tterm_subst isa ItsLiterallyAlreadyOk
+        if failed_unif_res(unif_res)
+            return TermwError(TConc(ts_computed .|> (x -> x.t_out)), Error("Calling non function: " * pr(unif_res.errors))) #y'know what? Yes this is violent.. I don't care
+        elseif itsLiterallyAlreadyOk(unif_res)
             push!(ts_computed_2, t)
         else
-            push!(ts_computed_2, ass_reduc(t, tterm_subst[1])) # t.t_out SHOULD be nothing else but a TTerm... RIGTH?
+            push!(ts_computed_2, ass_reduc(t, unif_res.preSubst1)) # t.t_out SHOULD be nothing else but a TTerm... RIGTH?
         end
     end
     ts_computed_2
@@ -688,10 +637,10 @@ function CHECK_unify_terms_to_N_(ts_computed)
     ts_computed_2 = Array{TTerm}([])
     for t in ts_computed
         fake_tterm = TN()
-        tterm_subst = robinsonUnify(t.t_out, fake_tterm, t |> get_arity_obj, fake_tterm |> get_arity_obj; mode = implydir_)
+        unif_res = robinsonUnify(t.t_out, fake_tterm, t |> get_arity_obj, fake_tterm |> get_arity_obj; mode = implydir_)
         # NOTE^ :  mode=implydir_ doesnt even return a res_type, even less one with an error! Of course
-        if tterm_subst isa Failed_unif_res
-            return TermwError(TConc(ts_computed .|> (x -> x.t_out)), Error("Calling non function: " * pr(tterm_subst[4]))) #y'know what? Yes this is violent.. I don't care
+        if failed_unif_res(unif_res)
+            return TermwError(TConc(ts_computed .|> (x -> x.t_out)), Error("Calling non function: " * pr(unif_res.errors))) #y'know what? Yes this is violent.. I don't care
         else # Dont change bloody anything. If it can be N, IT'S OK!!!
             push!(ts_computed_2, t) # t.t_out SHOULD be nothing else but a TTerm... RIGTH?
         end
@@ -722,18 +671,18 @@ function infer_type_(term::TApp, ts_computed::Array{InferResTermIn})::InferResTe
     prev_out = tterms[1] #  fix when app is not a mess anymore
     for i = 2:length(tterms)
         next_in = tterms[i].t_in # YES this always exists now
-        substs = robinsonUnify(
+        unif_res = robinsonUnify(
             TAbs(prev_out), TAbs(next_in), full_arity, full_arity; unify_tlocs_ctx = false, mode = implydir_)
         # : i DONT LIKE these TAbs, it's WRONG, but, it's the only way of accessing unify_tlocs_ctx atm
         # NOTE^ :  mode=implydir_ doesnt even return a res_type, even less one with an error! Of course
-        if substs isa ItsLiterallyAlreadyOk
+        if itsLiterallyAlreadyOk(unif_res )
             prev_out = tterms[i].t_out
         else
-            if substs isa Failed_unif_res
-                append!(all_errors, substs[4])
-                append!(all_errors, substs[3]|>errors.|>(x->ErrorConstraint(substs[3], substs[3], x)))
+            if failed_unif_res(unif_res)
+                append!(all_errors, unif_res.errors)
+                append!(all_errors, unif_res.res|>errors.|>(x->ErrorConstraint(unif_res.res, unif_res.res, x)))
             end
-            (s1, s2) = substs
+            (s1, s2) = unif_res
             # ^ Wait.. Are you telling me, if unify_tlocs_ctx=false, s1 and s2 are ALWAYS the same ???  # # Man, this is a crazy world..
             tterms = ass_reduc(TProd(Array{Term}(tterms)), s1).data
             # ^ the LENGTH of tterms DOES NOT CHANGE HERE
@@ -774,18 +723,18 @@ function infer_type_(term::TConc, ts_computed::Array{InferResTermIn})::InferResT
     prev_out = tterms[1].t_out #  the ONLY DIFFERENCE (apart from call to unify_funcs_to_tterms_) with TApp
     for i = 2:length(tterms)
         next_in = tterms[i].t_in # YES this always exists now
-        substs = robinsonUnify(
+        unif_res = robinsonUnify(
             TAbs(prev_out), TAbs(next_in), full_arity, full_arity; unify_tlocs_ctx = false, mode = implydir_)
         # : i DONT LIKE these TAbs, it's WRONG, but, it's the only way of accessing unify_tlocs_ctx atm
         # NOTE^ :  mode=implydir_ doesnt even return a res_type, even less one with an error! Of course
-        if substs isa ItsLiterallyAlreadyOk
+        if itsLiterallyAlreadyOk(unif_res)
             prev_out = tterms[i].t_out
         else
-            if substs isa Failed_unif_res
-                append!(all_errors, substs[4])
-                if substs[3] isa TermwError push(all_errors, substs[3].error) end
+            if failed_unif_res(unif_res)
+                append!(all_errors, unif_res.errors)
+                if unif_res.res isa TermwError push(all_errors, unif_res.res.error) end
             end
-            (s1, s2) = substs
+            (s1, s2) = unif_res
             # ^ Wait.. Are you telling me, if unify_tlocs_ctx=false, s1 and s2 are ALWAYS the same ???  # # Man, this is a crazy world..
             tterms = ass_reduc(TProd(Array{Term}(tterms)), s1).data
             # ^ the LENGTH of tterms DOES NOT CHANGE HERE
@@ -976,7 +925,7 @@ function build_anno_term_TProd(terms_anno::Array{TAnno}; dict_anno::Array{Pair{S
         end
         return TAnno(res, res_type)
     else
-        res = TProd(terms_anno .|> x->x.expr)
+        res = TProd(Array{Term}(terms_anno .|> x->x.expr))
         return TAnno(res, infer_type_(res, terms_anno .|> x->x.type))
     end
 end
