@@ -5,59 +5,127 @@ Error = String
 
 abstract type Term end
 
+abstract type CTerm <: Term end
+abstract type ITerm <: CTerm end
+# neutral term, i.e., a variable applied to a (possibly empty) sequence of values
+
 ########## Types
 
 # Remember: (a+b) x (c+d) == axc + axd + bxc + bxd
 
 struct TypeUniverse <: Term end
 struct TTop <: Term end
-struct TGlob <: Term
+struct TGlob <: ITerm # ITerm
     var::Id
-    type::Term # If this is a Type, write TypeUniverse
+    type::Term
 end
-struct TLoc <: Term
+struct TLocInt <: ITerm # ITerm ??????????????????
     var::Index
 end
-struct TAbs <: Term
-    body::Term # idea: this CAN contain (type level) local variables
+struct TAbs <: CTerm # CTerm
+    body::CTerm
 end
-struct TApp <: Term # idk why they woudn't have this
-    ops_dot_ordered::Array{Term}
-    # Each one must compute to a TAbs
-    # Each lambda must RETURN a TPROD, but really WE WILL BE EXTREMELY GENEROUS WITH THE "TYPECHECKING"
+struct TAbsPi <: CTerm # CTerm
+    var::CTerm
+    body::CTerm
 end
-struct TTerm <: Term
-    t_in::Term  # Type of input, should be a TProd.
-    # NOTE: This^ Only breaks if it is a TGlob, OR a TSum i guess (unless it's a TSum of TProds, that's actually the reduced form?)
-    t_out::Term  # type of the output
+struct TApp <: ITerm
+    # ops_dot_ordered::Array{Term}
+    func::ITerm
+    arg::CTerm
 end
+# struct TTerm <: Term
+#     t_in::Term
+#     t_out::Term
+# end
+struct TPi <: ITerm
+    t_in::CTerm
+    t_out::TAbs
+end
+
 struct TProd <: Term
     data::Array{Term}
 end
 struct TSum <: Term
-    data::Array{Term}  # THIS IS A BIG PROBLEM. Thanks i hate it!
+    data::Array{Term}
 end
 struct TSumTerm <: Term
     tag::Index
-    tag_name::String  # Here, you have ALSO a string ( for now)
+    tag_name::String
     data::Term
-    # SEE what's happening?? NO other struct has 2 fields like this!! This because the optional thing here is DATA.
 end
 struct TBranches <: Term
     ops_chances::Array{Term}
-    # Each one must compute to a lambda/TAbs  # ( I mean this is not new..)
-    # Really this is a PROD OF MORPHISMS...
-    # Except that, also, FINE, i'm giving up & saying these have to TYPECHECK TO A SINGLE OUTPUT
 end
-struct TAnno <: Term # ANNOTATION syntax
-    expr::Term
-    type::Term # If this is a Type, write TypeUniverse
+struct TAnno <: ITerm # ITerm
+    expr::CTerm
+    type::CTerm
 end
+
+# data Value
+#    =  VLam      (Value -> Value)
+#    |  VNeutral  Neutral
+# data Neutral
+#    =  NFree  Name
+#    |  NApp   Neutral Value
+# data Info
+#    =  HasKind  Kind
+#    |  HasType  Type
+#   deriving (Show)
+# type Env = [Value]
+Context = Array{Term} # This would be a ELOC's CONTEXT !!!
+
+
+function checkType(ctx, e::ITerm, ty)
+    tye = inferType(ctx, e)
+    (ty != ty') ? (Error("type mismatch")) : tye # NOTE: SYNTACTIC equality !!!!!  # Actually, they have some shanenigans w/ QUOTE functions
+end
+function checkType(ctx, e::TAbs, t::TPi)
+    @assert t.t_in isa TProd
+    checkSubst(t.t_in, e.body, TApp(t.t_out, TLocInt(i))) # OR SOMETHING with ctx's, "i" has no meaning here ...
+end
+function checkType(ctx, e, ty) Error("type mismatch") end
+# MISSING: TProd, TSum, TTerm, etc, UNLESS they are inferrable ....
+
+
+function inferType(ctx, e::EAnno)
+    e, ty = e.expr, e.type
+    checkType(ctx, ty, TypeUniverse())
+    ty = reduc(TApp(tyt, [ctx[1]]))  # in fun(arg) form  # OR just use subst?
+    checkType(ctx, e, ty)
+    return ty
+end
+function inferType(ctx, e::TLocInt)
+    if (ty = ctx[e.var]) !== nothing
+       return ty
+    else
+       Error("unknown identifier")
+    end
+end
+function inferType(ctx, e::TApp)
+    e1, e2 = e.ops_dot_ordered[2], e.ops_dot_ordered[1]
+    si = inferType(ctx, e1)
+    if !(si isa TPi) return Error("illegal application") end
+    checkType(ctx, e2, si.t_in)
+    return reduc(TApp(si.t_out, e2))  # in fun(arg) form  # SHOULD pre reduc e2 as well ?
+end
+
+function inferType(ctx, t::TPi)
+    tyt, tyt2 = t.t_in, t.t_out
+    checkType(ctx, tyt, TypeUniverse())
+    ty = subst(ctx[1], tyt)  # Or some shit
+    checkType(vcat(["smthg", ty], ctx), subst([TLocInt(1)], tyt2), TypeUniverse())  # OR SOME SHIT
+    return TypeUniverse()
+end
+
+
+
 Base.:(==)(a::TGlob, b::TGlob) = Base.:(==)(a.var, b.var)
-Base.:(==)(a::TLoc, b::TLoc) = Base.:(==)(a.var, b.var)
+Base.:(==)(a::TLocInt, b::TLocInt) = Base.:(==)(a.var, b.var)
 Base.:(==)(a::TAbs, b::TAbs) = Base.:(==)(a.body, b.body)
 Base.:(==)(a::TApp, b::TApp) = all(a.ops_dot_ordered .== b.ops_dot_ordered)
-Base.:(==)(a::TTerm, b::TTerm) = (a.t_in == b.t_in) && (a.t_out == b.t_out)
+# Base.:(==)(a::TTerm, b::TTerm) = (a.t_in == b.t_in) && (a.t_out == b.t_out)
+Base.:(==)(a::TPi, b::TPi) = (a.t_in == b.t_in) && (a.t_out == b.t_out)
 Base.:(==)(a::TProd, b::TProd) = Base.:(==)(a.data, b.data)
 Base.:(==)(a::TSum, b::TSum) = Base.:(==)(a.data, b.data)
 Base.:(==)(a::TSumTerm, b::TSumTerm) = (a.data == b.data) && (a.tag == b.tag)
@@ -67,8 +135,8 @@ Base.:(==)(a::TSumTerm, b::TSumTerm) = (a.data == b.data) && (a.tag == b.tag)
 # Type functions
 
 
-TFunAuto(tin, tout) = TTerm(tin, tout)
-TTermAuto(tin, tout) = TTerm(TProd([tin]), tout)
+# TFunAuto(tin, tout) = TTerm(tin, tout)
+# TTermAuto(tin, tout) = TTerm(TProd([tin]), tout)
 TAppAuto(tfun, targ) = TApp([TProd([targ]), tfun])
 TAppSwitch(func, args) = TApp([args, func])
 TGlob(var::Id) = TGlob(var, TypeUniverse())
@@ -76,10 +144,11 @@ TGlobAuto(var::Id) = TGlob(var, TGlob(uppercase(var)))
 
 
 subst(news::Array{Term}, t::TGlob)::Term= t
-subst(news::Array{Term}, t::TLoc)::Term = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
+subst(news::Array{Term}, t::TLocInt)::Term = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
 subst(news::Array{Term}, t::TTop)::Term = t
-subst(news::Array{Term}, t::TTerm)::Term = TTerm(subst(news, t.t_in), subst(news, t.t_out))
-subst(news::Array{Term}, t::TAbs)::Term = t # TAbs(subst(news, t.body))
+# subst(news::Array{Term}, t::TTerm)::Term = TTerm(subst(news, t.t_in), subst(news, t.t_out))
+subst(news::Array{Term}, t::TPi)::Term = TPi(subst(news, t.t_in), TAbs(subst(vcat([TLocInt(1)], news), t.t_out.body))) # This EITHER COMPLETELY BREAKS, or ALLOWS partial application.. or Something...
+subst(news::Array{Term}, t::TAbs)::Term = t
 subst(news::Array{Term}, t::TProd)::Term = TProd(t.data .|> (x->subst(news, x)))
 subst(news::Array{Term}, t::TSum)::Term = TSum(t.data .|> (x->subst(news, x)))
 subst(news::Array{Term}, t::TApp)::Term = TApp(t.ops_dot_ordered .|> x->subst(news, x))
@@ -88,9 +157,10 @@ subst(news::Array{Term}, t::TAnno)::Term = TAnno(subst(news, t.Term), t.type)
 subst(news::Array{Term}, t::TBranches)::Term = TBranches(t.ops_chances .|> x->subst(news, x)) # Just like TApp, This should have No effect being all TAbs's, but just in case.
 
 reduc(t::TGlob)::Term = t
-reduc(t::TLoc)::Term = t
+reduc(t::TLocInt)::Term = t
 reduc(t::TTop)::Term = t
-reduc(t::TTerm)::Term = TTerm(t.t_in |> reduc, t.t_out |> reduc)
+# reduc(t::TTerm)::Term = TTerm(t.t_in |> reduc, t.t_out |> reduc)
+reduc(t::TPi)::Term = TPi(t.t_in |> reduc, TApp(t.t_out) |> reduc)
 reduc(t::TAbs)::Term = TAbs(reduc(t.body))
 reduc(t::TApp)::Term = reduc(Array{Term}(t.ops_dot_ordered .|> reduc)) # TApp is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
 reduc(t::TProd)::Term = TProd(t.data .|> reduc)
@@ -119,7 +189,7 @@ end
 
 
 pr_T(x::TGlob)::String = "$(x.var)"
-pr_T(x::TLoc)::String = "T$(x.var)"
+pr_T(x::TLocInt)::String = "T$(x.var)"
 pr_T(x::TTop)::String = "⊥"
 # pr_T(x::TExists)::String = "∃$(x.var)"
 pr_T(x::TAbs)::String = "∀($(x.body |> pr_T))" #(arity(x.body) > 0) ? ("∀($(x.body |> pr_T))") : (x.body |> pr_T)
@@ -168,7 +238,7 @@ pr_T(x::TAnno)::String = "$(pr_E(x.expr)):$(pr_T(x.type))" # Hellloo...
 
 
 pr_E(x::TGlob)::String = "$(x.var)"
-pr_E(x::TLoc)::String = "$(x.var)"
+pr_E(x::TLocInt)::String = "$(x.var)"
 pr_E(x::TTop)::String = "T"
 # pr_E(x::TApp)::String = "(" * pr_E(x.arg) * " ." * pr_E(x.func) *")" # join(x.func .|> pr_E, ".")
 pr_E(x::TAbs)::String = "/{$(pr_E(x.body))}"
@@ -194,7 +264,7 @@ pr(x) = pr_T(x)
 
 # NOT used by the above:
 arity(base::Index, t::TGlob)::Index= base
-arity(base::Index, t::TLoc)::Index = max(base, t.var)
+arity(base::Index, t::TLocInt)::Index = max(base, t.var)
 arity(base::Index, t::TTop)::Index = base
 arity(base::Index, t::TApp)::Index = t.ops_dot_ordered .|> (x->arity(base, x)) |> maximum
 arity(base::Index, t::TTerm)::Index = [t.t_in, t.t_out] .|> (x->arity(base, x)) |> maximum
@@ -220,7 +290,7 @@ arity(t::Term)::Index = arity(0, t)
 
 # TTop TTop
 # TGlob TGlob
-# TLoc TLoc
+# TLocInt TLocInt
 # TAbs TAbs
 # TApp TApp
 # TTerm TTerm
@@ -239,17 +309,17 @@ arity(t::Term)::Index = arity(0, t)
 
 
 
-S = TAbs(TAppAuto(TAppAuto(TLoc(1), TLoc(3)), TAppAuto(TLoc(2), TLoc(3))))
+S = TAbs(TAppAuto(TAppAuto(TLocInt(1), TLocInt(3)), TAppAuto(TLocInt(2), TLocInt(3))))
 pr(S)
 
 reduc(TAbs(TAppSwitch(S, TProd([TGlobAuto("f"), TGlobAuto("g"), TGlobAuto("x")])))) |> pr
 
-f = TAbs(TLoc(1))
+f = TAbs(TLocInt(1))
 g = TAbs(TGlobAuto("y"))
 reduc(TAppSwitch(S, TProd([f, g, TGlobAuto("x")]))) |> pr
 
 # Remember: At this point (not typechecked) it IS possible to be recursive!
-ycomb = TAbs(TApp([TLoc(1), TLoc(1)]))
+ycomb = TAbs(TApp([TLocInt(1), TLocInt(1)]))
 reduc(TApp([ycomb, ycomb])) |> pr
 
 # EVEN IF, note that we ARE amart enough to not go ahead at inf, which is Good!
@@ -258,31 +328,31 @@ reduc(TApp([ycomb, ycomb])) |> pr
 
 # Sum types 1. : CASE: ( i e ending on a single type C)
 f = TAbs(TGlob("cdef", TGlob("C")))
-g = TAbs(TLoc(1))
+g = TAbs(TLocInt(1))
 
 e = TSumTerm(1, "1", TProd([TGlob("cpass", TGlob("C"))]))
-case2 = TAbs(TApp([TLoc(1), TBranches([TLoc(2), TLoc(3)])]))  # Case 2 meaning a sum of 2 types
+case2 = TAbs(TApp([TLocInt(1), TBranches([TLocInt(2), TLocInt(3)])]))  # Case 2 meaning a sum of 2 types
 
 reduc(TApp([TProd([e,f,g]), case2]))
 
 # Sum types 2. : IF: ( i e on 1+1)
 
 Tbool = TSum([TProd([]), TProd([])])
-if_ = TAbs(TApp([TAnno(TApp([TLoc(2), TLoc(1)]), Tbool), TBranches([TApp([TLoc(1), TLoc(3)]), TApp([TLoc(1), TLoc(4)])])]))
+if_ = TAbs(TApp([TAnno(TApp([TLocInt(2), TLocInt(1)]), Tbool), TBranches([TApp([TLocInt(1), TLocInt(3)]), TApp([TLocInt(1), TLocInt(4)])])]))
 # What THIS WOULD REQUIRE is, a POP/PartialApp to say that NO, you are Not interested in ^^ what comes out of Tbool, ONLY as a redirection !!
 # Well, EITHER that, OR the (A+B)xC --> (AxC)+(BxC) function: i THINK you can use that as well, if you look closely !!
 # if_ = TAbs(TApp([
-#     TProd([TLoc(1), TAnno(TApp([TLoc(2), TLoc(1)]), Tbool)]),
+#     TProd([TLocInt(1), TAnno(TApp([TLocInt(2), TLocInt(1)]), Tbool)]),
 #     magic_distr_func,
 #     magic_remove_dumb_1x_func,
-#     TBranches([TLoc(3), TLoc(4)])
+#     TBranches([TLocInt(3), TLocInt(4)])
 # ]))
 # infer_type_rec(if_).res_type |> pr
 
 
 TGlob("x", TGlob("A"))
-TAnno(TLoc(1), TFunAuto(TGlob("A"), TGlob("B")))
-TAnno(TLoc(2), TAbs(TLoc(1)))
+TAnno(TLocInt(1), TFunAuto(TGlob("A"), TGlob("B")))
+TAnno(TLocInt(2), TAbs(TLocInt(1)))
 
 SType1 = TFunAuto(TGlob("X"), TGlob("A"))
 SType2 = TFunAuto(TGlob("X"), TFunAuto(TGlob("A"), TGlob("B")))
@@ -293,9 +363,9 @@ TGlob("S", TFunAuto(TGlob("A"), TGlob("B"))) |> pr
 TFunAuto(TGlob("A"), TGlob("B")) |> pr
 
 # Now polymorphicly:
-SType1P = TFunAuto(TLoc(3), TLoc(2))
-SType2P = TFunAuto(TLoc(3), TFunAuto(TLoc(2), TLoc(1)))
-STypeP = TAbs(TTerm(TProd([SType2P, SType1P, TLoc(3)]), TLoc(1)))
+SType1P = TFunAuto(TLocInt(3), TLocInt(2))
+SType2P = TFunAuto(TLocInt(3), TFunAuto(TLocInt(2), TLocInt(1)))
+STypeP = TAbs(TTerm(TProd([SType2P, SType1P, TLocInt(3)]), TLocInt(1)))
 STypeP |> pr
 
 
