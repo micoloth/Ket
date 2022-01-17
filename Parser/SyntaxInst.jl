@@ -117,6 +117,37 @@ deepEqual(s::SyntaxInstStrip, other::SyntaxInst)::Bool = other isa SyntaxInstStr
 
 
 
+syntLength(s::SyntaxInstTerm)::Int = 1
+syntLength(s::SyntaxInstReference)::Int = 1
+syntLength(s::SyntaxInstSimpleString)::Int = 1
+syntLength(s::SyntaxInstObject)::Int = syntLength(s.syntax)
+syntLength(s::SyntaxInstField)::Int = syntLength(s.objectFound)
+syntLength(s::SyntaxInstChoice)::Int = syntLength(s.choice)
+syntLength(s::SyntaxInstStruct)::Int = s.list .|> syntLength |> sum
+syntLength(s::SyntaxInstStrip)::Int = s.list .|> syntLength |> sum
+
+getMainComponents(s::SyntaxInstTerm, level)::Array{SyntaxInstObject} = []
+getMainComponents(s::SyntaxInstReference, level)::Array{SyntaxInstObject} = []
+getMainComponents(s::SyntaxInstSimpleString, level)::Array{SyntaxInstObject} = []
+getMainComponents(s::SyntaxInstObject, level)::Array{SyntaxInstObject} = level==0 ? [] : [s, getMainComponents(s, level - 1)...]
+getMainComponents(s::SyntaxInstField, level)::Array{SyntaxInstObject} = level==0 ? [] : getMainComponents(s.objectFound, level)
+getMainComponents(s::SyntaxInstChoice, level)::Array{SyntaxInstObject} = level==0 ? [] : getMainComponents(s.choice, level)
+getMainComponents(s::SyntaxInstStruct, level)::Array{SyntaxInstObject} = level==0 ? [] : s.list .|> (x->getMainComponents(x, level)) |> vcat
+getMainComponents(s::SyntaxInstStrip, level)::Array{SyntaxInstObject} = level==0 ? [] : s.list .|> (x->getMainComponents(x, level)) |> vcat
+
+re_pr(s::SyntaxInstTerm)::String = s.name.name
+re_pr(s::SyntaxInstReference)::String = s.text
+re_pr(s::SyntaxInstSimpleString)::String = s.text
+re_pr(s::SyntaxInstObject)::String = re_pr(s.syntax)
+re_pr(s::SyntaxInstField)::String = re_pr(s.objectFound)
+re_pr(s::SyntaxInstChoice)::String = re_pr(s.choice)
+re_pr(s::SyntaxInstStruct)::String = s.list .|> re_pr |> x->join(x, "")
+re_pr(s::SyntaxInstStrip)::String = s.list .|> re_pr |> x->join(x, "")
+
+# re_pr_nicely(s::SyntaxInstObject) = "$(re_pr(s))    --->>>    (also written $(getInferredTerm(s).expr|>pr_E))     of type   $(getInferredTerm(s).type|>pr_ctx)"
+re_pr_nicely(s::SyntaxInstObject) = "$(re_pr(s))    --->>>    of type   $(getInferredTerm(s).type|>pr_ctx)"
+
+
 function push_struct!(s::SyntaxInstStruct, obj::SyntaxInst, index::Int, marginalOfObjName::Real)
     if !(index == length(s.list) && wouldFit(obj, s.name.list[index+1])) throw(DomainError("freganiente")) end
     # ^ //this part is for testing: cuz, u are SUPPOSED TO KNOW WAT YOU'RE DOING

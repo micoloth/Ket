@@ -292,7 +292,7 @@ function make_s10()
     TypeProds = Dict{String, TProd}()
     bindings = Dict{String, Any}()  # Any is an ARRAY OF FUNCTIONS
 
-    for i in ["{","[","]","/","\\", "-",">",".",":","=","(",")",";",",","where","Type","eval","}", "x", "+", "return"] SyntaxTerms[i] =SyntaxTerm(i) end
+    for i in ["{","[","]","/","\\", "|", "-",">",".",":","=","(",")",";",",","where","Type","eval","}", "x", "+", "return"] SyntaxTerms[i] =SyntaxTerm(i) end
 
     function auto_SyntStruct(ss::Array{Union{String, SyntaxCore}})
         for (i, s) in enumerate(ss)
@@ -363,7 +363,7 @@ function make_s10()
     SyntaxStrips["programFlowInPars"] = auto_SyntStrip(SyntaxTerm("{"), SyntaxChoicess["namedTypedObj_or_returnObj"], SyntaxTerm(";"), SyntaxTerm("}"))
     bindings["programFlowInPars"] = [builder_programFlowInPars]
 
-    SyntaxStrips["concat_dot"] = auto_SyntStrip(nothing, SyntaxField("concat_dot_func", TTerm(TLocInt(1), TLocInt(2))), ".", nothing)
+    SyntaxStrips["concat_dot"] = auto_SyntStrip(nothing, SyntaxField("concat_dot_func", TTerm(TLocInt(1), TLocInt(2))), "|", nothing)
     bindings["concat_dot"] =[builder_concat_dot]
     # SyntaxStrips["funcConc"] = auto_SyntStrip(nothing,  SyntaxField("funcConc_func", TLocInt(1)), SyntaxTerm("."), nothing)
     # bindings["funcConc"] = [builder_funcConc]
@@ -404,108 +404,133 @@ text = "b"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "A->B"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "(A->B->C)"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "((A->B)->B)"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "g(e)"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "g(e):B"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "[k:A x h:B]"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
-getBest(rp.structure)[1].s|>getInferredTerm |>x->x.type
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
+getBestObjects(rp.structure)[1].s|>getInferredTerm |>x->x.type
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "{g(k)}"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "f(k=h, d=e)"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "f(z=n)(k=h)"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "{1(3)(2(3))}"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "{1(3)(2(3))}(1={1}, 2={b}, 3=a)"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 
 s10 = make_s10();
-text = "f.g.h"
+text = "f|g"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 
 s10 = make_s10();
-text = "f.g.{1}"
+text = "f|g|{1}"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
-text = "{2}.f.g"
+text = "{2}|f|g"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
 rp.structure|>trace
-getBest(rp.structure)[1] |> (x->trace(x; top=true))
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
+
+
+s10 = make_s10();
+text = "f|g| {[x, x]}"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 
 
