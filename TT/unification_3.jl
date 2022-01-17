@@ -15,61 +15,41 @@
 # What is the meaning of the "NTHG" function ????
 
 
-# TGlob   TGlob
-# TLocInt   TLocInt
-# TTop   TTop
-# TTerm   TTerm
-# TAbs   TAbs
-# TProd   TProd
-# TSum   TSum
-# TApp   TApp
-# TSumTerm   TSumTerm
-# TAnno   TAnno
-# TBranches   TBranches
+
+# a join b  ==  a v b  ==  a<avb, b<avb  ==  a CAN BECOME a join b, b CAN BECOME a join b
+
 
 include("mylambda1.jl")
 
 
-abstract type Constraint end
-struct DirectConstraint <: Constraint # (->)
-    t1::Term
+struct SparseSubst
+    t1::TLoc
     t2::Term
 end
-struct ReverseConstraint <: Constraint# (Meaning <-)
-    t1::Term
-    t2::Term
-end
-struct EqConstraint <: Constraint # Should be equal.
-    t1::Term
-    t2::Term
-end
-struct ErrorConstraint <: Constraint
-    c::Constraint
-    error::Error
-end
-Base.:(==)(a::EqConstraint, b::EqConstraint) = (a.t1 == b.t1) && (a.t2 == b.t2)
-Base.:(==)(a::DirectConstraint, b::DirectConstraint) = (a.t1 == b.t1) && (a.t2 == b.t2)
-Base.:(==)(a::ReverseConstraint, b::ReverseConstraint) = (a.t1 == b.t1) && (a.t2 == b.t2)
-reduc(c::DirectConstraint) = DirectConstraint(reduc(c.t1), reduc(c.t2))
-reduc(c::ReverseConstraint) = ReverseConstraint(reduc(c.t1), reduc(c.t2))
-reduc(c::EqConstraint) = EqConstraint(reduc(c.t1), reduc(c.t2))
-reduc(c::ErrorConstraint) = ErrorConstraint(reduc(c.c), c.error)
-
-
-get_string(a::Array{ErrorConstraint}) = a .|> (x -> "Can't unify $(x.c.t1 |>pr) and $(x.c.t2 |>pr): $(x.error)") |> (x -> join(x, ", "))
+Base.:(==)(a::SparseSubst, b::SparseSubst) = (a.t1 == b.t1) && (a.t2 == b.t2)
+reduc(c::SparseSubst) = SparseSubst(reduc(c.t1), reduc(c.t2))
+pr(c::SparseSubst)::String = pr(c.t1) * "==" * pr(c.t2)
 
 Error = String
-Imply_res = Union{Array{Constraint},ErrorConstraint}
-
-pr(c::Constraint)::String = pr(c.t1) * "==" * pr(c.t2)
-
-
-# a join b  ==  a v b  ==  a<avb, b<avb  ==  a CAN BECOME a join b, b CAN BECOME a join b
-
-struct MeetJoin_rec_res
-    res_type::Term # OR would be better if each one had its own?  --> NOTE: maybe i can still template it?
-    cs::Array{Constraint}
+struct ErrorConstraint
+    t1::Term
+    t2::Term
+    error::Error
 end
+ErrorC(t1::Term, t2::Term, msg)::ErrorConstraint = ErrorConstraint(t1, t2, msg(t1, t2))
+pr(a::Array{ErrorConstraint}) = a .|> (x -> "Can't unify $(x.t1 |>pr) and $(x.t2 |>pr): $(x.error)") |> (x -> join(x, ", "))
+
+struct RecUnifyRes
+    preSubst::Array{SparseSubst} # I'm gonna REGRET that this is one array instead of 2 substs... # BUT, for now it's like this.
+    postSubst1::Term
+    postSubst2::Term
+    res::Term # OR would be better if each one had its own?  --> NOTE: maybe i can still template it?
+    errors::Array{ErrorConstraint}
+end
+RecUnifyRes(res::Term) = RecUnifyRes([], TLocInt(1), TLocInt(1), res, [])
+RecUnifyRes(res::Term, preSubst::Array{SparseSubst}) = RecUnifyRes(preSubst, TLocInt(1), TLocInt(1), res, [])
+RecUnifyRes(res::Term, e::ErrorConstraint) = RecUnifyRes([], TLocInt(1), TLocInt(1), res, [e])
+RecUnifyResErr(res::Term, e::ErrorConstraint) = RecUnifyRes([], TLocInt(1), TLocInt(1), TermwError(res, e.error), [e])
 
 err_msg_app(t1::TApp, t2::TApp) = "Different bodies: $(length(t1.ops_dot_ordered)) != $(length(t2.ops_dot_ordered))"
 err_msg_lambdas(t1::TAbs, t2::TAbs) = "Different lambdas $(pr(t1)) != $(pr(t2)): I know I'm being picky, but impossible to tell if these are the same: $([t1.body, t2.body])"
@@ -85,6 +65,9 @@ err_msg_append(t1::TAppend, t2::TAppend) = "Different lengths: $(length(t1.prods
 err_msg_int(t1::TInt, t2::TInt) = "$(t1.n) > $(t2.n), so as types, you really cant do this coercion.."
 err_msg_ttop(t1::Term, t2::TTop) = "A generic $(t2) cannot be forced to be a $(t1|>pr)..."
 err_msg_ttop(t1::TTop, t2::Term) = "A generic $(t1) cannot be forced to be a $(t2|>pr)..."
+err_msg_strings(t1::Term, t2::Term) = "Different strings"
+err_msg_recursive(tloc, t) = Error("$(tloc) == $(t) is not a thing (recursive)")
+
 
 @enum Unify_mode meet_ = 1 join_ = 2 implydir_ = 3 implyrev_ = 4
 flip_dic = Dict{Unify_mode, Unify_mode}(meet_=> join_, join_=>meet_, implydir_=>implyrev_, implyrev_=>implydir_)
@@ -92,61 +75,61 @@ flip(m::Unify_mode) = flip_dic[m]
 reverse_dic = Dict{Unify_mode, Unify_mode}(meet_=> meet_, join_=>join_, implydir_=>implyrev_, implyrev_=>implydir_)
 reverse(m::Unify_mode) = reverse_dic[m]
 
-function rec_unify_(t1::TApp, t2::TApp, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TApp, t2::TApp, mode::Unify_mode)::RecUnifyRes
     if length(t1.ops_dot_ordered) != length(t2.ops_dot_ordered)
-        MeetJoin_rec_res(TermwError(t2, Error(err_msg_app(t1, t2))), Array{Constraint}[])
+        RecUnifyResErr(t2, ErrorC(t1, t2, err_msg_app))
     else
         all_ress = [rec_unify_(f1, f2, mode) for (f1, f2) in zip(t1.ops_dot_ordered, t2.ops_dot_ordered)]
-        MeetJoin_rec_res(TApp(all_ress .|> x -> x.res_type), vcat((all_ress .|> x -> x.cs)...))
+        RecUnifyRes(TApp(all_ress .|> x -> x.res), vcat((all_ress .|> x -> x.preSubst)...))
     end
 end
 
-function rec_unify_(t1::TConc, t2::TConc, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TConc, t2::TConc, mode::Unify_mode)::RecUnifyRes
     if length(t1.ops_dot_ordered) != length(t2.ops_dot_ordered)
-        return MeetJoin_rec_res(TermwError(t1, Error(err_msg_app(t1, t2))), Array{Constraint}[])
+        return RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_app))
     end
         all_ress = [rec_unify_(f1, f2, mode) for (f1, f2) in zip(t1.ops_dot_ordered, t2.ops_dot_ordered)]
-        MeetJoin_rec_res(TConc(all_ress .|> x -> x.res_type), vcat((all_ress .|> x -> x.cs)...))
+        RecUnifyRes(TConc(all_ress .|> x -> x.res), vcat((all_ress .|> x -> x.preSubst)...))
 end
 
 # CURRENTLY WORNG: concat_(t::TProd...) = TProd(vcat((t .|> (x -> x.data))...), merge((t .|> (x -> x.data_tags))...))
 subdict(d::Dict{Id,Term}, keys::Set{Id}) = Dict{Id,Term}(k => d[k] for k in keys)
 
-function rec_unify_(t1::TProd, t2::TProd, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TProd, t2::TProd, mode::Unify_mode)::RecUnifyRes
     data_dict_1, data_dict_2 = Dict{Id, Term}(t1.data_tags), Dict{Id, Term}(t2.data_tags)
     tags_1_not_2, tags_2_not_1 = setdiff(keys(data_dict_1), keys(data_dict_2)), setdiff(keys(data_dict_2), keys(data_dict_1))
     t1l, t2l = t1.data |> length, t2.data |> length
     if mode==implydir_ && (length(t1.data) < length(t2.data) || tags_2_not_1 |> length >0)
-        return MeetJoin_rec_res(TermwError(t2, Error(err_msg_prods(t1, t2))), Array{Constraint}[])
+        return RecUnifyResErr(t2, ErrorC(t1, t2, err_msg_prods))
     elseif mode==implyrev_ && (length(t1.data) > length(t2.data) || tags_1_not_2 |> length >0)
-        return MeetJoin_rec_res(TermwError(t2, Error(err_msg_prods(t1, t2))), Array{Constraint}[])
+        return RecUnifyResErr(t2, ErrorC(t1, t2, err_msg_prods))
     end
     shared_tags = intersect(keys(data_dict_1), keys(data_dict_2))
-    shared_res = Dict{Id,MeetJoin_rec_res}(tag => rec_unify_(data_dict_1[tag], data_dict_2[tag], mode) for tag in shared_tags)
-    shared_res_types = Dict{Id,Term}(tag => res.res_type for (tag, res) in shared_res)
+    shared_res = Dict{Id,RecUnifyRes}(tag => rec_unify_(data_dict_1[tag], data_dict_2[tag], mode) for tag in shared_tags)
+    shared_res_types = Dict{Id,Term}(tag => res.res for (tag, res) in shared_res)
     res_types_tags = merge(shared_res_types, subdict(data_dict_1, tags_1_not_2), subdict(data_dict_2, tags_2_not_1))
-    res_tags_cs = vcat((values(shared_res) .|>  x -> x.cs)...)
+    res_tags_cs::Array{SparseSubst} = vcat((values(shared_res) .|>  x -> x.preSubst)...)
 
     all_ress = [rec_unify_(f1, f2, mode) for (f1, f2) in zip(t1.data, t2.data)] # Potentially turn into a monad (not really urgent tho)
     # IMPORTANT: zip stops @ the LEAST number of elems!
-    res_data_types = Array{Term}(all_ress .|> x -> x.res_type)
-    res_data_cs = vcat((all_ress .|> x -> x.cs)...)
+    res_data_types = Array{Term}(all_ress .|> x -> x.res)
+    res_data_cs::Array{SparseSubst} = vcat((all_ress .|> x -> x.preSubst)...)
     if t1l != t2l && mode==meet_
         additional_elems = (t1l > t2l) ? (t1.data[(t2l+1):end]) : (t2.data[(t1l+1):end])
         res_data_types = vcat(res_data_types, additional_elems)
     end
-    MeetJoin_rec_res(TProd(res_data_types, [res_types_tags...]), vcat(res_tags_cs, res_data_cs))
+    RecUnifyRes(TProd(res_data_types, [res_types_tags...]), vcat(res_tags_cs, res_data_cs))
 end
 
 
-function rec_unify_(t1::TSum, t2::TSum, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TSum, t2::TSum, mode::Unify_mode)::RecUnifyRes
     t1l, t2l = t1.data |> length, t2.data |> length
     if t1l > t2l && mode==implydir_
-        return MeetJoin_rec_res(TermwError(t1, Error(err_msg_sums(t1, t2))), Array{Constraint}[])
+        return RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_sums))
     end
     all_ress = [rec_unify_(f1, f2, mode) for (f1, f2) in zip(t1.data, t2.data)] # Potentially turn into a monad (not really urgent tho)
     # IMPORTANT: ^ zip stops @ the LEAST number of elems!
-    res_types = all_ress .|> x -> x.res_type
+    res_types = all_ress .|> x -> x.res
     errors = findall((x -> x isa TermwError), res_types)
     if t1l != t2l && (mode==join_ || mode==meet_)
         additional_elems = (t1l > t2l) ? (t1.data[(t2l+1):end]) : (t2.data[(t1l+1):end])
@@ -156,17 +139,17 @@ function rec_unify_(t1::TSum, t2::TSum, mode::Unify_mode)::MeetJoin_rec_res
     if length(errors) > 0
         res_type = TermwError(res_type, "E" * join(errors .|> string, ""))
     end
-    MeetJoin_rec_res(res_type, vcat((all_ress .|> x -> x.cs)...))
+    RecUnifyRes(res_type, vcat((all_ress .|> x -> x.preSubst)...))
 end
 
 
-function rec_unify_(t1::TAbs, t2::TAbs, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TAbs, t2::TAbs, mode::Unify_mode)::RecUnifyRes
     println("Simplyfing two Foralls:")
     # FOR NOW, these will be REALLY PICKY
     if t1 == t2
-        MeetJoin_rec_res(t1, Array{Constraint}[])
+        RecUnifyRes(t1)
     else
-        MeetJoin_rec_res(TermwError(t1, Error(err_msg_lambdas(t1, t2))), Array{Constraint}[])
+        RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_lambdas))
     end
     # Only accepted case: All constraints are about TLocInt only and THE SAME
     # cons = DirectConstraint(t1.body, t2.body)
@@ -175,132 +158,132 @@ function rec_unify_(t1::TAbs, t2::TAbs, mode::Unify_mode)::MeetJoin_rec_res
     # if typeof(cons) == Error
     #     Error("Different lambdas: with this error: $(cons)")
     # elseif length(cons) == 0 || (cons .|> is_same |> all)
-    #     Array{Constraint}([])
+    #     Array{SparseSubst}([])
     # else
     #     Error("Different lambdas $(pr(t1)) != $(pr(t2)): I know I'm being picky, but impossible to simplify this part: $(cons)")
     # end
 end
 
-function rec_unify_(t1::TTerm, t2::TTerm, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TTerm, t2::TTerm, mode::Unify_mode)::RecUnifyRes
     res_out = rec_unify_(t1.t_out, t2.t_out, mode)
     res_in = rec_unify_(t1.t_in, t2.t_in, flip(mode))
-    MeetJoin_rec_res(TTerm(res_in.res_type, res_out.res_type), vcat(res_out.cs, res_in.cs))
+    RecUnifyRes(TTerm(res_in.res, res_out.res), vcat(res_out.preSubst, res_in.preSubst))
 end
-function rec_unify_(t1::TSumTerm, t2::TSumTerm, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TSumTerm, t2::TSumTerm, mode::Unify_mode)::RecUnifyRes
     if t1.tag != t2.tag
-        return MeetJoin_rec_res(TermwError(t1, Error(err_msg_sumtags(t1, t2))), Array{Constraint}[])
+        return RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_sumtags))
         # ^ You MIGHT want to return constraints for t1 and t2 all the same, but i'm NOT doing it...
     else
         res = rec_unify_(t1.data, t2.data, mode) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
-        return MeetJoin_rec_res(TSumTerm(t1.tag, t1.tag_name, res.res_type), res.cs)
+        return RecUnifyRes(TSumTerm(t1.tag, t1.tag_name, res.res), res.preSubst)
     end
 end
-function rec_unify_(t1::TLoc, t2::TSumTerm, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TLoc, t2::TSumTerm, mode::Unify_mode)::RecUnifyRes
     # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
-    MeetJoin_rec_res(t1, Array{Constraint}([EqConstraint(t1, t2)]))
+    RecUnifyRes(t1, Array{SparseSubst}([SparseSubst(t1, t2)]))
 end
-function rec_unify_(t1::Term, t2::TSumTerm, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::Term, t2::TSumTerm, mode::Unify_mode)::RecUnifyRes
     res = rec_unify_(t1, t2.data, mode) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
-    MeetJoin_rec_res(TSumTerm(t2.tag, t1.tag_name, res.res_type), res.cs)
+    RecUnifyRes(TSumTerm(t2.tag, t1.tag_name, res.res), res.preSubst)
 end
-function rec_unify_(t1::TSumTerm, t2::TLoc, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TSumTerm, t2::TLoc, mode::Unify_mode)::RecUnifyRes
     # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
-    MeetJoin_rec_res(t2, Array{Constraint}([EqConstraint(t2, t1)]))
+    RecUnifyRes(t2, Array{SparseSubst}([SparseSubst(t2, t1)]))
     # TODOTODO: This relies HEAVILY on the fact that names have been UNIFIED between t1 and t2. Is this ALWAYS what we want ???
 end
-function rec_unify_(t1::TSumTerm, t2::Term, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TSumTerm, t2::Term, mode::Unify_mode)::RecUnifyRes
     res = rec_unify_(t1.data, t2, mode) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
-    MeetJoin_rec_res(TSumTerm(t1.tag, t1.tag_name, res.res_type), res.cs)
+    RecUnifyRes(TSumTerm(t1.tag, t1.tag_name, res.res), res.preSubst)
 end
-function rec_unify_(t1::TLoc, t2::TLoc, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TLoc, t2::TLoc, mode::Unify_mode)::RecUnifyRes
     if t1.var == t2.var # t1.var == t2.var
-        MeetJoin_rec_res(t2, Array{Constraint}([]))
+        RecUnifyRes(t2)
     elseif t1 isa TLocStr && t2 isa TLocStr
-        MeetJoin_rec_res(TermwError(t2, err_msg_tags(t1, t2)), Array{Constraint}([ErrorConstraint(EqConstraint(t1, t2), err_msg_tags(t1, t2))]))# Uhhh How about return an error ??? ???
+        RecUnifyResErr(t2, ErrorC(t1, t2, err_msg_tags))# Uhhh How about return an error ??? ???
         # ^ For some reason, i DONT want to substitute away var tags for now ...
     elseif t1 isa TLocStr  # prefer substituting away numbers wrt strings
-        MeetJoin_rec_res(t1, Array{Constraint}([EqConstraint(t2, t1)]))
+        RecUnifyRes(t1, Array{SparseSubst}([SparseSubst(t2, t1)]))
         # TODOTODO: This relies HEAVILY on the fact that names have been UNIFIED between t1 and t2. Is this ALWAYS what we want ???
     else
-        MeetJoin_rec_res(t2, Array{Constraint}([EqConstraint(t1, t2)]))
+        RecUnifyRes(t2, Array{SparseSubst}([SparseSubst(t1, t2)]))
     end
 end
-function rec_unify_(t1::TLoc, t2::Term, mode::Unify_mode)::MeetJoin_rec_res
-    MeetJoin_rec_res(t2, Array{Constraint}([EqConstraint(t1, t2)]))
+function rec_unify_(t1::TLoc, t2::Term, mode::Unify_mode)::RecUnifyRes
+    RecUnifyRes(t2, Array{SparseSubst}([SparseSubst(t1, t2)]))
 end
-function rec_unify_(t1::Term, t2::TLoc, mode::Unify_mode)::MeetJoin_rec_res
-    MeetJoin_rec_res(t1, Array{Constraint}([EqConstraint(t2, t1)]))
+function rec_unify_(t1::Term, t2::TLoc, mode::Unify_mode)::RecUnifyRes
+    RecUnifyRes(t1, Array{SparseSubst}([SparseSubst(t2, t1)]))
     # TODOTODO: This relies HEAVILY on the fact that names have been UNIFIED between t1 and t2. Is this ALWAYS what we want ???
 end
 
 
-function rec_unify_(t1::Term, t2::TTop, mode::Unify_mode)::Imply_res
-    if mode === meet_ MeetJoin_rec_res(t1, Array{Constraint}([]))
-    elseif mode === join_ MeetJoin_rec_res(t2, Array{Constraint}([]))
-    elseif mode === implydir_ MeetJoin_rec_res(t2, Array{Constraint}([]))
-    elseif mode === implyrev_ MeetJoin_rec_res(TermwError(t1, Error(err_msg_ttop(t1, t2))), Array{Constraint}([]))
+function rec_unify_(t1::Term, t2::TTop, mode::Unify_mode)::RecUnifyRes
+    if mode === meet_ RecUnifyRes(t1)
+    elseif mode === join_ RecUnifyRes(t2)
+    elseif mode === implydir_ RecUnifyRes(t2)
+    elseif mode === implyrev_ RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_ttop))
     end
 end
-function rec_unify_(t1::TTop, t2::Term, mode::Unify_mode)::Imply_res
+function rec_unify_(t1::TTop, t2::Term, mode::Unify_mode)::RecUnifyRes
     rec_unify_(t2, t1, reverse(mode))
 end
-function rec_unify_(t1::TInt, t2::TInt, mode::Unify_mode)::MeetJoin_rec_res
-    if mode === meet_ MeetJoin_rec_res(TInt(min(t1.n, t2.n)), Array{Constraint}([]))
-    elseif mode === join_ MeetJoin_rec_res(TInt(max(t1.n, t2.n)), Array{Constraint}([]))
+function rec_unify_(t1::TInt, t2::TInt, mode::Unify_mode)::RecUnifyRes
+    if mode === meet_ RecUnifyRes(TInt(min(t1.n, t2.n)))
+    elseif mode === join_ RecUnifyRes(TInt(max(t1.n, t2.n)))
     elseif mode === implydir_
-        t1.n >= t2.n ? MeetJoin_rec_res(t2, Array{Constraint}([])) : MeetJoin_rec_res(TermwError(t2, Error(err_msg_int(t1, t2))), Array{Constraint}([]))
+        t1.n >= t2.n ? RecUnifyRes(t2) : RecUnifyResErr(t2, ErrorC(t1, t2, err_msg_int))
     elseif mode === implyrev_
-        t1.n <= t2.n ? MeetJoin_rec_res(t1, Array{Constraint}([])) : MeetJoin_rec_res(TermwError(t1, Error(err_msg_int(t1, t2))), Array{Constraint}([]))
+        t1.n <= t2.n ? RecUnifyRes(t1) : RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_int))
     end
 end
-function rec_unify_(t1::TInt, t2::TN, mode::Unify_mode)::MeetJoin_rec_res# VERY VERY CRUCIAL !!!
-    if mode === meet_ MeetJoin_rec_res(t1, Array{Constraint}([]))
-    elseif mode === join_ MeetJoin_rec_res(t2, Array{Constraint}([]))
-    elseif mode === implydir_ MeetJoin_rec_res(t2, Array{Constraint}([]))
-    elseif mode === implyrev_ MeetJoin_rec_res(TermwError(t1, Error(err_msg_ttop(t1, t2))), Array{Constraint}([]))
+function rec_unify_(t1::TInt, t2::TN, mode::Unify_mode)::RecUnifyRes# VERY VERY CRUCIAL !!!
+    if mode === meet_ RecUnifyRes(t1)
+    elseif mode === join_ RecUnifyRes(t2)
+    elseif mode === implydir_ RecUnifyRes(t2)
+    elseif mode === implyrev_ RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_ttop))
     end
 end
-function rec_unify_(t1::TN, t2::TInt, mode::Unify_mode)::Imply_res
+function rec_unify_(t1::TN, t2::TInt, mode::Unify_mode)::RecUnifyRes
     rec_unify_(t2, t1, reverse(mode))
 end
-function rec_unify_(t1::TStr, t2::TStr, mode::Unify_mode)::MeetJoin_rec_res
-    if t1.s == t2.s MeetJoin_rec_res(t1, Array{Constraint}([]))
-    else MeetJoin_rec_res(t1, Array{Constraint}([ErrorConstraint(EqConstraint(t1, t2), "Different strings")]))
+function rec_unify_(t1::TStr, t2::TStr, mode::Unify_mode)::RecUnifyRes
+    if t1.s == t2.s RecUnifyRes(t1)
+    else RecUnifyRes(t1, ErrorC(t1, t2, err_msg_strings))
     end
 end
-function rec_unify_(t1::TN, t2::TN, mode::Unify_mode)::MeetJoin_rec_res
-    MeetJoin_rec_res(TN(), Array{Constraint}([]))
+function rec_unify_(t1::TN, t2::TN, mode::Unify_mode)::RecUnifyRes
+    RecUnifyRes(TN())
 end
-function rec_unify_(t1::TS, t2::TS, mode::Unify_mode)::MeetJoin_rec_res
-    MeetJoin_rec_res(TS(), Array{Constraint}([]))
+function rec_unify_(t1::TS, t2::TS, mode::Unify_mode)::RecUnifyRes
+    RecUnifyRes(TS())
 end
-function rec_unify_(t1::TIntSum, t2::TIntSum, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TIntSum, t2::TIntSum, mode::Unify_mode)::RecUnifyRes
     if length(t1.ns) != length(t2.ns)
-        return MeetJoin_rec_res(TermwError(t1, Error(err_msg_intsum(t1, t2))), Array{Constraint}[])
+        return RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_intsum))
     end
     all_ress = [rec_unify_(f1, f2, mode) for (f1, f2) in zip(t1.ns, t2.ns)]
-    MeetJoin_rec_res(TIntSum(all_ress .|> x -> x.res_type), vcat((all_ress .|> x -> x.cs)...))
+    RecUnifyRes(TIntSum(all_ress .|> x -> x.res), vcat((all_ress .|> x -> x.preSubst)...))
 end
-function rec_unify_(t1::TIntProd, t2::TIntProd, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TIntProd, t2::TIntProd, mode::Unify_mode)::RecUnifyRes
     if length(t1.ns) != length(t2.ns)
-        return MeetJoin_rec_res(TermwError(t1, Error(err_msg_intprod(t1, t2))), Array{Constraint}[])
+        return RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_intprod))
     end
     all_ress = [rec_unify_(f1, f2, mode) for (f1, f2) in zip(t1.ns, t2.ns)]
-    MeetJoin_rec_res(TIntProd(all_ress .|> x -> x.res_type), vcat((all_ress .|> x -> x.cs)...))
+    RecUnifyRes(TIntProd(all_ress .|> x -> x.res), vcat((all_ress .|> x -> x.preSubst)...))
 end
-function rec_unify_(t1::TAppend, t2::TAppend, mode::Unify_mode)::MeetJoin_rec_res
+function rec_unify_(t1::TAppend, t2::TAppend, mode::Unify_mode)::RecUnifyRes
     if length(t1.prods) != length(t2.prods)
-        return MeetJoin_rec_res(TermwError(t1, Error(err_msg_append(t1, t2))), Array{Constraint}[])
+        return RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_append))
     end
     all_ress = [rec_unify_(f1, f2, mode) for (f1, f2) in zip(t1.prods, t2.prods)]
-    MeetJoin_rec_res(TAppend(all_ress .|> x -> x.res_type), vcat((all_ress .|> x -> x.cs)...))
+    RecUnifyRes(TAppend(all_ress .|> x -> x.res), vcat((all_ress .|> x -> x.preSubst)...))
 end
 
-function rec_unify_(t1::Term, t2::Term, mode::Unify_mode)::MeetJoin_rec_res # base case
+function rec_unify_(t1::Term, t2::Term, mode::Unify_mode)::RecUnifyRes # base case
     if t1 == t2
-        MeetJoin_rec_res(t1, Array{Constraint}([]))
+        RecUnifyRes(t1)
     else
-        MeetJoin_rec_res(TermwError(t1, Error(err_msg_terms(t1, t2))), Array{Constraint}[])
+        RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_terms))
     end
 end
 
@@ -339,10 +322,14 @@ ass_smart_reduc(t...) = (length(t) <= 1) ? (collect(t)) : ([get_reduc_subst(coll
 ass_reduc(t::TProd...)::TProd = (length(t) == 1) ? (t[1]) : (get_reduc_subst(collect(t)) |> reduc)
 ass_reduc(t1::Term, ts::TProd...)::Term = (length(ts) == 0) ? (t1) : (get_reduc_subst(vcat([t1], collect(ts))) |> reduc)
 
-ass_reduc(c::EqConstraint, ts::TProd...) = EqConstraint(ass_reduc(c.t1, ts...), ass_reduc(c.t2, ts...))
-ass_reduc(c::DirectConstraint, ts::TProd...) = DirectConstraint(ass_reduc(c.t1, ts...), ass_reduc(c.t2, ts...))
-ass_reduc(c::ReverseConstraint, ts::TProd...) = ReverseConstraint(ass_reduc(c.t1, ts...), ass_reduc(c.t2, ts...))
-ass_reduc(c::ErrorConstraint, ts::TProd...) = ErrorConstraint(ass_reduc(c.c, ts...), c.error)
+
+
+function ass_reduc(c::SparseSubst, ts::TProd...)
+    tloc = ass_reduc(c.t1, ts...)
+    @assert tloc isa TLoc
+    SparseSubst(tloc, ass_reduc(c.t2, ts...))
+end
+ass_reduc(c::ErrorConstraint, ts::TProd...) = ErrorConstraint(ass_reduc(c.t1, ts...), ass_reduc(c.t2, ts...), c.error)
 
 id_data(current_arity) = Array{Term}([TLocInt(i) for i in 1:current_arity])
 id_tags(current_tags) = Array{Pair{Id, Term}}([i => TLocStr(i) for i in current_tags])
@@ -355,7 +342,7 @@ end
 get_arity_obj(t::Term) = Arity(t |> arity, t |> usedLocsSet)
 
 
-function get_subst_prod_data(tloc::TLocInt, tt::Term, curr_arity::Arity)::TProd
+function get_full_subst(tloc::TLocInt, tt::Term, curr_arity::Arity)::TProd
     # resulting_arity = curr_arity.data - 1
     # you have ALREADY TESTED that tt does not contain tloc, that's the whole point !!!!
     prod = vcat(
@@ -367,12 +354,13 @@ function get_subst_prod_data(tloc::TLocInt, tt::Term, curr_arity::Arity)::TProd
     prod.data[tloc.var] = ass_reduc(tt, prod)
     prod
 end  # THIS IS DIFFERENT IN VAR VS VAR_TAG #
-function get_subst_prod_tag(tloc::TLocStr, tt::Term, curr_arity::Arity)::TProd
+function get_full_subst(tloc::TLocStr, tt::Term, curr_arity::Arity)::TProd
     # you have ALREADY TESTED that tt does not contain tloc, that's the whole point !!!!
     subst = id_tags(curr_arity.tags)
     subst[findfirst(subst.|> (x->x[1]==tloc.var))] = (tloc.var=>tt) # i'm PRETENDING THAT tt DOES NOT CONTAIN var
     TProd(id_data(curr_arity.data), subst)
 end  # THIS IS DIFFERENT IN VAR VS VAR_TAG #
+get_full_subst(s::SparseSubst, curr_arity::Arity) = get_full_subst(s.t1, s.t2, curr_arity)
 
 
 function share_ctx_tlocs_names(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity)
@@ -412,12 +400,12 @@ end
 Succeded_unif_res = Tuple{TProd,TProd,Term}
 Failed_unif_res = Tuple{TProd,TProd,Term,Array{ErrorConstraint}}
 
-function do_the_subst_thing!(var_obj::TLoc, tt, current_arity, current_total_subst, STACK, ERRORSTACK)
-    if !check_not_recursive(var_obj, tt)
-        push!(ERRORSTACK, ErrorConstraint(EqConstraint(var_obj, tt), Error("$(var_obj) == $(tt) is not a thing (recursive)")))
+function do_the_subst_thing!(subst::SparseSubst, current_arity, current_total_subst, STACK, ERRORSTACK)
+    if !check_not_recursive(subst.t1, subst.t2)
+        push!(ERRORSTACK, ErrorC(subst.t1, subst.t2, err_msg_recursive))
         return current_arity, current_total_subst
     end
-    new_subst = (var_obj isa TLocInt) ? get_subst_prod_data(var_obj, tt, current_arity) : get_subst_prod_tag(var_obj, tt, current_arity)
+    new_subst = get_full_subst(subst, current_arity)
     current_total_subst = Array{TProd}(ass_smart_reduc(current_total_subst..., new_subst))
     current_arity = Arity(arity(current_total_subst[end]), usedLocsSet(current_total_subst[end])) # The beauty of this is this is Enough... I HOPE LOL
     for i = 1:length(STACK)
@@ -432,6 +420,18 @@ function do_the_subst_thing!(var_obj::TLoc, tt, current_arity, current_total_sub
     # apply to it the PREASSOCIATED CURRENT_TOTAL_SUBST of the substs it missed After it was created !!!
     # (wait.. That doesnt sound easy, as that means you can NEVER preassociate anything ?)
     current_arity, current_total_subst
+end
+
+
+function get_first_pair_of_matching_indices(v::Array)
+    for i = 1:length(v)
+        for j = i+1:length(v)
+            if v[i] == v[j]
+                return (i, j)
+            end
+        end
+    end
+    nothing
 end
 
 function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify_tlocs_ctx::Bool = true, mode::Unify_mode = join_)::Union{Succeded_unif_res,Failed_unif_res,ItsLiterallyAlreadyOk}
@@ -449,12 +449,12 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
 
     # 2. unify term and/or produce Eqconstraints
     # if mode == implydir_
-    #     STACK = Array{Constraint}([DirectConstraint(t1, t2)])
+    #     STACK = Array{SparseSubst}([DirectConstraint(t1, t2)])
     #     ERRORSTACK = Array{ErrorConstraint}([])
     # else
     t1, t2 = reduc(t1), reduc(t2)
     res = rec_unify_(t1, t2, mode)
-    res_type::Term, STACK = res.res_type, res.cs
+    res_type::Term, STACK = res.res, res.preSubst
     ERRORSTACK = Array{ErrorConstraint}(filter(x -> x isa ErrorConstraint, STACK))
     STACK = filter(x -> !(x isa ErrorConstraint), STACK)
     # NOTE: rec_unify_ WILL return ErrorConstraint's now, about tags.
@@ -467,33 +467,37 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
     current_total_subst = Array{TProd}([]) # SMART_REDUCED VERSION # (Can be a single [TProd] or the whole list)
     # ^ Still, to pass into get_reduc_subst IN THIS ORDER
 
+    while (ij = get_first_pair_of_matching_indices(STACK .|> (x -> x.t1.var))) !== nothing
+        tloc, ct1, ct2 = STACK[ij[1]].t1, STACK[ij[1]].t2, STACK[ij[2]].t2
+        deleteat!(STACK, ij[2])
+        deleteat!(STACK, ij[1])
+        if !check_not_recursive(tloc, ct1)
+            push!(ERRORSTACK, ErrorC(tloc, ct1, err_msg_recursive))
+            continue
+        end
+        if !check_not_recursive(tloc, ct2)
+            push!(ERRORSTACK, ErrorC(tloc, ct2, err_msg_recursive))
+            continue
+        end
+        unif_res = rec_unify_(ct1, ct2, mode) # Wait.. Are you COMPLETELY SURE you NEVER want a !MODE here ??? ??? ??? ???
+        push!(STACK, SparseSubst(tloc, unif_res.res))
+        if length(unif_res.errors) > 0
+            append!(ERRORSTACK, unif_res.errors)
+        else
+            append!(STACK, unif_res.preSubst)
+        end
+    end
+
     while (length(STACK) > 0)
         c = pop!(STACK)
         ct1, ct2 = c.t1, c.t2
-        if !(ct1 isa TLoc || ct2 isa TLoc)
-            cs_inside = rec_unify_(c.t1, c.t2, mode)
-            if has_errors(cs_inside.res_type) #|| cs_inside isa ErrorConstraint
-                append!(ERRORSTACK, cs_inside.cs)
-                there_are_errors = true
-            else
-                append!(STACK, cs_inside.cs)
-            end
+        if ct1 == ct2 continue
         elseif ct1 isa TLocStr && ct2 isa TLocStr
-            # NOTE: it would be NICE if i reworked implydir_ mode so that this DOESNT happen ... println("Does locloc Still happen? Ever ????? (Here, w/ $(ct1) and $(ct2))")
-            if !(ct1.var == ct2.var) # cannot hurt can it?
-                # throw(DomainError("This never happens.. Right.. Right?? $(ct1) required to be $(ct2)"))
-                push!(ERRORSTACK, ErrorConstraint(c, "You are asking to unify these names, which is not a thing"))
-            end
+            # THIS I DONT WANT, for now:
+            push!(ERRORSTACK, ErrorConstraint(ct1, ct2, "You are asking to unify these names, which is not a thing"))
             # var, tt = ct1.var, ct2 # it's ARBITRARY since these names have no meaning anyway
-        elseif ct1 isa TLocInt && ct2 isa TLocInt
-            # NOTE: it would be NICE if i reworked implydir_ mode so that this DOESNT happen ... println("Does locloc Still happen? Ever ????? (Here, w/ $(ct1) and $(ct2))")
-            if !(ct1.var == ct2.var)
-                current_arity, current_total_subst = do_the_subst_thing!(ct1, ct2, current_arity, current_total_subst, STACK, ERRORSTACK)
-            end
-        elseif (ct1 isa TLoc && !(ct2 isa TLoc)) || ct1 isa TLocInt
-            current_arity, current_total_subst = do_the_subst_thing!(ct1, ct2, current_arity, current_total_subst, STACK, ERRORSTACK)
-        elseif (ct2 isa TLoc && !(ct1 isa TLoc)) || ct2 isa TLocInt
-            current_arity, current_total_subst = do_the_subst_thing!(ct2, ct1, current_arity, current_total_subst, STACK, ERRORSTACK)
+        else  # i MIGHT want to use DIFFERENT prioritization of who to subst, but NOT NOW.
+            current_arity, current_total_subst = do_the_subst_thing!(c, current_arity, current_total_subst, STACK, ERRORSTACK)
         end
     end
 
@@ -600,7 +604,7 @@ function infer_type_(term::TAnno, t_computed::InferResTermIn)::InferResTerm # IM
     args = if (t_computed.t_in.data |> length == 0) TProd(Array{Term}([]))
             else ass_reduc(t_computed.t_in, substs[1]) end  # HOPEFULLY this is a Type, NOT a body
     res = if !(substs isa Failed_unif_res) TTerm(args, ass_reduc(term_type, substs[2]))
-            else TermwError(TTerm(args, term_type), Error("Wrong annotation: " * get_string(substs[4]))) end
+            else TermwError(TTerm(args, term_type), Error("Wrong annotation: " * pr(substs[4]))) end
     # NOTE^ :  mode=implydir_ doesnt even return a res_type, even less one with an error! Of course
     res
 end
@@ -644,7 +648,7 @@ function infer_type_(term::TProd, ts_computed::Array{InferResTermIn})::InferResT
     end
     res = TTerm(args, TProd(Array{Term}(unified_RES_types)))
     if length(all_errors) > 0 # Or there's some error into res !!
-        res = TermwError(res, Error("Impossible to unify args of this prod: " * get_string(all_errors)))
+        res = TermwError(res, Error("Impossible to unify args of this prod: " * pr(all_errors)))
     end
     res
 end
@@ -670,7 +674,7 @@ function unify_funcs_to_tterms_(ts_computed)
         tterm_subst = robinsonUnify(t.t_out, fake_tterm, t |> get_arity_obj, fake_tterm |> get_arity_obj; mode = implydir_)
         # NOTE^ :  mode=implydir_ doesnt even return a res_type, even less one with an error! Of course
         if tterm_subst isa Failed_unif_res
-            return TermwError(TConc(ts_computed .|> (x -> x.t_out)), Error("Calling non function: " * get_string(tterm_subst[4]))) #y'know what? Yes this is violent.. I don't care
+            return TermwError(TConc(ts_computed .|> (x -> x.t_out)), Error("Calling non function: " * pr(tterm_subst[4]))) #y'know what? Yes this is violent.. I don't care
         elseif tterm_subst isa ItsLiterallyAlreadyOk
             push!(ts_computed_2, t)
         else
@@ -687,7 +691,7 @@ function CHECK_unify_terms_to_N_(ts_computed)
         tterm_subst = robinsonUnify(t.t_out, fake_tterm, t |> get_arity_obj, fake_tterm |> get_arity_obj; mode = implydir_)
         # NOTE^ :  mode=implydir_ doesnt even return a res_type, even less one with an error! Of course
         if tterm_subst isa Failed_unif_res
-            return TermwError(TConc(ts_computed .|> (x -> x.t_out)), Error("Calling non function: " * get_string(tterm_subst[4]))) #y'know what? Yes this is violent.. I don't care
+            return TermwError(TConc(ts_computed .|> (x -> x.t_out)), Error("Calling non function: " * pr(tterm_subst[4]))) #y'know what? Yes this is violent.. I don't care
         else # Dont change bloody anything. If it can be N, IT'S OK!!!
             push!(ts_computed_2, t) # t.t_out SHOULD be nothing else but a TTerm... RIGTH?
         end
@@ -727,7 +731,7 @@ function infer_type_(term::TApp, ts_computed::Array{InferResTermIn})::InferResTe
         else
             if substs isa Failed_unif_res
                 append!(all_errors, substs[4])
-                append!(all_errors, substs[3]|>errors.|>(x->ErrorConstraint(DirectConstraint(substs[3], substs[3]), x)))
+                append!(all_errors, substs[3]|>errors.|>(x->ErrorConstraint(substs[3], substs[3], x)))
             end
             (s1, s2) = substs
             # ^ Wait.. Are you telling me, if unify_tlocs_ctx=false, s1 and s2 are ALWAYS the same ???  # # Man, this is a crazy world..
@@ -742,7 +746,7 @@ function infer_type_(term::TApp, ts_computed::Array{InferResTermIn})::InferResTe
     end
     res = TTerm(args, tterms[end].t_out)
     if length(all_errors) > 0
-        res = TermwError(res, Error("Type of the application don't match: " * get_string(all_errors)))
+        res = TermwError(res, Error("Type of the application don't match: " * pr(all_errors)))
     end
     # Returns the OUTPUT type instead of the composed TTerm type cuz this is a mess
     res
@@ -794,7 +798,7 @@ function infer_type_(term::TConc, ts_computed::Array{InferResTermIn})::InferResT
     end
     res = TTerm(args, TTerm(tterms[1].t_in, tterms[end].t_out))
     if length(all_errors) > 0
-        res = TermwError(res, Error("Type of the application don't match: " * get_string(all_errors)))
+        res = TermwError(res, Error("Type of the application don't match: " * pr(all_errors)))
     end
     # Returns the OUTPUT type instead of the composed TTerm type cuz this is a mess
     res

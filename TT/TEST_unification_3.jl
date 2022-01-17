@@ -1,11 +1,11 @@
 
 
-include("unification_4.jl")
+include("unification_3.jl")
 # include("unification_2.jl")
 
-
-
 # include("TEST_unification_3.jl") # itself
+
+
 
 # e1 = TAnno(TLocInt(1), TGlob("B"))
 # e1 = TAnno(e1.expr, infer_type_rec(e1))
@@ -118,7 +118,7 @@ eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> al
 
 t1 = TAppAuto(TGlob("G0"), TLocInt(1))
 t2 = TAppAuto(TGlob("G0"), TLocInt(2))
-# @test simplify(t1, t2) == [DirectConstraint(TLocInt(1), TLocInt(2))]
+# @test simplify(t1, t2) == [SparseSubst(TLocInt(1), TLocInt(2))]
 robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
@@ -136,7 +136,7 @@ reduc(TApp([TProd(Array{Pair{Id, Term}}(["f"=>TLocStr("g")])), TAbs(TLocStr("f")
 
 t1 = TAppAuto(TGlob("G0"), TLocInt(1))
 t2 = TAppAuto(TGlob("G0"), TGlob("G99"))
-# @test simplify(t1, t2) == [DirectConstraint(TLocInt(1), TGlob("G99"))]
+# @test simplify(t1, t2) == [SparseSubst(TLocInt(1), TGlob("G99"))]
 robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
@@ -156,7 +156,7 @@ robinsonUnify(t1, t2)
 
 t1 = TAppAuto(TAbs(TLocInt(1)), TLocInt(1))
 t2 = TLocInt(2)
-# @test simplify(t1, t2) == [DirectConstraint(TLocInt(1), TLocInt(2))]
+# @test simplify(t1, t2) == [SparseSubst(TLocInt(1), TLocInt(2))]
 robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
@@ -176,7 +176,7 @@ robinsonUnify(TAbs(t1), TAbs(t2))
 
 t1 = TAbs(TLocInt(1))
 t2 = TLocInt(3)
-# @test simplify(t1, t2) == [DirectConstraint(TAbs(TLocInt(1)), TLocInt(3))]
+# @test simplify(t1, t2) == [SparseSubst(TAbs(TLocInt(1)), TLocInt(3))]
 robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
@@ -203,14 +203,14 @@ robinsonUnify(TAbs(t1), TAbs(t2))
 t = TAppAuto(TAbs(TLocInt(1)), TGlob("G1"))
 t1 = TAppAuto(TLocInt(3), t)
 t2 = TAppAuto(TLocInt(4), t)
-# @test simplify(t1, t2) == [DirectConstraint(TLocInt(3), TLocInt(4))]
+# @test simplify(t1, t2) == [SparseSubst(TLocInt(3), TLocInt(4))]
 robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
 
 t1 = TAppAuto(TGlob("G2"), TLocInt(3))
 t2 = TAppAuto(TGlob("G2"), TAbs(TAppAuto(TLocInt(1), TGlob("G3"))))
-# eq_constraints(simplify(t1, t2), [DirectConstraint(TLocInt(3), TAbs(TApp([TProd(Array{Term}([TGlob("G3")]), TLocInt(1)])))])
+# eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(3), TAbs(TApp([TProd(Array{Term}([TGlob("G3")]), TLocInt(1)])))])
 # ^ Go fuck yourself, then die
 robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
@@ -230,7 +230,7 @@ robinsonUnify(TAbs(t1), TAbs(t2))
 
 t1 = TApp([TProd(Array{Term}([TGlob("X"), TGlob("Y")])), TAbs(TAppAuto(TGlob("F"), TLocInt(1)))])
 t2 = TApp([TProd(Array{Term}([TGlob("Y"), TGlob("X")])), TAbs(TAppAuto(TGlob("F"), TLocInt(2)))])
-# @test simplify(t1, t2) == DirectConstraint[]
+# @test simplify(t1, t2) == SparseSubst[]
 robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
@@ -243,21 +243,21 @@ robinsonUnify(TAbs(t1), TAbs(t2))
 
 t1 = TApp([TProd(Array{Term}([TLocInt(3), TLocInt(2)])), TAbs(TAppAuto(TGlob("F"), TLocInt(1)))])
 t2 = TApp([TProd(Array{Term}([TLocInt(1), TLocInt(4)])), TAbs(TAppAuto(TGlob("F"), TLocInt(2)))])
-# @test simplify(t1, t2) == [DirectConstraint(TLocInt(3), TLocInt(4))]
+# @test simplify(t1, t2) == [SparseSubst(TLocInt(3), TLocInt(4))]
 robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
 
 t1 = TApp([TProd(Array{Term}([TGlob("X"), TLocInt(2)])), TAbs(TAppAuto(TLocInt(2), TLocInt(1)))])
 t2 = TApp([TProd(Array{Term}([TLocInt(1), TLocInt(4)])), TAbs(TAppAuto(TGlob("F"), TLocInt(2)))])
-# simplify(t1, t2)  == [DirectConstraint(TGlob("X"), TLocInt(4)), DirectConstraint(TLocInt(2), TGlob("F"))]
+# simplify(t1, t2)  == [SparseSubst(TGlob("X"), TLocInt(4)), SparseSubst(TLocInt(2), TGlob("F"))]
 s1, s2 = robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
 
 t1 = TAppAuto(TLocInt(4), TGlob("X"))
 t2 = TAppAuto(TTermAuto(TLocInt(1), TLocInt(2)), TLocInt(3))
-# eq_constraints(simplify(t1, t2), [DirectConstraint(TLocInt(4), TTermAuto(TLocInt(1), TLocInt(2))), DirectConstraint(TGlob("X"), TLocInt(3))])
+# eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(4), TTermAuto(TLocInt(1), TLocInt(2))), SparseSubst(TGlob("X"), TLocInt(3))])
 # ^ Go fuck yourself, then die
 robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
@@ -272,45 +272,45 @@ robinsonUnify(TAbs(t1), TAbs(t2))
 
 t1 = TProd(Array{Term}([TLocInt(1), TLocInt(1)]))
 t2 = TProd(Array{Term}([TGlob("F"), TGlob("G")])) # OUCHHHH
-# eq_constraints(simplify(t1, t2), [DirectConstraint(TLocInt(1), TGlob("G")), DirectConstraint(TLocInt(1), TGlob("F"))])
+# eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(1), TGlob("G")), SparseSubst(TLocInt(1), TGlob("F"))])
 robinsonUnify(TAbs(t1), TAbs(t2)) # Error, nice
 @test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
 
 t1 = TProd(Array{Term}([TLocInt(1), TGlob("F")]))
 t2 = TProd(Array{Term}([TGlob("G"), TLocInt(1)])) # otoh, this SHOULD keep working..
-# eq_constraints(simplify(t1, t2), [DirectConstraint(TLocInt(1), TGlob("G")), DirectConstraint(TGlob("F"), TLocInt(1))])
+# eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(1), TGlob("G")), SparseSubst(TGlob("F"), TLocInt(1))])
 robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
 
 t1 = TProd(Array{Term}([TLocInt(1), TLocInt(1)]))
 t2 = TProd(Array{Term}([TLocInt(1), TTermAuto(TGlob("A"), TLocInt(1))]))
-# eq_constraints(simplify(t1, t2), [DirectConstraint(TLocInt(1), TLocInt(1)), DirectConstraint(TLocInt(1), TTermAuto(TGlob("A"), TLocInt(1)))])
+# eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(1), TLocInt(1)), SparseSubst(TLocInt(1), TTermAuto(TGlob("A"), TLocInt(1)))])
 robinsonUnify(TAbs(t1), TAbs(t2)) # Recursive Error, nice!
 @test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
 
 t1 = TProd(Array{Term}([TLocInt(1), TLocInt(1), TLocInt(2), TLocInt(2)]))
 t2 = TProd(Array{Term}([TLocInt(1), TLocInt(2), TLocInt(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLocInt(1)))]))
-# eq_constraints(simplify(t1, t2), [DirectConstraint(TLocInt(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLocInt(1)))), DirectConstraint(TLocInt(1), TLocInt(1)), DirectConstraint(TLocInt(2), TLocInt(2)), DirectConstraint(TLocInt(1), TLocInt(2))])
+# eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLocInt(1)))), SparseSubst(TLocInt(1), TLocInt(1)), SparseSubst(TLocInt(2), TLocInt(2)), SparseSubst(TLocInt(1), TLocInt(2))])
 @test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
 
 t1 = TProd(Array{Term}([TLocInt(1), TLocInt(1), TLocInt(2), TLocInt(2)]))
 t2 = TProd(Array{Term}([TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C"))), TLocInt(2), TLocInt(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLocInt(1)))]))
-# eq_constraints(simplify(t1, t2), [DirectConstraint(TLocInt(2), TLocInt(2)), DirectConstraint(TLocInt(1), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C")))), DirectConstraint(TLocInt(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLocInt(1)))), DirectConstraint(TLocInt(1), TLocInt(2))])
+# eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(2), TLocInt(2)), SparseSubst(TLocInt(1), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C")))), SparseSubst(TLocInt(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLocInt(1)))), SparseSubst(TLocInt(1), TLocInt(2))])
 robinsonUnify(TAbs(t1), TAbs(t2)) .|> pr
 @test test_unify_imply(t1, t2)   #####  YESSSSS
 @test test_unify_join(t1, t2)   #####  YESSSSS
 
 t1 = TProd(Array{Term}([TLocInt(1), TLocInt(2)]))
 t2 = TProd(Array{Term}([TLocInt(2), TTermAuto(TGlob("A"), TLocInt(1))]))
-# repr(simplify(t1, t2)) == "DirectConstraint[DirectConstraint(TLocInt(2), TTermAuto(TGlob(\"A\"), TLocInt(1))), DirectConstraint(TLocInt(1), TLocInt(2))]"
+# repr(simplify(t1, t2)) == "SparseSubst[SparseSubst(TLocInt(2), TTermAuto(TGlob(\"A\"), TLocInt(1))), SparseSubst(TLocInt(1), TLocInt(2))]"
 robinsonUnify(TAbs(t1), TAbs(t2))
 @test test_unify_imply(t1, t2)
 @test test_unify_join(t1, t2)
 
 t1 = TProd(Array{Term}([TLocInt(1), TLocInt(1), TLocInt(2), TLocInt(2)]))
 t2 = TProd(Array{Term}([TGlob("F"), TLocInt(3), TLocInt(3), TGlob("G")]))
-# eq_constraints(simplify(t1, t2), [DirectConstraint(TLocInt(2), TGlob("G")), DirectConstraint(TLocInt(1), TLocInt(3)), DirectConstraint(TLocInt(1), TGlob("F")), DirectConstraint(TLocInt(2), TLocInt(3))])
+# eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(2), TGlob("G")), SparseSubst(TLocInt(1), TLocInt(3)), SparseSubst(TLocInt(1), TGlob("F")), SparseSubst(TLocInt(2), TLocInt(3))])
 robinsonUnify(TAbs(t1), TAbs(t2)) # Error, nice
 @test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
 
@@ -322,7 +322,7 @@ robinsonUnify(t1, t2)
 
 t1 = TProd(Array{Term}([TLocInt(1), TLocInt(1), TLocInt(2), TLocInt(2)]))
 t2 = TProd(Array{Term}([TGlob("F"), TLocInt(1), TLocInt(1), TGlob("G")]))
-# eq_constraints(simplify(t1, t2), [DirectConstraint(TLocInt(2), TLocInt(1)), DirectConstraint(TLocInt(1), TLocInt(1)), DirectConstraint(TLocInt(2), TGlob("G")), DirectConstraint(TLocInt(1), TGlob("F")), ])
+# eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(2), TLocInt(1)), SparseSubst(TLocInt(1), TLocInt(1)), SparseSubst(TLocInt(2), TGlob("G")), SparseSubst(TLocInt(1), TGlob("F")), ])
 robinsonUnify(TAbs(t1), TAbs(t2)) # Error, nice
 @test robinsonUnify(TAbs(t1), TAbs(t2)) isa Failed_unif_res
 
@@ -432,7 +432,7 @@ ass_reduc(t2, s2) |> pr
 # HARDER TESTS ON REVERSE CONSTRAINTS:
 t1 = TProd(Array{Term}([TGlob("F"), TLocInt(1), TLocInt(1)]))
 t2 = TProd(Array{Term}([TLocInt(1), TGlob("G")]))
-# simplify(DirectConstraint(t1, t2))
+# simplify(SparseSubst(t1, t2))
 test_unify_imply(t1, t2) # Yeah it's false, it's fine tho
 @test robinsonUnify(t1, t2; mode=meet_)[3] == TProd(Term[TGlob("F"), TGlob("G"), TGlob("G")])
 
@@ -750,6 +750,7 @@ infer_type_rec(e) |> pr # GREAT
 
 end # COMMENT TESTS
 
+include("unification_3.jl")
 
 
 
