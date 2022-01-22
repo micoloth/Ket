@@ -98,7 +98,7 @@ function test_unify_meet(t1, t2)
         println("apparently they are the same")
         return true
     end
-    (s1, s2, red) = rr
+    s1, s2, red = rr.preSubst1, rr.preSubst2, rr.res
     println("reduced term: ", red |> pr)
     t1 = reduc(TApp([s1, TAbs(t1)]))
     t2 = reduc(TApp([s2, TAbs(t2)]))
@@ -114,7 +114,7 @@ end
 eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> all
 
 
-# @testset "unification_2" begin  # COMMENT TESTS
+@testset "unification_2" begin  # COMMENT TESTS
 
 
 t1 = TAppAuto(TGlob("G0"), TLocInt(1))
@@ -302,7 +302,7 @@ t2|>reduc|>pr
 t1 = TProd(Array{Term}([TLocInt(1), TLocInt(1), TLocInt(2), TLocInt(2)]))
 t2 = TProd(Array{Term}([TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C"))), TLocInt(2), TLocInt(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLocInt(1)))]))
 # eq_constraints(simplify(t1, t2), [SparseSubst(TLocInt(2), TLocInt(2)), SparseSubst(TLocInt(1), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TGlob("C")))), SparseSubst(TLocInt(2), TTermAuto(TGlob("A"), TTermAuto(TGlob("B"), TLocInt(1)))), SparseSubst(TLocInt(1), TLocInt(2))])
-robinsonUnify(TAbs(t1), TAbs(t2)) .|> pr
+robinsonUnify(TAbs(t1), TAbs(t2)) #.|> pr
 @test test_unify_imply(t1, t2)   #####  YESSSSS
 @test test_unify_join(t1, t2)   #####  YESSSSS
 
@@ -337,13 +337,13 @@ t1, t2 = TLocInt(3), TAbs(TTermAuto(TGlob("A"), TLocInt(2)))
 
 t1 = TAbs(TTermAuto(TLocInt(1), TProd(Array{Term}([TGlob("A"), TLocInt(2)]))))
 t2 = TAbs(TTermAuto(TLocInt(1), TLocInt(2)))
-s1, s2 = robinsonUnify(t1, t2)
+robinsonUnify(t1, t2)
 @test test_unify_imply(t1.body, t2.body)
 @test test_unify_join(t1.body, t2.body)
 
 t1 = TAbs(TLocInt(3))
 t2 = TAbs(TTermAuto(TLocInt(1), TLocInt(2)))
-s1, s2 = robinsonUnify(t1, t2)
+robinsonUnify(t1, t2)
 @test test_unify_imply(t1.body, t2.body)
 @test test_unify_join(t1.body, t2.body)
 
@@ -405,7 +405,8 @@ t2 = TTerm(TProd(Array{Term}([TGlob("A"), TLocInt(1)])), TGlob("Z"))
 
 t1 = TTerm(TProd(Array{Term}([TLocInt(1), TGlob("B")])), TGlob("Z"))
 t2 = TTerm(TProd(Array{Term}([TGlob("A"), TLocInt(1), TLocInt(2)])), TGlob("Z"))
-s1, s2 = robinsonUnify(t1, t2; mode=implydir_)
+res = robinsonUnify(t1, t2; mode=implydir_)
+s1, s2 = res.preSubst1, res.preSubst2
 ass_reduc(t1, s1) |> pr
 ass_reduc(t2, s2) |> pr
 @test ass_reduc(t2, s2) == TTerm(TProd(Term[TGlob("A"), TGlob("B"), TLocInt(1)]), TGlob("Z"))
@@ -426,7 +427,8 @@ t1 = TTermAuto(TTerm(TProd(Array{Term}([TLocInt(1), TLocInt(2)])), TGlob("Z")), 
 t2 = TTermAuto(TTerm(TProd(Array{Term}([TGlob("A")])), TGlob("Z")), TGlob("Z"))
 t1 |> pr
 t2 |> pr
-s1, s2 = robinsonUnify(t1, t2; mode=implydir_)
+res = robinsonUnify(t1, t2; mode=implydir_)
+s1, s2 = res.preSubst1, res.preSubst2
 ass_reduc(t1, s1) |> pr
 ass_reduc(t2, s2) |> pr
 @test ass_reduc(t1, s1) == TTerm(TProd(Term[TTerm(TProd(Term[TGlob("A"), TLocInt(1)]), TGlob("Z"))]), TGlob("Z"))
@@ -449,7 +451,7 @@ t2 = TProd(Array{Term}([TLocInt(1), TGlob("G")]))
 t1 = TProd(Array{Term}([TLocInt(1), TGlob("G")]))
 t2 = TProd(Array{Term}([TGlob("F"), TLocInt(1), TLocInt(1)]))
 # simplify(ReverseConstraint(t2, t1))
-s1, s2 = robinsonUnify(t1, t2) # Cannot unify !!!!!!!!!!!!!!!!!!!!!!!!!!!
+robinsonUnify(t1, t2) # Cannot unify !!!!!!!!!!!!!!!!!!!!!!!!!!!
 # ass_reduc(t1, s1) |> pr
 # ass_reduc(t2, s2) |> pr
 
@@ -616,15 +618,20 @@ e = TAnno(TAbs(TGlob("b", TGlob("B"))), TTermAuto(TProd(Array{Term}([TGlob("A")]
 tf = TAnno(TAbs(TGlob("b", TGlob("B"))), TTermAuto(TGlob("A"),  TGlob("B")))
 targ = TAnno(TLocInt(1), TGlob("A"))
 e = TAppAuto(tf, targ)
+e |>reduc
 infer_type_rec(tf).t_out |>pr
-@test infer_type_rec(e) == TTerm(TProd(Array{Term}([TGlob("A")])), TGlob("B"))
+@test infer_type_rec(tf).t_out == TTerm(TProd(Array{Term}([TGlob("A")])), TGlob("B"))
+@test infer_type_rec(e).t_out == TGlob("B")
 
 e = TAbs(TApp([TProd(Array{Term}([TLocInt(1), TLocInt(1)])), TLocInt(2)]))
 infer_type_rec(e).t_out |> pr # == "[T1 x [T1 x T1]->T2]->T2"
 @test infer_type_rec(e).t_out == TTerm(TProd(Array{Term}([TLocInt(1), TTerm(TProd(Array{Term}([TLocInt(1), TLocInt(1)])), TLocInt(2))])), TLocInt(2))
 
-e = TApp([TLocStr("a"), TAnno(TAbs(TLocStr("b")), TTerm(TProd(Array{Pair{String, Term}}(["a"=>TGlob("A")])), TGlob("B")))])
-infer_type_rec(TAnno(TAbs(TLocStr("b")), TTermAuto(TGlob("A"), TGlob("B"))))
+# e = TApp([TLocStr("a"), TAnno(TAbs(TLocStr("b")), TTerm(TProd(Array{Pair{String, Term}}(["a"=>TGlob("A")])), TGlob("B")))])
+# infer_type_rec(TAnno(TAbs(TLocStr("b")), TTermAuto(TGlob("A"), TGlob("B"))))
+# infer_type_rec(TAbs(TLocStr("b")))
+# TODO: Fix this mess ^
+
 
 a1t = TTermEmpty(TTerm(TProd(Array{Pair{String, Term}}(["1" => TLocInt(1)])), TLocInt(1)))
 a2t = TTermEmpty(TTermEmpty(TGlob("B")))
@@ -639,8 +646,12 @@ ea = TProd(Array{Term}([TAnno(TLocInt(1), TGlob("A"))]))
 ef1 = TGlob("f", TTermAuto(TLocInt(1), TGlob("B")))
 e = TAbs(TApp([ea, ef1]))
 e |> pr
+e|>reduc
 @test infer_type_rec(e) == TTerm(TProd(Array{Term}([])), TTerm(TProd(Term[TGlob("A")]), TGlob("B")))
 infer_type_rec(e).t_out |> pr
+TTerm(TProd(Array{Term}([])), TTerm(TProd(Term[TGlob("A")]), TGlob("B"))).t_out |> pr
+
+infer_type_rec(e.body) |> pr_ctx
 
 ea = TAnno(TLocInt(1), TGlob("A"))
 ef1 = TGlob("f", TTerm(TLocInt(1), TGlob("B")))
@@ -692,7 +703,7 @@ infer_type_rec(TConc([TLocInt(1), f1])) |> pr_ctx
 SType |> pr
 S |> pr
 infer_type_rec(S) |> pr_ctx  # YES my boy... YES :)
-@test infer_type_rec(S) == TTerm(TProd(Term[]), TTerm(TProd(Term[TTerm(TProd(Term[TLocInt(2)]), TTerm(TProd(Term[TLocInt(1)]), TLocInt(3))), TTerm(TProd(Term[TLocInt(2)]), TLocInt(1)), TLocInt(2)]), TLocInt(3)))
+@test infer_type_rec(S) == TTerm(TProd(Term[]), TTerm(TProd(Term[TTerm(TProd(Term[TLocInt(1)]), TTerm(TProd(Term[TLocInt(2)]), TLocInt(3))), TTerm(TProd(Term[TLocInt(1)]), TLocInt(2)), TLocInt(1)]), TLocInt(3)))
 
 
 proj1_1 = TApp([TLocInt(1), TAbs(TLocInt(1))])
@@ -745,7 +756,7 @@ e2 = TGlobAuto("c")
 e = TAppAuto(e1, e2)
 e |> pr_E
 infer_type_rec(e) |> pr # GREAT
-@test infer_type_rec(e) isa TermwError
+@test has_errors(infer_type_rec(e))
 
 
 e = TProd([TAnno(TLocInt(1), TGlob("A")), TProd([TLocInt(1), TAnno(TLocInt(1), TGlob("A"))]), TAnno(TLocInt(1), TGlob("B"))])
@@ -753,7 +764,7 @@ e |> pr_E
 infer_type_rec(e) |> pr # GREAT
 
 
-# end # COMMENT TESTS
+end # COMMENT TESTS
 
 include("unification_3.jl")
 

@@ -193,7 +193,7 @@ function rec_unify_(t1::TLoc, t2::TSumTerm, mode::Unify_mode)::RecUnifyRes
 end
 function rec_unify_(t1::Term, t2::TSumTerm, mode::Unify_mode)::RecUnifyRes
     res = rec_unify_(t1, t2.data, mode) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
-    RecUnifyRes(TSumTerm(t2.tag, t1.tag_name, res.res), res.preSubst)
+    RecUnifyRes(TSumTerm(t2.tag, t2.tag_name, res.res), res.preSubst)
 end
 function rec_unify_(t1::TSumTerm, t2::TLoc, mode::Unify_mode)::RecUnifyRes
     # This behaviour is pretty weird admiddetly, and it simply says: SCREW TAG, essentially
@@ -213,8 +213,11 @@ function rec_unify_(t1::TLoc, t2::TLoc, mode::Unify_mode)::RecUnifyRes
     elseif t1 isa TLocStr  # prefer substituting away numbers wrt strings
         RecUnifyRes(t1, Array{SparseSubst}([SparseSubst(t2, t1)]))
         # TODOTODO: This relies HEAVILY on the fact that names have been UNIFIED between t1 and t2. Is this ALWAYS what we want ???
-    else
+    elseif t2 isa TLocStr  # prefer substituting away numbers wrt strings
         RecUnifyRes(t2, Array{SparseSubst}([SparseSubst(t1, t2)]))
+        # TODOTODO: This relies HEAVILY on the fact that names have been UNIFIED between t1 and t2. Is this ALWAYS what we want ???
+    else
+        RecUnifyRes(TLocInt(min(t1.var,t2.var)), Array{SparseSubst}([SparseSubst(TLocInt(max(t1.var,t2.var)), TLocInt(min(t1.var,t2.var)))]))
     end
 end
 function rec_unify_(t1::TLoc, t2::Term, mode::Unify_mode)::RecUnifyRes
@@ -394,14 +397,20 @@ struct UnifyRes
     errors::Array{ErrorConstraint}
 end
 itsLiterallyAlreadyOk(u::UnifyRes) = u.preSubst1===nothing && u.preSubst2===nothing
-failed_unif_res(u::UnifyRes) = u.errors|>length >0
+failed_unif_res(u::UnifyRes) = u.errors|>length >0 || has_errors(u.res)
+# TODO: FIX: the fact that  has_errors(u.res) is needed is an ERROR, it means that somewhere drops some ErrorConstraints ....
 
 function do_the_subst_thing!(subst::SparseSubst, current_arity, current_total_subst, STACK, ERRORSTACK)
+    if !check_not_recursive(subst.t1, subst.t2)
+        # TODO: GOAL: I REALLY WANT TO REMOVE THIS, AND INCLUDE >>ALL<< LOC-LOC CONSTRAINS (in both directions) IN 3.1 STEP !!!
+        push!(ERRORSTACK, ErrorC(subst.t1, subst.t2, err_msg_recursive))
+        return current_arity, current_total_subst
+    end
     new_subst = get_full_subst(subst, current_arity)
     current_total_subst = Array{TProd}(ass_smart_reduc(current_total_subst..., new_subst))
     current_arity = Arity(arity(current_total_subst[end]), usedLocsSet(current_total_subst[end])) # The beauty of this is this is Enough... I HOPE LOL
     for i = 1:length(STACK) STACK[i] = ass_reduc(STACK[i], new_subst) end
-    for i = 1:length(ERRORSTACK) ERRORSTACK[i] = ass_reduc(ERRORSTACK[i], new_subst) end
+    # for i = 1:length(ERRORSTACK) ERRORSTACK[i] = ass_reduc(ERRORSTACK[i], new_subst) end
     # ^ Really, this is the EASY way:
     # EACH EqConstraint GETS >ALL< SUBSTS, ONE BY ONE, FROM THE MOMENT IT ENTERS THE STACK ONWARD.
     # A Better way would be: TRACK When each Contraint enters the stack. When you Consider that contraint,
@@ -473,7 +482,7 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
     s1, s2, res_type = if length(current_total_subst) == 0 && unify_tlocs_ctx
             nothing, (s2.data|> length == 0 ? nothing : s2), res_type
     elseif length(current_total_subst) == 0 && !unify_tlocs_ctx
-            nothing, nothing, t2, res_type
+            nothing, nothing, res_type
     elseif unify_tlocs_ctx
         final_subst = ass_reduc(current_total_subst...);
         ass_reduc(s1, final_subst), ass_reduc(s2, final_subst), ass_reduc(res_type, final_subst)
@@ -559,7 +568,7 @@ function infer_type_(term::TAnno, t_computed::InferResTermIn)::InferResTerm # IM
     args = if (t_computed.t_in.data |> length == 0) TProd(Array{Term}([]))
             else ass_reduc(t_computed.t_in, unif_res.preSubst1) end  # HOPEFULLY this is a Type, NOT a body
     res = if !(failed_unif_res(unif_res)) TTerm(args, ass_reduc(term_type, unif_res.preSubst2))
-            else TermwError(TTerm(args, term_type.res), Error("Wrong annotation: " * pr(unif_res.errors))) end
+            else TermwError(TTerm(args, term_type), Error("Wrong annotation: " * pr(unif_res.errors))) end
     # NOTE^ :  mode=implydir_ doesnt even return a res_type, even less one with an error! Of course
     res
 end
@@ -581,19 +590,17 @@ function infer_type_(term::TProd, ts_computed::Array{InferResTermIn})::InferResT
         unified_RES_types = unified_RES_types .|> (x -> ass_reduc(x, s1))
         #  # Not sharing vars
         full_arity = Arity(max(s1 |> arity, s2 |> arity), union(s1 |> usedLocsSet, s2 |> usedLocsSet))
-        unif_res = robinsonUnify(
-            TAbs(args), TAbs(t.t_in), full_arity, full_arity;
-            unify_tlocs_ctx = false, mode = meet_)
+        unif_res = robinsonUnify(TAbs(args), TAbs(t.t_in), full_arity, full_arity; unify_tlocs_ctx = false, mode = meet_)
         if itsLiterallyAlreadyOk(unif_res)
             push!(unified_RES_types, t.t_out)
             args = unif_res.res
-            continue
+        else
+            s1, s2, args, errors = unif_res.preSubst1, unif_res.preSubst2, unif_res.res, unif_res.errors
+            append!(all_errors, errors)
+            unified_RES_types = unified_RES_types .|> (x -> ass_reduc(x, s1)) # if they BECAME EQUAL to the stuff "args" comes from, this should work.. No?
+            push!(unified_RES_types, ass_reduc(t.t_out, s2))
+            full_arity = Arity(max(s1 |> arity, s2 |> arity), union(s1 |> usedLocsSet, s2 |> usedLocsSet)) # god i HOPE this makes sense.....
         end
-        s1, s2, args, errors = unif_res.preSubst1, unif_res.preSubst2, unif_res.res, unif_res.errors
-        append!(all_errors, errors)
-        unified_RES_types = unified_RES_types .|> (x -> ass_reduc(x, s1)) # if they BECAME EQUAL to the stuff "args" comes from, this should work.. No?
-        push!(unified_RES_types, ass_reduc(t.t_out, s2))
-        full_arity = Arity(max(s1 |> arity, s2 |> arity), union(s1 |> usedLocsSet, s2 |> usedLocsSet)) # god i HOPE this makes sense.....
     end
     res = TTerm(args, TProd(Array{Term}(unified_RES_types)))
     if length(all_errors) > 0 # Or there's some error into res !!
@@ -675,14 +682,14 @@ function infer_type_(term::TApp, ts_computed::Array{InferResTermIn})::InferResTe
             TAbs(prev_out), TAbs(next_in), full_arity, full_arity; unify_tlocs_ctx = false, mode = implydir_)
         # : i DONT LIKE these TAbs, it's WRONG, but, it's the only way of accessing unify_tlocs_ctx atm
         # NOTE^ :  mode=implydir_ doesnt even return a res_type, even less one with an error! Of course
+        if failed_unif_res(unif_res)
+            append!(all_errors, unif_res.errors)
+            append!(all_errors, unif_res.res|>errors.|>(x->ErrorConstraint(unif_res.res, unif_res.res, x)))
+        end
         if itsLiterallyAlreadyOk(unif_res )
             prev_out = tterms[i].t_out
         else
-            if failed_unif_res(unif_res)
-                append!(all_errors, unif_res.errors)
-                append!(all_errors, unif_res.res|>errors.|>(x->ErrorConstraint(unif_res.res, unif_res.res, x)))
-            end
-            (s1, s2) = unif_res
+            (s1, s2) = (unif_res.preSubst1, unif_res.preSubst2)
             # ^ Wait.. Are you telling me, if unify_tlocs_ctx=false, s1 and s2 are ALWAYS the same ???  # # Man, this is a crazy world..
             tterms = ass_reduc(TProd(Array{Term}(tterms)), s1).data
             # ^ the LENGTH of tterms DOES NOT CHANGE HERE
@@ -727,14 +734,14 @@ function infer_type_(term::TConc, ts_computed::Array{InferResTermIn})::InferResT
             TAbs(prev_out), TAbs(next_in), full_arity, full_arity; unify_tlocs_ctx = false, mode = implydir_)
         # : i DONT LIKE these TAbs, it's WRONG, but, it's the only way of accessing unify_tlocs_ctx atm
         # NOTE^ :  mode=implydir_ doesnt even return a res_type, even less one with an error! Of course
+        if failed_unif_res(unif_res)
+            append!(all_errors, unif_res.errors)
+            append!(all_errors, unif_res.res|>errors.|>(x->ErrorConstraint(unif_res.res, unif_res.res, x)))
+        end
         if itsLiterallyAlreadyOk(unif_res)
             prev_out = tterms[i].t_out
         else
-            if failed_unif_res(unif_res)
-                append!(all_errors, unif_res.errors)
-                if unif_res.res isa TermwError push(all_errors, unif_res.res.error) end
-            end
-            (s1, s2) = unif_res
+            (s1, s2) = (unif_res.preSubst1, unif_res.preSubst2)
             # ^ Wait.. Are you telling me, if unify_tlocs_ctx=false, s1 and s2 are ALWAYS the same ???  # # Man, this is a crazy world..
             tterms = ass_reduc(TProd(Array{Term}(tterms)), s1).data
             # ^ the LENGTH of tterms DOES NOT CHANGE HERE
