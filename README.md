@@ -93,7 +93,7 @@ Well, consider this: remember that, even when deep language models (or more like
 
 I am completely sure our program verification/code generation tools/theorem provers/ whatever/ will get *more* powerful, not less, and we need strong reasoning engines to power them.
 
-Even if we can achieve human-comparable levels of logical intelligence purely emergent from a huge ass deep model, we don’t want human- comparable, or even better-than-human logical intelligence from our: we want them to be -Just correct-…
+Even if we can achieve human-comparable levels of logical intelligence purely emergent from a huge ass deep model, we don’t want human- comparable, or even better-than-human logical intelligence from our program verification/code generation tools/theorem provers/whatever/: we want them to be *Just correct*…
 
 But actually, there’s more: not only I think language models and theorem provers are incompatible. I actually think they will work together in the future!
 In fact, language models are a very powerful heuristic for a theorem prover that performs proof search.
