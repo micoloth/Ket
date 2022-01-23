@@ -23,7 +23,7 @@ Of course, none of the strongly typed languages are very productive *today*. Ket
 
 # Things that Ket is NOT:
 - **a Programming language**: a CAP system is Much more general than that, and the idea that one has to learn a new syntax every time some guy wants to introduce some new innovation in programming, is Not the best we can do. How do you make this not happen: with a *flexible enough parser*, that can understand different flavour of syntax to express the same exact programming concepts that everybody uses. More of this later.
-- **a Graphical programming environment**. Idk why one would want to get rid of text, text is great. (NOTE: *AS an input device for coding.* this DOESN’T mean that saving code in .txt files makes any sense. The project that is  doing the best hob with this is Unicode—)
+- **a Graphical programming environment**. Idk why one would want to get rid of text, text is great. (NOTE: *AS an input device for coding.* this DOESN’T mean that saving code in .txt files makes any sense. The project that is  doing the best hob with this is [Unison](https://www.unisonweb.org/))
 
 
 
