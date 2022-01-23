@@ -6,7 +6,7 @@ The idea behind Ket is that **software development could be 10x faster**, and he
 I’m convinced that if looked from the right angle, 90% of the daily job of a modern programmer is accidental complexity.
 The idea is that that’s software engineers, we should (wait for it) let software do the accidentally complex parts of this job, not taking pride in doing them ourselves.
 
-A Computed Assisted Programming framework is a coding frontend that wraps a type system, **a theorem prover** (for code generation),** an incremental parser** (for powerful hints) **and a dependency system** to make building software fast and enjoyable.
+A Computed Assisted Programming framework is a coding frontend that wraps a type system, **a theorem prover** (for code generation), **an incremental parser** (for powerful hints) **and a dependency system** to make building software fast and enjoyable.
 
 # Ket will be based on these principles:
 - **Doing things the Right Way** (as opposed to some hacks to achieve something quicker) **will be Good in the long run**. Or Slow is right, and Right is fast. Except that, software engineering Doesn't have to be slow to be right. That’s only true without proper tooling.
