@@ -172,19 +172,22 @@ function rec_unify_(t1::TAbs, t2::TAbs, mode::Unify_mode)::RecUnifyRes
     #     Error("Different lambdas $(pr(t1)) != $(pr(t2)): I know I'm being picky, but impossible to simplify this part: $(cons)")
     # end
 end
-
 function rec_unify_(t1::TTerm, t2::TTerm, mode::Unify_mode)::RecUnifyRes
     res_out = rec_unify_(t1.t_out, t2.t_out, mode)
     res_in = rec_unify_(t1.t_in, t2.t_in, flip(mode))
     RecUnifyRes(TTerm(res_in.res, res_out.res), vcat(res_out.preSubst, res_in.preSubst))
+    # ERROR: YOU ARE NOT PROPAGATING ERRORS!!
 end
+
+
+
 function rec_unify_(t1::TSumTerm, t2::TSumTerm, mode::Unify_mode)::RecUnifyRes
     if t1.tag != t2.tag
         return RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_sumtags))
         # ^ You MIGHT want to return constraints for t1 and t2 all the same, but i'm NOT doing it...
     else
         res = rec_unify_(t1.data, t2.data, mode) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
-        return RecUnifyRes(TSumTerm(t1.tag, t1.tag_name, res.res), res.preSubst)
+        return RecUnifyRes(res.preSubst, res.postSubst1, res.postSubst2, TSumTerm(t1.tag, t1.tag_name, res.res), res.errors)
     end
 end
 function rec_unify_(t1::TLoc, t2::TSumTerm, mode::Unify_mode)::RecUnifyRes
@@ -204,6 +207,35 @@ function rec_unify_(t1::TSumTerm, t2::Term, mode::Unify_mode)::RecUnifyRes
     res = rec_unify_(t1.data, t2, mode) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
     RecUnifyRes(TSumTerm(t1.tag, t1.tag_name, res.res), res.preSubst)
 end
+
+
+function rec_unify_(t1::TPost, t2::TPost, mode::Unify_mode)::RecUnifyRes
+    res = rec_unify_(t1.body, t2.body, mode) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
+    n_delay = if mode === meet_ min(t1.n_delay, t2.n_delay)
+    elseif mode === join_ max(t1.n_delay, t2.n_delay)
+    elseif mode === implydir_ t2.n_delay
+    elseif mode === implyrev_ t1.n_delay
+    end
+    return RecUnifyRes(res.preSubst, res.postSubst1, res.postSubst2, TPost(n_delay, res.res), res.errors)
+end
+function rec_unify_(t1::TLoc, t2::TPost, mode::Unify_mode)::RecUnifyRes
+    # This behaviour is pretty weird admiddetly, and it simply says: POP EVERYTHING, essentially
+    RecUnifyRes(t1, Array{SparseSubst}([SparseSubst(t1, t2)]))
+end
+function rec_unify_(t1::Term, t2::TPost, mode::Unify_mode)::RecUnifyRes
+    res = rec_unify_(t1, t2.body, mode) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
+    return RecUnifyRes(res.preSubst, res.postSubst1, res.postSubst2, TPost(t2.n_delay, res.res), res.errors)
+end
+function rec_unify_(t1::TPost, t2::TLoc, mode::Unify_mode)::RecUnifyRes
+    # This behaviour is pretty weird admiddetly, and it simply says: POP EVERYTHING, essentially
+    RecUnifyRes(t2, Array{SparseSubst}([SparseSubst(t2, t1)]))
+    # TODOTODO: This relies HEAVILY on the fact that names have been UNIFIED between t1 and t2. Is this ALWAYS what we want ???
+end
+function rec_unify_(t1::TPost, t2::Term, mode::Unify_mode)::RecUnifyRes
+    res = rec_unify_(t1.data, t2, mode) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
+    return RecUnifyRes(res.preSubst, res.postSubst1, res.postSubst2, TPost(t1.n_delay, res.res), res.errors)
+end
+
 function rec_unify_(t1::TLoc, t2::TLoc, mode::Unify_mode)::RecUnifyRes
     if t1.var == t2.var # t1.var == t2.var
         RecUnifyRes(t2)
@@ -531,12 +563,7 @@ function infer_type_(term::TLocStr)::InferResTerm
     return TTerm(TProd(Array{Pair{Id, Term}}([term.var => TLocInt(1)])), TLocInt(1))  # TAbs(TLocInt(term.var)) was an idea i tried
 end #  (but also kinda this is right)
 function infer_type_(term::TGlob)::InferResTerm
-    if term.type isa TAbs
-        return TTermEmpty(term.type.body)
-        # ^ This is because TTerm's are Naked (no Forall) for some reason- BOY will this become a mess
-    else
-        return TTermEmpty(term.type)
-    end
+    return TTermEmpty(term.type)
 end
 function infer_type_(term::TTop)::InferResTerm
     return TTermEmpty(TTop())
@@ -559,17 +586,12 @@ end
 
 
 function infer_type_(term::TAnno, t_computed::InferResTermIn)::InferResTerm # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
-    unif_res = robinsonUnify(t_computed.t_out, term.type, mode = implydir_)
-    if itsLiterallyAlreadyOk(unif_res)
-        return TTerm(t_computed.t_in, term.type)
+    unif_res = robinsonUnify(t_computed, term.type, mode = implydir_)
+    res = if unif_res.preSubst2 === nothing term.type else ass_reduc(term.type, unif_res.preSubst2) end
+    if failed_unif_res(unif_res)
+        res1 = if unif_res.preSubst1 === nothing t_computed else ass_reduc(t_computed, unif_res.preSubst1) end
+        res = TermwError(res, Error("Wrong annotation: You are trying to unify '$(res1|>pr)' into '$(res|>pr)'. Resulting errors: [$(pr(unif_res.errors))]"))
     end
-    term_type = if term.type isa TAbs term.type.body
-            else term.type end   # Oh fuck what am i doing
-    args = if (t_computed.t_in.data |> length == 0) TProd(Array{Term}([]))
-            else ass_reduc(t_computed.t_in, unif_res.preSubst1) end  # HOPEFULLY this is a Type, NOT a body
-    res = if !(failed_unif_res(unif_res)) TTerm(args, ass_reduc(term_type, unif_res.preSubst2))
-            else TermwError(TTerm(args, term_type), Error("Wrong annotation: " * pr(unif_res.errors))) end
-    # NOTE^ :  mode=implydir_ doesnt even return a res_type, even less one with an error! Of course
     res
 end
 
@@ -612,10 +634,13 @@ end
 function infer_type_(term::TAbs, t_computed::InferResTermIn)::InferResTerm
     return TTerm(TProd(Array{Term}([])), t_computed)
 end
+function infer_type_(term::TPost, t_computed::InferResTermIn)::InferResTerm
+    return t_computed  # IDK WHAT I AM DOING
+end
 function infer_type_(term::TSumTerm, t_computed::InferResTermIn)::InferResTerm
     arT, tag = t_computed |> arity, term.tag
     types = vcat([TLocInt(n) for n = (arT+1):(arT+tag-1)], [t_computed.t_out])
-    return TTerm(t_computed.t_in, TAbs(TSum(types)))
+    return TTerm(t_computed.t_in, TAbs(TSum(Array{Term}(types))))
 end
 function infer_type_(term::TBranches, t_computed::InferResTermIn)::InferResTerm
     arT, tag = t_computed |> arity, term.tag
@@ -813,6 +838,9 @@ end
 function infer_type_rec(term::TLocInt)::InferResTerm
     return infer_type_(term)
 end
+function infer_type_rec(term::TPost)::InferResTerm
+    return infer_type_(term, infer_type_rec(term.body)) # i have NO IDEA of what i'm doing
+end
 function infer_type_rec(term::TLocStr)::InferResTerm
     return infer_type_(term)
 end
@@ -848,24 +876,20 @@ function infer_type_rec(term::TAppend)::InferResTerm
 end
 function infer_type_rec(term::TAnno)::InferResTerm # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
     tt = infer_type_rec(term.expr)
-    res = (tt isa TermwError) ? infer_type_(term, tt.term) : infer_type_(term, tt)
-    if res isa TermwError res elseif tt isa TermwError TermwError(res, "Fail-") else res end
+    (tt isa TermwError) ? tt : infer_type_(term, tt)
 end
 function infer_type_rec(term::TAbs)::InferResTerm
     tt = infer_type_rec(term.body)
-    res = (tt isa TermwError) ? infer_type_(term, tt.term) : infer_type_(term, tt)
-    if res isa TermwError res elseif tt isa TermwError TermwError(res, "Fail-") else res end
+    (tt isa TermwError) ? tt : infer_type_(term, tt)
 end
 function infer_type_rec(term::TSumTerm)::InferResTerm
     tt = infer_type_rec(term.data)
-    res = (tt isa TermwError) ? infer_type_(term, tt.term) : infer_type_(term, tt)
-    if res isa TermwError res elseif tt isa TermwError TermwError(res, "Fail-") else res end
+    (tt isa TermwError) ? tt : infer_type_(term, tt)
 end
 function infer_type_rec(term::TProd)::InferResTerm
     tts::Array{InferResTerm} = infer_type_rec.(term.data)
     tts_terms = [if t isa TermwError t.term else t end for t in tts]
-    res = infer_type_(term, Array{InferResTermIn}(tts_terms))
-    if res isa TermwError res elseif any(tts .|> (x->x isa TermwError)) TermwError(res, "Fail-") else res end
+    if any(tts .|> (x->x isa TermwError)) TTermEmpty(TProd(Array{Term}(tts))) else infer_type_(term, Array{InferResTermIn}(tts_terms)) end
 end
 function infer_type_rec(term::TBranches)::InferResTerm
     tts = infer_type_rec.(term.ops_chances)
@@ -876,21 +900,14 @@ end
 function infer_type_rec(term::TApp)::InferResTerm # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
     tts::Array{InferResTerm} = infer_type_rec.(term.ops_dot_ordered)
     tts_terms = [if t isa TermwError t.term else t end for t in tts]
-    res = infer_type_(term, Array{InferResTermIn}(tts_terms))
-    if res isa TermwError res elseif any(tts .|> (x->x isa TermwError)) TermwError(res, "Fail-") else res end
+    if any(tts .|> (x->x isa TermwError)) TTermEmpty(TApp(Array{Term}(tts))) else infer_type_(term, Array{InferResTermIn}(tts_terms)) end
 end
 function infer_type_rec(term::TConc)::InferResTerm # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
     tts::Array{InferResTerm} = infer_type_rec.(term.ops_dot_ordered)
     tts_terms = [if t isa TermwError t.term else t end for t in tts]
-    res = infer_type_(term, Array{InferResTermIn}(tts_terms))
-    if res isa TermwError res elseif any(tts .|> (x->x isa TermwError)) TermwError(res, "Fail-") else res end
+    if any(tts .|> (x->x isa TermwError)) TConc(tts) else infer_type_(term, Array{InferResTermIn}(tts_terms)) end
 end
-function infer_type_rec(term::TConc)::InferResTerm # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
-    tts::Array{InferResTerm} = infer_type_rec.(term.ops_dot_ordered)
-    tts_terms = [if t isa TermwError t.term else t end for t in tts]
-    res = infer_type_(term, Array{InferResTermIn}(tts_terms))
-    if res isa TermwError res elseif any(tts .|> (x->x isa TermwError)) TermwError(res, "Fail-") else res end
-end
+
 
 
 InferResTAnno = TAnno # No error handling, for now
@@ -907,7 +924,7 @@ InferResTAnno = TAnno # No error handling, for now
 # function build_anno_term_TS(TS)::InferResTAnno  return infer_type_(term) end
 function build_anno_term_TAbs(term_anno::TAnno)::InferResTAnno # it's the body, ofc
     res = TAbs(term_anno.expr)
-    TAnno(res, infer_type_(res, term_anno.type))
+    TAnno(res, infer_type_(res,  term_anno.type))
 end
 function build_anno_term_TAnno(term_anno::TAnno, type_anno::TAnno)::InferResTAnno # IMPORTANT: if an error comes up, THIS FUNCTION will turn res into TermwError
     # if type_anno.type.t_out !==TypeUniverse()
@@ -922,7 +939,8 @@ function build_anno_term_TProd(terms_anno::Array{TAnno}; dict_anno::Array{Pair{S
         (keys, vals) = collect(zip(dict_anno...))
         original_length = length(terms_anno)
         res = TProd(terms_anno .|> x->x.expr, Array{Pair{String, Term}}([s=>t.expr for (s,t) in dict_anno]))
-        res_type = infer_type_(res, Array{InferResTermIn}(vcat(terms_anno, [vals...]) .|> x->x.type))
+        types = vcat(terms_anno, [vals...]) .|>( x->x.type) .|> (x->x isa TTerm ? x : TTermEmpty(x))
+        res_type = infer_type_(res, Array{InferResTermIn}(types))
         if res_type isa TermwError
             restored_prod = TProd(res_type.term.t_out.data[1:original_length], Array{Pair{String, Term}}([s=>t for (s,t) in zip(keys, res_type.term.t_out.data[(original_length+1):end])]))
             res_type = TermwError(TTerm(res_type.term.t_in, restored_prod), res_type.error)
@@ -933,7 +951,8 @@ function build_anno_term_TProd(terms_anno::Array{TAnno}; dict_anno::Array{Pair{S
         return TAnno(res, res_type)
     else
         res = TProd(Array{Term}(terms_anno .|> x->x.expr))
-        return TAnno(res, infer_type_(res, terms_anno .|> x->x.type))
+        types = terms_anno .|> (x->x.type)  .|> (x->x isa TTerm ? x : TTermEmpty(x))
+        return TAnno(res, infer_type_(res, types))
     end
 end
 
@@ -980,3 +999,29 @@ function build_anno_term_TTerm(term_anno_in::TAnno, term_anno_out::TAnno; make_a
     end
     TAnno(res, infer_type_(res, term_anno_in.type, term_anno_out.type))
 end
+
+
+function TAnnoAuto(t::Term)
+    T = infer_type_rec(t)
+    # if T.t_in.data|>length == 0  T = T.t_out end
+    # if usedLocs(T)|>length > 0 || usedLocsSet(T)|>length > 0  T = TAbs(T) end
+    TAnno(t, T)
+end
+
+function TTermAutoCtx(t::Term; n_locs_before=0)
+    ctx_data = Array{Term}([TLocInt(i + n_locs_before) for i in usedLocs(t)])
+    ctx_pre = Array{Term}([TLocInt(i) for i in 1:n_locs_before])
+    ctx_data = vcat(ctx_pre, ctx_data)
+    ctx_tags = Array{Pair{Id, Term}}([s => TLocInt(i+length(ctx_data)) for (i, s) in enumerate(usedLocsSet(t))])
+    return TTerm(TProd(ctx_data, ctx_tags), t)
+end
+
+function TypeOfTLocIntReturning(t::Term; n_loc=1)
+    T = infer_type_rec(TLocInt(n_loc))
+    ctx_pre = Array{Term}([TLocInt(i) for i in 1:n_loc-1])
+    push!(ctx_pre, t)
+    ass_reduc(T, TProd(ctx_pre))
+end
+
+
+TAnnoEmptyTT(t::Term) = TAnno(t, infer_type_rec(t))

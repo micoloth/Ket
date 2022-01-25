@@ -89,6 +89,10 @@ end
 struct TAppend <: Term
     prods::Array{Term}
 end
+struct TPost <: Term
+    n_delay::Index # >=1  # If ==1, it's the same as a TTermEmpty
+    body::Term
+end
 
 
 Base.:(==)(a::TGlob, b::TGlob) = Base.:(==)(a.var, b.var)
@@ -107,9 +111,11 @@ Base.:(==)(a::TIntSum, b::TIntSum) = all(a.ns .== b.ns)
 Base.:(==)(a::TIntProd, b::TIntProd) = all(a.ns .== b.ns)
 Base.:(==)(a::TAppend, b::TAppend) = all(a.prods .== b.prods)
 Base.:(==)(a::TStr, b::TStr) = (a.s == b.s)
+Base.:(==)(a::TPost, b::TPost) = (a.n_delay == b.n_delay) && (a.body == b.body)
 
 TAbs(body::Term) = TAbs(body, [string(i) for i in 1:arity(body)])
 TSum(v::Array{Term}) = TSum(v, [string(i) for i in 1:length(v)])
+TProdSingle(t::Term) = TProd(Array{Term}([t]))
 TProd(v::Array{Term}) = TProd(v, Array{Pair{Id, Term}}([]))
 TProd(d::Array{Pair{Id, Term}}) = TProd(Array{Term}([]), d)
 TProdSingle(t::Term) = TProd(Array{Term}([t]))
@@ -122,7 +128,6 @@ TTermEmpty(res_type::Term) = TTerm(TProd(Array{Term}([])), res_type)
 TGlob(var::Id) = TGlob(var, TypeUniverse())
 TGlobAuto(var::Id) = TGlob(var, TGlob(uppercase(var)))
 TGlobAutoCtx(var::Id) = TGlob(var, TTermEmpty(TGlob(uppercase(var))))
-
 
 # detag(t::TGlob) = TGlob(t.var, detag(t.type))
 # detag(t::TLocInt) = TLocInt(t.var)
@@ -161,18 +166,75 @@ subst(news::TProd, t::TIntProd)::Term = TIntProd(t.ns .|> x->subst(news, x))
 subst(news::TProd, t::TAppend)::Term = TAppend(t.prods .|> x->subst(news, x))
 subst(news::TProd, t::TTerm)::Term = TTerm(subst(news, t.t_in), subst(news, t.t_out))
 subst(news::TProd, t::TAbs)::Term = t # TAbs(subst(news, t.body))
+subst(news::TProd, t::TPost)::Term = t  # TPost(t.n_delay, subst(news, t.body))
 subst(news::TProd, t::TProd)::Term = TProd(t.data .|> (x->subst(news, x)), Array{Pair{Id, Term}}([k=>subst(news, val) for (k, val) in t.data_tags]))
 subst(news::TProd, t::TSum)::Term = TSum(t.data .|> (x->subst(news, x)), t.tags)
 subst(news::TProd, t::TApp)::Term = TApp(t.ops_dot_ordered .|> x->subst(news, x))
 subst(news::TProd, t::TConc)::Term = TConc(t.ops_dot_ordered .|> x->subst(news, x))
 subst(news::TProd, t::TSumTerm)::Term = TSumTerm(t.tag, t.tag_name, subst(news, t.data))
-subst(news::TProd, t::TAnno)::Term = TAnno(subst(news, t.expr), t.type)
 subst(news::TProd, t::TBranches)::Term = TBranches(t.ops_chances .|> x->subst(news, x), t.tags) # Just like TApp, This should have No effect being all TAbs's, but just in case.
 subst(news::TProd, t::TLocInt)::Term = if t.var <= length(news.data) news.data[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news.data))" )) end
 subst(news::TProd, t::TLocStr)::Term = (pos = findfirst(x->x[1]==t.var, news.data_tags); if pos!==nothing news.data_tags[pos][2] else throw(DomainError("Undefined local var named $(t.var), args given = $(news.data_tags)" )) end)
+subst(news::TProd, t::TAnno)::Term = TAnno(subst(news, t.expr), t.type)
 subst(news::TProd, t::TermwError)::Term = TermwError(subst(news, t.term), t.error)
 # subst(news::Array{Term}, t::TLocInt)::Term = if t.var <= length(news) news[t.var] else throw(DomainError("Undefined local var $(t.var), n args given = $(length(news))" )) end
 
+reduc_pop_DONTCALL(t::TGlob)::Term = t
+reduc_pop_DONTCALL(t::TLocInt)::Term = t
+reduc_pop_DONTCALL(t::TLocStr)::Term = t
+reduc_pop_DONTCALL(t::TTop)::Term = t
+reduc_pop_DONTCALL(t::TypeUniverse)::Term = t
+reduc_pop_DONTCALL(t::TN)::Term = t
+reduc_pop_DONTCALL(t::TS)::Term = t
+reduc_pop_DONTCALL(t::TInt)::Term = t
+reduc_pop_DONTCALL(t::TStr)::Term = t
+reduc_pop_DONTCALL(t::TIntSum)::Term = all(t.ns .|> (x->x isa TInt)) ? TInt(sum(t.ns .|> (x->x.n))) : t
+reduc_pop_DONTCALL(t::TIntProd)::Term = all(t.ns .|> (x->x isa TInt)) ? TInt(prod(t.ns .|> (x->x.n))) : t
+reduc_pop_DONTCALL(t::TTerm)::Term = TTerm(t.t_in |> reduc_pop_DONTCALL, t.t_out |> reduc_pop_DONTCALL)
+reduc_pop_DONTCALL(t::TPost)::Term = t.n_delay==1 ? reduc(t.body) : TPost(t.n_delay - 1, t.body)
+reduc_pop_DONTCALL(t::TAbs)::Term = TAbs(reduc_pop_DONTCALL(t.body), t.var_tags)
+reduc_pop_DONTCALL(t::TApp)::Term = reduc_pop_DONTCALL(Array{Term}(t.ops_dot_ordered .|> reduc_pop_DONTCALL)) # TApp is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc_pop_DONTCALL" here since which one is "typechecked at runtime")
+reduc_pop_DONTCALL(t::TConc)::Term = reduc_pop_DONTCALL(Array{Term}(t.ops_dot_ordered .|> reduc_pop_DONTCALL)) # TConc is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc_pop_DONTCALL" here since which one is "typechecked at runtime")
+reduc_pop_DONTCALL(t::TProd)::Term = TProd(t.data .|> reduc_pop_DONTCALL, Array{Pair{Id, Term}}([k=>reduc_pop_DONTCALL(val) for (k, val) in t.data_tags]))
+reduc_pop_DONTCALL(t::TSum)::Term = TSum(t.data .|> reduc_pop_DONTCALL, t.tags)
+reduc_pop_DONTCALL(t::TSumTerm)::Term = TSumTerm(t.tag, t.tag_name, t.data |> reduc_pop_DONTCALL)
+reduc_pop_DONTCALL(t::TAnno; reduc_type=false)::Term = TAnno(t.expr |> reduc_pop_DONTCALL, reduc_type ? (t.type|>reduc_pop_DONTCALL) : t.type)
+reduc_pop_DONTCALL(t::TBranches)::Term = TBranches(t.ops_chances .|> reduc_pop_DONTCALL, t.tags)
+function reduc_pop_DONTCALL(ops::Array{Term})::Term
+    #println("> doing the ", typeof(func),  " ", typeof(arg), " thing")
+    # if ops[1] isa TAbs ops[1] = reduc_pop_DONTCALL(Array{Term}([TProd([]), ops[1]])) end # this is because i still havent decided between prods and 0-arg'd lambda's.
+    #^ this MIGHT VERY WELL FAIL, idk
+    while (length(ops) >= 2)
+        ops1, ops2 = (ops[1] isa TAnno ? ops[1].expr : ops[1]), (ops[2] isa TAnno ? ops[2].expr : ops[2])
+        if (ops1 isa TProd && ops2 isa TAbs)
+            ops = vcat(Array{Term}([subst(ops1, ops2.body) |> reduc_pop_DONTCALL]), ops[3:end])
+        elseif (ops1 isa TAbs && ops1.body isa TProd && ops2 isa TAbs)
+                ops = vcat(Array{Term}([TAbs(subst(ops1.body, ops2.body)) |> reduc_pop_DONTCALL]), ops[3:end])
+        elseif (ops1 isa TSumTerm && ops2 isa TBranches)
+            branches = Dict{String, Term}([n=>s for (n, s) in zip(ops2.tags, ops2.ops_chances)])
+            ops = vcat([TApp([ops1.data, branches[ops1.tag_name]]) |> reduc_pop_DONTCALL], ops[3:end])
+        else break
+        end
+    end
+    # TODO: make this into a more reasonable stack
+    # TODO: Make it, you know, ACTUALLY compiled ? If it's even possible?  # --wdyk, maybe it's NOT and this is where the actual recursive-turingcompletey-selflooping-level-y interpreter comes in !!
+    # TODO: DEFINITELY possible: Boy this is a mess, tidy upp your PRIMITIVES man !!!
+    return length(ops) >= 2 ? TApp(ops) : ops[1]
+end
+function reduc_pop_DONTCALL(t::TAppend)::Term
+    if t.prod .|> (x->x isa TProd) |> all
+        TProd(vcat(t.prods...))
+    elseif t.prod .|> (x->x isa TAnno && x.expr isa TProd) |> all
+        TAnno(TProd(vcat((t.prods .|> (x->x.expr))...)), TProd(vcat((t.prods .|> (x->x.type))...)))
+        # TAnno(TProd(t.prods.|expr .vcat), TProd(t.prods.|type .vcat))
+    end
+end
+reduc_pop_DONTCALL(t::TermwError)::Term = TermwError(reduc_pop_DONTCALL(t.term), t.error)
+
+
+# The difference between reduc_pop_DONTCALL and reduc is that reduc is a PROJECTION!!! (Once it reaches the normal form, calling it again has no effects).
+# In particular, they are EXACTLY THE SAME for each Term except the TPost one. For TPost,
+# every time you call reduc_pop_DONTCALL, you execute away one "^1" level. Otoh, reduc Doesn't pop any level!
 reduc(t::TGlob)::Term = t
 reduc(t::TLocInt)::Term = t
 reduc(t::TLocStr)::Term = t
@@ -185,6 +247,7 @@ reduc(t::TStr)::Term = t
 reduc(t::TIntSum)::Term = all(t.ns .|> (x->x isa TInt)) ? TInt(sum(t.ns .|> (x->x.n))) : t
 reduc(t::TIntProd)::Term = all(t.ns .|> (x->x isa TInt)) ? TInt(prod(t.ns .|> (x->x.n))) : t
 reduc(t::TTerm)::Term = TTerm(t.t_in |> reduc, t.t_out |> reduc)
+reduc(t::TPost)::Term = TPost(t.n_delay, reduc(t.body))
 reduc(t::TAbs)::Term = TAbs(reduc(t.body), t.var_tags)
 reduc(t::TApp)::Term = reduc(Array{Term}(t.ops_dot_ordered .|> reduc)) # TApp is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
 reduc(t::TConc)::Term = reduc(Array{Term}(t.ops_dot_ordered .|> reduc)) # TConc is AN OBJECT THAT REPRESENTS A COMPUTATION (it's only "reduc" here since which one is "typechecked at runtime")
@@ -200,12 +263,12 @@ function reduc(ops::Array{Term})::Term
     while (length(ops) >= 2)
         ops1, ops2 = (ops[1] isa TAnno ? ops[1].expr : ops[1]), (ops[2] isa TAnno ? ops[2].expr : ops[2])
         if (ops1 isa TProd && ops2 isa TAbs)
-            ops = vcat(Array{Term}([subst(ops1, ops2.body) |> reduc]), ops[3:end])
+            ops = vcat(Array{Term}([subst(ops1, ops2.body) |> reduc_pop_DONTCALL]), ops[3:end])
         elseif (ops1 isa TAbs && ops1.body isa TProd && ops2 isa TAbs)
-                ops = vcat(Array{Term}([TAbs(subst(ops1.body, ops2.body)) |> reduc]), ops[3:end])
+                ops = vcat(Array{Term}([TAbs(subst(ops1.body, ops2.body)) |> reduc_pop_DONTCALL]), ops[3:end])
         elseif (ops1 isa TSumTerm && ops2 isa TBranches)
             branches = Dict{String, Term}([n=>s for (n, s) in zip(ops2.tags, ops2.ops_chances)])
-            ops = vcat([TApp([ops1.data, branches[ops1.tag_name]]) |> reduc], ops[3:end])
+            ops = vcat([TApp([ops1.data, branches[ops1.tag_name]]) |> reduc_pop_DONTCALL], ops[3:end])
         else break
         end
     end
@@ -223,6 +286,7 @@ function reduc(t::TAppend)::Term
     end
 end
 reduc(t::TermwError)::Term = TermwError(reduc(t.term), t.error)
+
 
 pr_T(x::TGlob)::String = "$(x.var)"
 pr_T(x::TLocInt)::String = "T$(x.var)"
@@ -287,6 +351,7 @@ end
 function pr_T(x::TAppend)::String
     "append(" * x.prods .|> pr_T |> x->join(x, ", ") * ")"
 end
+pr_T(x::TPost)::String = "<" * pr_T(x.body) * ">" * join(["^1" for i in 1:x.n_delay], "")
 
 pr_T(xs::Array{Term}) = xs .|> pr_T
 pr_T(x::TBranches)::String = "{" * (["$(i)_-->$(e|>pr_T)" for (i,e) in enumerate(x.ops_chances)] |> (s->join(s, ", "))) * ")"
@@ -307,7 +372,7 @@ pr_E(x::TIntProd)::String = join(x.ns .|> pr_E, "*")
 pr_E(x::TAbs)::String = "/{$(pr_E(x.body))}"
 pr_E(x::TSumTerm)::String = "$(x.tag_name)_$(pr_E(x.data))"
 pr_E(x::TBranches)::String = "{" * (["$(i)_-->$(e|>pr_E)" for (i,e) in enumerate(x.ops_chances)] |> (s->join(s, ", "))) * ")"
-pr_E(x::TAnno)::String = "$(pr_E(x.expr)):$(pr_T(x.type))"
+pr_E(x::TAnno; topLevel=false)::String = topLevel ? "$(pr_E(x.expr)):$(pr_T(x.type))" : "$(pr_E(x.expr))"
 function pr_E(x::TApp)::String
     if length(x.ops_dot_ordered) == 2
         arg, func = x.ops_dot_ordered[1], x.ops_dot_ordered[2]
@@ -344,11 +409,12 @@ function pr_E(x::TTerm)::String
     else return "type:" * (x.t_in |> pr_E) * "->" *( x.t_out|> pr_E)
     end
 end
+pr_E(x::TPost)::String = "(" * pr_T(x.body) * ")" * join(["^1" for i in 1:x.n_delay], "")
 
 pr(x) = pr_T(x)
 # pr_ctx(i::TTerm) = "Given [$(join(i.t_in.data .|>pr, ", "))], get $(i.t_out|>pr)"
 pr_ctx(i::TTerm) = "Given $(i.t_in |>pr), get $(i.t_out|>pr)"
-pr_ctx(i::TermwError) = "ERROR $(t.error) Given $(i.term.t_in |>pr), get $(i.term.t_out|>pr)"
+pr_ctx(i::TermwError) = "ERROR $(i.error). The best you could get is Given $(i.term.t_in |>pr), get $(i.term.t_out|>pr)"
 
 
 # NOT used by the above:
@@ -371,6 +437,7 @@ usedLocsSet(t::TAbs)::Set{String} = Set{String}([]) # Lam(usedLocsSet(base, t.bo
 usedLocsSet(t::TProd)::Set{String} = union(Set{String}([]), (t.data .|> usedLocsSet)..., (t.data_tags .|> (x->x[2]) .|> usedLocsSet)...)
 usedLocsSet(t::TSum)::Set{String} = t.data .|> usedLocsSet |> (x->union(Set{String}([]), x...))
 usedLocsSet(t::TSumTerm)::Set{String} = usedLocsSet(t.data)
+usedLocsSet(t::TPost)::Set{String} = usedLocsSet(t.body)
 usedLocsSet(t::TAnno)::Set{String} = usedLocsSet(t.expr)
 usedLocsSet(t::TBranches)::Set{String} = t.ops_chances .|> usedLocsSet |> (x->union(Set{String}([]), x...))
 usedLocsSet(t::TSumTerm)::Set{String} = usedLocsSet(t.data)
@@ -394,6 +461,7 @@ usedLocs(t::TSum)::Array{Index} = unique(vcat((t.data .|> usedLocs)...))
 usedLocs(t::TSumTerm)::Array{Index} = t.data |> usedLocs
 usedLocs(t::TAbs)::Array{Index} = Array{Index}([])
 usedLocs(t::TTerm)::Array{Index} = unique(vcat(t.t_in |> usedLocs, t.t_out |> usedLocs))
+usedLocs(t::TPost)::Array{Index} = usedLocs(t.body)
 usedLocs(t::TermwError)::Array{Index} = usedLocs(t.term)
 
 
@@ -418,6 +486,7 @@ arity_var(base::Index, t::TSumTerm)::Index = arity_var(base, t.data)
 arity_var(base::Index, t::TAnno)::Index = arity_var(base, t.expr)
 arity_var(base::Index, t::TBranches)::Index = t.ops_chances .|> (x->arity_var(base, x)) |> maximum
 arity_var(base::Index, t::TSumTerm)::Index = arity_var(base, t.data)
+arity_var(base::Index, t::TPost)::Index = arity_var(base, t.body)
 arity_var(base::Index, t::TermwError)::Index = arity_var(base, t.term)
 
 
@@ -447,6 +516,7 @@ has_errors(t::TSumTerm)::Bool = has_errors(t.data)
 has_errors(t::TAnno)::Bool = has_errors(t.expr)
 has_errors(t::TBranches)::Bool = t.ops_chances .|> has_errors |> any
 has_errors(t::TSumTerm)::Bool = has_errors(t.data)
+has_errors(t::TPost)::Bool = has_errors(t.body)
 has_errors(t::TermwError)::Bool = true
 
 
@@ -466,6 +536,7 @@ errors(t::TConc)::Array{Error} = vcat((t.ops_dot_ordered .|> errors)...)
 errors(t::TProd)::Array{Error} = vcat((t.data .|> errors)..., (t.data_tags .|> (x->x[2]) .|> errors)...)
 errors(t::TSum)::Array{Error} = vcat((t.data .|> errors)...)
 errors(t::TSumTerm)::Array{Error} = t.data |> errors
+errors(t::TPost)::Array{Error} = t.body |> errors
 errors(t::TAbs)::Array{Error} = Array{Error}([])
 errors(t::TTerm)::Array{Error} = vcat(t.t_in |> errors, t.t_out |> errors)
 errors(t::TermwError)::Array{Error} = [t.error]
@@ -566,3 +637,35 @@ reduc(TConc([f1, TConc([f2, f3])])) |> pr
 
 
 [i for (i, s) in Array{Pair{Int, String}}([1=>"a", 2=>"b"])]
+
+
+
+
+# Partial applications:
+
+
+# # fp = TAbs(TProd([TLocInt(1), TSumTerm(1, "1", TPost(1, TLocInt(1)))]))
+# fp = TAbs(TProd([TLocInt(1), TProdSingle(TPost(1, TLocInt(1)))]))
+# fp|>pr_E
+
+# partialapplied = TAppAuto(fp, TGlobAuto("a"))
+# partialapplied = reduc(partialapplied)
+# partialapplied |>pr_E
+
+
+
+# # fp = TAbs(TProd([TLocInt(1), TSumTerm(1, "1", TLocInt(2))]))
+# fp = TAbs(TProd([TLocInt(1), TProdSingle(TLocInt(2))]))
+# fp|>pr_E
+
+# args = TProd([TGlobAuto("a"), TPost(2, TLocInt(1))])
+# partialapplied = TApp([args, fp])
+# partialapplied |>pr_E
+# partialapplied = reduc(partialapplied)
+# partialapplied |>pr_E
+
+# # fp |> reduc_pop_DONTCALL |> pr_E
+
+# # include("unification_3.jl")
+
+# fp |> infer_type_rec |> pr_ctx
