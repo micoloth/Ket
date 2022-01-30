@@ -14,7 +14,7 @@ A Computed Assisted Programming framework is a coding frontend that wraps **a ty
 Of course, none of the strongly typed languages are very productive *today*. Ket is exactly an attempt to change that.
 - As it is well known, code generation and theorem proving are the same thing. **A powerful, expressive type inference and code generation tool should be powered by a smart theorem prover**.
 - **Incremental typechecking is Good**.
-- **Flexible, incremental parsing is Good**. Parsing the code incrementally while it's written instead of reparsing the whole codebase at every keystroke is harder and theoretically much more inefficient, but it's much more ergonomic for the programmer, and modern computers are more than powerful enough to do it.
+- **Flexible, incremental parsing is Good**. Parsing the code incrementally while it's written instead of reparsing the whole codebase at every keystroke is harder (ironically) and supporting flexible and ambiguous syntaxes is theoretically much more inefficient. But both these things are much more ergonomic for the programmer, and modern computers are more than powerful enough to do it.
 - **Incremental, Jitted compilation**
 - **Reactive execution** (like in the [Pluto notebooks](https://github.com/fonsp/Pluto.jl) recently, and many other places before), because thus is the right way of building software.
 - **(controlled) Incremental execution**: many compilers have compile time code execution, and I’m sure that many other compile time executions are performed implicitly as optimization passes. This is Good and nice, but it should be Controllable, Explicit, and still Seamless so that making the right decision (whether to compile time execute or not) is effortless and natural.
@@ -23,7 +23,7 @@ Of course, none of the strongly typed languages are very productive *today*. Ket
 
 # Things that Ket is NOT:
 - **a Programming language**: a CAP system is Much more general than that, and the idea that one has to learn a new syntax every time some guy wants to introduce some new innovation in programming, is Not the best we can do. How do you make this not happen: with a *flexible enough parser*, that can understand different flavour of syntax to express the same exact programming concepts that everybody uses. More of this later.
-- **a Graphical programming environment**. Idk why one would want to get rid of text, text is great. (NOTE: *AS an input device for coding.* this DOESN’T mean that saving code in .txt files makes any sense. The project that is  doing the best hob with this is [Unison](https://www.unisonweb.org/))
+- **a Graphical programming environment**. Idk why one would want to get rid of text, text is great. (NOTE: *AS an input device for coding.* this DOESN’T mean that saving code in .txt files makes any sense. The project that is  doing the best job with this is [Unison](https://www.unisonweb.org/))
 
 
 
@@ -93,10 +93,10 @@ Well, consider this: remember that, even when deep language models (or more like
 
 I am completely sure our program verification/code generation tools/theorem provers/ whatever/ will get *more* powerful, not less, and we need strong reasoning engines to power them.
 
-Even if we can achieve human-comparable levels of logical intelligence purely emergent from a huge ass deep model, we don’t want human- comparable, or even better-than-human logical intelligence from our program verification/code generation tools/theorem provers/whatever/: we want them to be *Just correct*…
+Even if we can achieve human-comparable levels of logical intelligence purely emergent from a huge ass deep model, we don’t want human-comparable, or even better-than-human logical intelligence from our program verification/code generation tools/theorem provers/whatever/: we want them to be *Just correct*…
 
-But actually, there’s more: not only I think language models and theorem provers are incompatible. I actually think they will work together in the future!
-In fact, language models are a very powerful heuristic for a theorem prover that performs proof search.
+But actually, there’s more: not only I think language models and theorem provers are not mutually exclusive. I actually think it's pretty evident they will work together in the future!
+In fact, language models are a very powerful heuristic for a theorem prover that performs proof search, and much research is already being done on this.
 
 The idea here is of course inspired by Alphazero, which uses the big semantic-understanding models to Guide a good-old brute-force tree search, and at the same time trains the semantic understanding via reinforcement learning on the tree search data.\
 That’s a beautiful, obviously powerful architecture, and I’m sure this will power our theorem provers for the foreseeable future!
@@ -114,8 +114,10 @@ But for now, I’m happy with julia, for these reasons:
 - syntax. Julia syntax is mostly great, and in a crazy world where to buy a set of computational features, you have to buy the whole syntax, this Matters, of course. I Like being able to write—.
 - The repl experience. Nothing to say, prototyping is Much faster. I want ket to be always eagerly executed and reactive, so even the repl experience will look bad in comparison, but you can’t do that today except in the Pluto notebooks, which is a pretty bad developer experience tho, or (i know) in some of those old and arcane Lispy things, that are even more useless.
 - about Julia not being functional: I actually Don’t think mutability is bad, especially until a functional model will be optimized enough to make it useless. (Again, see Roc) In particolar, although Ket’s Typechecker code is mostly functional, Ket makes heavy use of mutability and references in the Parser code. So Ket won’t be actually implemented in a functional language any time soon, I’m afraid.
+- Easy memory model. When you are prototyping, I have to admit that relying on the GC and not having to deal with that stuff is handy...
 - Good code style: After all, Julia spits out LLVM code. Unfortunately i think it’s mostly impossible to use it *as* llvm code, ie without the julia runtime, but it’d be great if it was possible. It’s Often well typed, and it’s even Often functional (in case you don’t know julia, by convention all functions whose name don’t end in ! are pure).
 - Powerful code generation and reflection capabilities. This allows even a demo like Ket to run at least Something.
+- Solid ML framework: as discussed above, a future direction of this project will very likely include some ML to guide code generation. Julia is the right language for that...
 - Related: the Codebase. Like, I won’t lie, Julia isnt even a bad language to target (as in, beyond the demo), because of how much great, useful code has been written in it now. By useful code i mean code that has real value: and by that i mean mostly mathematical code. When this whole decades long process of figuring out what our coding infrastructure is will end, we’ll find out that 99.9% of the code written around has no value. We Don’t need a thousand implementations of a web server. We Don’t need ginormous frameworks that only exist to glue together different frameworks ([like..](https://babeljs.io/))\
 Here’s what we Do need, and has real value: *One* great differential equations package. *One* machine learning framework, written natively. *One* optimization package for each class of optimization problems. Etc. Julia is doing great with this.
 
@@ -132,7 +134,7 @@ Luckily it sucks in a entirely preventable way, and so it *will* change. At the 
 
 It needs to be said that, even if many advancements have been made by thousands of great people throughout the decades, fixing programming once and for all unfortunately remains at the very bottom of *most* programmers’ priority list, for various reasons.\
 Some reasons are legitimate, like, legacy codebases to miantain are a thing.\
-And yet, at the cost of sounding brunt, I’ll also add that many of the reasons are rubbish, and to be clear, the programmers community at large is pretty luddist at this point.\
+And yet, at the cost of sounding brunt, I’ll also add that many of the reasons are rubbish. There is a very real need for a more solid programming environement.
 Multiple generations trained in very specific technologies and frameworks that happen to be completely arbitrary and bound to become obsolete in a matter of decades (if lucky) or years (more likely), cannot be good for anyone!\
 *Exactly for this reason* we need a solid framework that removes accidental complexity, so it lasts for a while…
 
