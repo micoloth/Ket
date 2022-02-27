@@ -61,6 +61,7 @@ err_msg_terms(t1::Term, t2::Term) = "Different: $(pr(t1)) is really different fr
 err_msg_prods(t1::TProd, t2::TProd) = "Different lengths: $(length(t1.data)) < $(length(t2.data)), so you cannot even drop."
 err_msg_prods_tags(t1::TProd, t2::TProd) = "Some tags are in second, not in first: $(t1.data_tags .|> (x->x[1]))) < $(t2.data_tags .|> (x->x[1]))), so you cannot even drop them."
 err_msg_sums(t1::TSum, t2::TSum) = "Different lengths: $(length(t1.data)) > $(length(t2.data)), so if you are in the last case you are screwed.."
+err_msg_sums_tags(t1::TSum, t2::TSum) = "Some tags are in first, not in second: $(t1.data_tags .|> (x->x[1]))) > $(t2.data_tags .|> (x->x[1]))), so if you are in that case you are screwed.."
 err_msg_tags(t1::TProd, t2::TProd) = "You cant unify var_tags: $(t1) != $(t2)."
 err_msg_intsum(t1::TIntSum, t2::TIntSum) = "Different lengths: $(length(t1.ns)) > $(length(t2.ns)), so impossible to tell if these are the same..."
 err_msg_intprod(t1::TIntProd, t2::TIntProd) = "Different lengths: $(length(t1.ns)) > $(length(t2.ns)), so impossible to tell if these are the same..."
@@ -113,7 +114,11 @@ function rec_unify_(t1::TProd, t2::TProd, mode::Unify_mode)::RecUnifyRes
     shared_tags = intersect(keys(data_dict_1), keys(data_dict_2))
     shared_res = Dict{Id,RecUnifyRes}(tag => rec_unify_(data_dict_1[tag], data_dict_2[tag], mode) for tag in shared_tags)
     shared_res_types = Dict{Id,Term}(tag => res.res for (tag, res) in shared_res)
-    res_types_tags = merge(shared_res_types, subdict(data_dict_1, tags_1_not_2), subdict(data_dict_2, tags_2_not_1))
+    if mode === meet_ res_types_tags = merge(shared_res_types, subdict(data_dict_1, tags_1_not_2), subdict(data_dict_2, tags_2_not_1))
+    elseif mode === join_ res_types_tags = shared_res_types
+    elseif mode === implydir_ res_types_tags = merge(shared_res_types, subdict(data_dict_1, tags_1_not_2))
+    elseif mode === implyrev_ res_types_tags = merge(shared_res_types, subdict(data_dict_2, tags_2_not_1))
+    end
     res_tags_cs::Array{SparseSubst} = vcat((values(shared_res) .|>  x -> x.preSubst)...)
     res_tags_errs::Array{ErrorConstraint} = vcat((values(shared_res) .|>  x -> x.errors)...)
 
@@ -132,23 +137,37 @@ end
 
 
 function rec_unify_(t1::TSum, t2::TSum, mode::Unify_mode)::RecUnifyRes
+    data_dict_1, data_dict_2 = Dict{Id, Term}(t1.data_tags), Dict{Id, Term}(t2.data_tags)
+    tags_1_not_2, tags_2_not_1 = setdiff(keys(data_dict_1), keys(data_dict_2)), setdiff(keys(data_dict_2), keys(data_dict_1))
     t1l, t2l = t1.data |> length, t2.data |> length
-    if t1l > t2l && mode==implydir_
-        return RecUnifyResErr(t1, ErrorC(t1, t2, err_msg_sums))
+    if mode==implydir_ && (length(t1.data) > length(t2.data) || tags_1_not_2 |> length >0)
+        return RecUnifyResErr(t2, ErrorC(t1, t2, err_msg_sums))
+    elseif mode==implyrev_ && (length(t1.data) < length(t2.data) || tags_2_not_1 |> length >0)
+        return RecUnifyResErr(t2, ErrorC(t1, t2, err_msg_sums))
     end
+    shared_tags = intersect(keys(data_dict_1), keys(data_dict_2))
+    shared_res = Dict{Id,RecUnifyRes}(tag => rec_unify_(data_dict_1[tag], data_dict_2[tag], mode) for tag in shared_tags)
+    shared_res_types = Dict{Id,Term}(tag => res.res for (tag, res) in shared_res)
+    if mode === meet_ res_types_tags = shared_res_types
+    elseif mode === join_ res_types_tags = merge(shared_res_types, subdict(data_dict_1, tags_1_not_2), subdict(data_dict_2, tags_2_not_1))
+    elseif mode === implydir_ res_types_tags = merge(shared_res_types, subdict(data_dict_2, tags_2_not_1))
+    elseif mode === implyrev_ res_types_tags = merge(shared_res_types, subdict(data_dict_1, tags_1_not_2))
+    end
+
+    res_tags_cs::Array{SparseSubst} = vcat((values(shared_res) .|>  x -> x.preSubst)...)
+    res_tags_errs::Array{ErrorConstraint} = vcat((values(shared_res) .|>  x -> x.errors)...)
+
     all_ress = [rec_unify_(f1, f2, mode) for (f1, f2) in zip(t1.data, t2.data)] # Potentially turn into a monad (not really urgent tho)
-    # IMPORTANT: ^ zip stops @ the LEAST number of elems!
-    res_types = all_ress .|> x -> x.res
-    errors = findall((x -> x isa TermwError), res_types)
-    if t1l != t2l && (mode==join_ || mode==meet_)
+    # IMPORTANT: zip stops @ the LEAST number of elems!
+    res_data_types = Array{Term}(all_ress .|> x -> x.res)
+    res_data_cs::Array{SparseSubst} = vcat((all_ress .|> x -> x.preSubst)...)
+    res_data_errs::Array{ErrorConstraint} = vcat((all_ress .|> x -> x.errors)...)
+    if t1l != t2l && mode==join_
         additional_elems = (t1l > t2l) ? (t1.data[(t2l+1):end]) : (t2.data[(t1l+1):end])
-        res_types = vcat(res_types, additional_elems)
+        res_data_types = vcat(res_data_types, additional_elems)
     end
-    res_type = TSum(res_type)
-    if length(errors) > 0
-        res_type = TermwError(res_type, "E" * join(errors .|> string, ""))
-    end
-    merge_res(all_ress, res_type)
+    RecUnifyRes(vcat(res_tags_cs, res_data_cs), TLocInt(1), TLocInt(1), TSum(res_data_types, [res_types_tags...]), vcat(res_data_errs, res_tags_errs))
+    # ^ HERE you can improve postSubst's a lot !!!
 end
 
 
@@ -219,22 +238,57 @@ function rec_unify_(t1::TPost, t2::TPost, mode::Unify_mode)::RecUnifyRes
     return RecUnifyRes(res.preSubst, res.postSubst1, res.postSubst2, TPost(n_delay, res.res), res.errors)
 end
 function rec_unify_(t1::TLoc, t2::TPost, mode::Unify_mode)::RecUnifyRes
-    # This behaviour is pretty weird admiddetly, and it simply says: POP EVERYTHING, essentially
-    RecUnifyRes(t1, Array{SparseSubst}([SparseSubst(t1, t2)]))
+    RecUnifyRes(t1, Array{SparseSubst}([SparseSubst(t1, t2)]))  # This behaviour is pretty weird admiddetly, and it simply says: POP EVERYTHING, essentially
 end
 function rec_unify_(t1::Term, t2::TPost, mode::Unify_mode)::RecUnifyRes
     res = rec_unify_(t1, t2.body, mode) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
     return RecUnifyRes(res.preSubst, res.postSubst1, res.postSubst2, TPost(t2.n_delay, res.res), res.errors)
 end
 function rec_unify_(t1::TPost, t2::TLoc, mode::Unify_mode)::RecUnifyRes
-    # This behaviour is pretty weird admiddetly, and it simply says: POP EVERYTHING, essentially
-    RecUnifyRes(t2, Array{SparseSubst}([SparseSubst(t2, t1)]))
+    RecUnifyRes(t2, Array{SparseSubst}([SparseSubst(t2, t1)]))  # This behaviour is pretty weird admiddetly, and it simply says: POP EVERYTHING, essentially
     # TODOTODO: This relies HEAVILY on the fact that names have been UNIFIED between t1 and t2. Is this ALWAYS what we want ???
 end
 function rec_unify_(t1::TPost, t2::Term, mode::Unify_mode)::RecUnifyRes
     res = rec_unify_(t1.data, t2, mode) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
     return RecUnifyRes(res.preSubst, res.postSubst1, res.postSubst2, TPost(t1.n_delay, res.res), res.errors)
 end
+
+function rec_unify_(t1::TIndVar, t2::TIndVar, mode::Unify_mode)::RecUnifyRes
+    RecUnifyRes(t2, Array{SparseSubst}([])) # DO TIndVar FROM DIFFERENT CTX's _EVER_ GET COMPARED?
+end
+function rec_unify_(t1::TLoc, t2::TIndVar, mode::Unify_mode)::RecUnifyRes
+    RecUnifyRes(t1, Array{SparseSubst}([SparseSubst(t1, t2)]))  # This behaviour is pretty weird admiddetly, and it simply says: POP EVERYTHING, essentially
+end
+function rec_unify_(t1::TIndVar, t2::TLoc, mode::Unify_mode)::RecUnifyRes
+    RecUnifyRes(t2, Array{SparseSubst}([SparseSubst(t2, t1)]))  # This behaviour is pretty weird admiddetly, and it simply says: POP EVERYTHING, essentially
+    # TODOTODO: This relies HEAVILY on the fact that names have been UNIFIED between t1 and t2. Is this ALWAYS what we want ???
+end
+function rec_unify_(t1::Term, t2::TIndVar, mode::Unify_mode)::RecUnifyRes
+    res = rec_unify_(t1, t2.parent, mode)
+    return RecUnifyRes(res.preSubst, res.postSubst1, res.postSubst2, t2, res.errors)
+end
+function rec_unify_(t1::TIndVar, t2::Term, mode::Unify_mode)::RecUnifyRes
+    res = rec_unify_(t1.data, t2, mode) # Wait.... Is this even right? How does a type-level sum play with type-level Locs ???
+    return RecUnifyRes(res.preSubst, res.postSubst1, res.postSubst2, t1, res.errors)
+end
+
+function rec_unify_(t1::TLoc, t2::TInd, mode::Unify_mode)::RecUnifyRes
+    RecUnifyRes(t2, Array{SparseSubst}([SparseSubst(t1, t2)]))
+end
+function rec_unify_(t1::TInd, t2::TLoc, mode::Unify_mode)::RecUnifyRes
+    RecUnifyRes(t1, Array{SparseSubst}([SparseSubst(t2, t1)]))
+    # TODOTODO: This relies HEAVILY on the fact that names have been UNIFIED between t1 and t2. Is this ALWAYS what we want ???
+end
+function rec_unify_(t1::Term, t2::TInd, mode::Unify_mode)::RecUnifyRes
+    res = rec_unify_(t1, t2.body, mode)
+    return RecUnifyRes(res.preSubst, res.postSubst1, res.postSubst2, TInd(res.res), res.errors)
+end
+function rec_unify_(t1::TInd, t2::Term, mode::Unify_mode)::RecUnifyRes
+    res = rec_unify_(t1.data, t2, mode)
+    return RecUnifyRes(res.preSubst, res.postSubst1, res.postSubst2, TInd(res.res), res.errors)
+end
+
+
 
 function rec_unify_(t1::TLoc, t2::TLoc, mode::Unify_mode)::RecUnifyRes
     if t1.var == t2.var # t1.var == t2.var
@@ -490,8 +544,9 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
         tloc, ct1, ct2 = STACK[ij[1]].t1, STACK[ij[1]].t2, STACK[ij[2]].t2
         deleteat!(STACK, ij[2])
         deleteat!(STACK, ij[1])
-        unif_res = rec_unify_(ct1, ct2, mode)
-        # ^ Wait.. Are you COMPLETELY SURE you NEVER want a !MODE here ??? ??? ??? ???
+        unif_res = rec_unify_(ct1, ct2, join_)
+        # ^ Wait.. meet_ here is a VERY strong claim. Are you sure  ??? ??? ??? ???
+        # AAANDD now there's Join^, for some reason
         push!(STACK, SparseSubst(tloc, unif_res.res))
         if length(unif_res.errors) > 0 append!(ERRORSTACK, unif_res.errors)
         else append!(STACK, unif_res.preSubst)
@@ -638,9 +693,10 @@ function infer_type_(term::TPost, t_computed::InferResTermIn)::InferResTerm
     return t_computed  # IDK WHAT I AM DOING
 end
 function infer_type_(term::TSumTerm, t_computed::InferResTermIn)::InferResTerm
-    arT, tag = t_computed |> arity, term.tag
-    types = vcat([TLocInt(n) for n = (arT+1):(arT+tag-1)], [t_computed.t_out])
-    return TTerm(t_computed.t_in, TAbs(TSum(Array{Term}(types))))
+    # The following is how you fix TSum.>>data<<. IDC right now, data_tags only.  # TODO: use data too.
+    # arT, tag = t_computed |> arity, term.tag
+    # types = vcat([TLocInt(n) for n = (arT+1):(arT+tag-1)], [t_computed.t_out]) # ?????????????????  # I wrote this ???
+    return TTerm(t_computed.t_in, TSum(Array{Pair{Id, Term}}([(term.tag_name=>t_computed.t_out)])))
 end
 function infer_type_(term::TBranches, t_computed::InferResTermIn)::InferResTerm
     arT, tag = t_computed |> arity, term.tag
@@ -834,6 +890,7 @@ end
 
 
 
+
 # Silly categorical-algebra-ish recursive wrapup:
 function infer_type_rec(term::TLocInt)::InferResTerm
     return infer_type_(term)
@@ -1020,6 +1077,12 @@ function TypeOfTLocIntReturning(t::Term; n_loc=1)
     T = infer_type_rec(TLocInt(n_loc))
     ctx_pre = Array{Term}([TLocInt(i) for i in 1:n_loc-1])
     push!(ctx_pre, t)
+    ass_reduc(T, TProd(ctx_pre))
+end
+
+function TypeOfTLocStrReturning(t::Term, name::Id)
+    T = infer_type_rec(TLocStr(name))
+    ctx_pre = Array{Term}([t])
     ass_reduc(T, TProd(ctx_pre))
 end
 

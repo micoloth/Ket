@@ -376,12 +376,22 @@ t1 = TProd(Array{Term}([TLocInt(1), TSumTerm(1, "EQ", TProd(Array{Term}([TGlob("
 t2 = TProd(Array{Term}([TGlob("A"), TSumTerm(2, "GQ", TProd(Array{Term}([TGlob("E"), TLocInt(2)])))]))
 @test robinsonUnify(t1, t2) |> failed_unif_res
 
+t1 = TSum(Array{Pair{Id, Term}}([("a"=> TGlob("A")), ("b"=>TLocInt(1))]))
+t2 = TSum(Array{Pair{Id, Term}}([("a"=> TLocStr("x")), ("b"=> TGlob("B"))]))
+res = robinsonUnify(t1, t2; mode=join_)
+@test test_unify_imply(t1, t2)
+@test test_unify_join(t1, t2)
+@test test_unify_meet(t1, t2)
+
+
 
 # K for TESTS w/ DIFFERENT NUMBER OF ITEMS NOW:
 t1 = TProd(Array{Term}([TLocInt(1), TGlob("B")]))
 t2 = TProd(Array{Term}([TGlob("A"), TLocInt(1), TLocInt(2)]))
 @test robinsonUnify(t1, t2; mode=implydir_) |> failed_unif_res
 @test test_unify_meet(t1, t2)
+joined = robinsonUnify(t1, t2; mode=join_)
+@test (joined.errors |> length == 0) && (joined.res == TProd(Term[TGlob("A", TypeUniverse()), TGlob("B", TypeUniverse())], Pair{String, Term}[]))
 
 t1 = TProd(Array{Term}([TLocInt(1), TGlob("B"), TLocInt(2)]))
 t2 = TProd(Array{Term}([TGlob("A"), TLocInt(1)]))
@@ -433,6 +443,23 @@ ass_reduc(t1, s1) |> pr
 ass_reduc(t2, s2) |> pr
 @test ass_reduc(t1, s1) == TTerm(TProd(Term[TTerm(TProd(Term[TGlob("A"), TLocInt(1)]), TGlob("Z"))]), TGlob("Z"))
 @test test_unify_meet(t1, t2)
+
+t1 = TSum(Array{Pair{Id, Term}}([("a"=> TGlob("A")), ("b"=>TLocInt(1)), ("c"=>TGlob("Z"))]))
+t2 = TSum(Array{Pair{Id, Term}}([("a"=> TLocStr("x")), ("b"=> TGlob("B"))]))
+res = robinsonUnify(t1, t2; mode=join_)
+@test robinsonUnify(t1, t2; mode=implydir_).errors |> length > 0
+@test robinsonUnify(t1, t2; mode=implyrev_).errors |> length == 0
+@test robinsonUnify(t2, t1; mode=implydir_).errors |> length == 0
+@test robinsonUnify(t2, t1; mode=implyrev_).errors |> length > 0
+
+meeted = robinsonUnify(t1, t2; mode=meet_)
+@test (meeted.errors |> length == 0) && (meeted.res == TSum(Term[], Pair{String, Term}["b" => TGlob("B", TypeUniverse()), "a" => TGlob("A", TypeUniverse())]))
+joined = robinsonUnify(t1, t2; mode=join_)
+@test (joined.errors |> length == 0) && (joined.res == TSum(Term[], Pair{String, Term}["c" => TGlob("Z", TypeUniverse()), "b" => TGlob("B", TypeUniverse()), "a" => TGlob("A", TypeUniverse())]))
+
+
+
+
 
 
 
@@ -631,6 +658,18 @@ infer_type_rec(e).t_out |> pr # == "[T1 x [T1 x T1]->T2]->T2"
 # infer_type_rec(TAbs(TLocStr("b")))
 # TODO: Fix this mess ^
 
+e = TSumTerm(1, "op", TProd(Array{Term}([TGlobAuto("a"), TGlobAuto("b"),])) )
+infer_type_rec(e) |> pr_ctx
+
+# HEREEEEEEEEEE
+# e1 = TSumTerm(1, "op", TProd(Array{Term}([TGlobAuto("a"), TLocInt(1),])) )
+# e2 = TSumTerm(1, "op", TProd(Array{Term}([TLocInt(2), TGlobAuto("b"),])) )
+# e3 = TSumTerm(1, "eq", TProd(Array{Term}([TLocInt(2), TGlobAuto("c"),])) )
+# t = TTermAutoCtx(TProd(Array{Term}([TLocInt(1), TLocInt(1), TLocInt(1)])))
+# t |> pr_ctx
+# e = TAnno(TProd(Array{Term}([e1, e2, e3])), t )
+# infer_type_rec(e) |> pr_ctx |>println
+
 
 a1t = TTermEmpty(TTerm(TProd(Array{Pair{String, Term}}(["1" => TLocInt(1)])), TLocInt(1)))
 a2t = TTermEmpty(TTermEmpty(TGlob("B")))
@@ -740,34 +779,18 @@ infer_type_rec(e) |> pr_ctx  # YES my boy... YESSSS :)
 
 
 # NICE THINGS YOU CAN USE AS TESTS: I NEVER PROPERLY WRITE THEM DOWN THO:
-# e = TAnno(TLocStr("a"), TGlob("T"))
-# infer_type_rec(e) |> pr_ctx
-# # K really broken.. NOTE: before, the last  TLocInt(1) becomes TLocInt(2), in cas it can be helpful to know
-# e = TProd(Term[TLocStr("a"), TAnno(TLocStr("a"), TGlob("T"))])
-# infer_type_rec(e) |> pr_ctx
-# TLocStr("a") |> infer_type_rec |> pr_ctx
-# TAnno(TLocInt(1), TGlob("T")) |> infer_type_rec |> pr_ctx
-# # The simple one
-# e = TProd(Array{Term }([TLocStr("a"), TProdSingle(TLocStr("a"))]))
-# infer_type_rec(e) |> pr_ctx # GREAT
-# # The broken one
-# e = TProd(Term[TLocStr("a"), TLocStr("x"), TLocStr("y"), TAnno(TProd(Term[TAnno(TProd(Term[TLocStr("a"), TLocStr("x")]), TAbs(TSumTerm(3, "OP", TProd(Term[TLocInt(1), TLocInt(2)])), ["1", "2"])), TAnno(TProd(Term[TLocStr("a"), TLocStr("y")]), TAbs(TSumTerm(3, "OP", TProd(Term[TLocInt(1), TLocInt(2)])), ["1", "2"]))]), TAbs(TSumTerm(4, "EQ", TProd(Term[TLocInt(1), TLocInt(2)])), ["1", "2"])), TAnno(TProd(Term[TLocStr("a")]), TAbs(TSumTerm(2, "IV", TProd(Term[TLocInt(1)])), ["1"]))])
-# infer_type_rec(e) |> pr_ctx
-# # A bit shorter, still broken
-# e = TProd(Term[TLocStr("a"), TAnno(TProd(Term[TAnno(TProd(Term[TLocStr("a"), TLocStr("x")]), TAbs(TSumTerm(3, "OP", TProd(Term[TLocInt(1), TLocInt(2)])))), TAnno(TProd(Term[TLocStr("a"), TLocStr("y")]), TAbs(TSumTerm(3, "OP", TProd(Term[TLocInt(1), TLocInt(2)]))))]), TAbs(TSumTerm(4, "EQ", TProd(Term[TLocInt(1), TLocInt(2)]))))])
-# infer_type_rec(e) |> pr_ctx
-# # K starting to see the problem ...
-# e = TProd(Term[TLocStr("a"), TAnno(TProd(Term[TLocStr("a")]), TAbs(TSumTerm(3, "OP", TProd(Term[TLocInt(1)]))))])
-# infer_type_rec(e) |> pr_ctx
-# # K really broken.. NOTE: before, the last  TLocInt(1) becomes TLocInt(2), in cas it can be helpful to know
-# e = TProd(Term[TLocStr("a"), TAnno(TLocStr("a"), TAbs(TGlob("T")))])
-# infer_type_rec(e) |> pr_ctx
-# # K really broken.. NOTE: before, the last  TLocInt(1) becomes TLocInt(2), in cas it can be helpful to know
-# e = TProd(Term[TLocStr("a"), TAnno(TLocStr("a"), TGlob("T"))])
-# infer_type_rec(e) |> pr_ctx
-# # K really broken.. NOTE: before, the last  TLocInt(1) becomes TLocInt(2), in cas it can be helpful to know
-# e = TProd(Term[TLocInt(1), TAnno(TLocInt(1), TGlob("T"))])
-# infer_type_rec(e) |> pr_ctx
+e = TAnno(TLocStr("a"), TypeOfTLocStrReturning(TGlob("T"), "a"))
+@assert infer_type_rec(e) == TTerm(TProd(Term[], Pair{String, Term}["a" => TGlob("T", TypeUniverse())]), TGlob("T", TypeUniverse()))
+# K really broken.. NOTE: before, the last  TLocInt(1) becomes TLocInt(2), in cas it can be helpful to know
+e = TProd(Term[TLocStr("a"), TAnno(TLocStr("a"), TypeOfTLocStrReturning(TGlob("T"), "a"))])
+@assert infer_type_rec(e) == TTerm(TProd(Term[], Pair{String, Term}["a" => TGlob("T", TypeUniverse())]), TProd(Term[TGlob("T", TypeUniverse()), TGlob("T", TypeUniverse())], Pair{String, Term}[]))
+# The simple one
+e = TProd(Array{Term }([TLocStr("a"), TProdSingle(TLocStr("a"))]))
+@assert infer_type_rec(e) == TTerm(TProd(Term[], Pair{String, Term}["a" => TLocInt(1)]), TProd(Term[TLocInt(1), TProd(Term[TLocInt(1)], Pair{String, Term}[])], Pair{String, Term}[]))
+infer_type_rec(e) |> pr_ctx
+# K really broken.. NOTE: before, the last  TLocInt(1) becomes TLocInt(2), in cas it can be helpful to know
+e = TProd(Term[TLocInt(1), TAnno(TLocInt(1), TypeOfTLocIntReturning(TGlob("T")))])
+@assert infer_type_rec(e) == TTerm(TProd(Term[TGlob("T", TypeUniverse())], Pair{String, Term}[]), TProd(Term[TGlob("T", TypeUniverse()), TGlob("T", TypeUniverse())], Pair{String, Term}[]))
 
 
 
