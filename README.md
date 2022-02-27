@@ -16,14 +16,14 @@ Of course, none of the strongly typed languages are very productive *today*. Ket
 - **Incremental typechecking is Good**.
 - **Flexible, incremental parsing is Good**. Parsing the code incrementally while it's written instead of reparsing the whole codebase at every keystroke is harder (ironically) and supporting flexible and ambiguous syntaxes is theoretically much more inefficient. But both these things are much more ergonomic for the programmer, and modern computers are more than powerful enough to do it.
 - **Incremental, Jitted compilation**
-- **Reactive execution** (like in the [Pluto notebooks](https://github.com/fonsp/Pluto.jl) recently, and many other places before), because thus is the right way of building software.
+- **Reactive execution** (like in the [Pluto notebooks](https://github.com/fonsp/Pluto.jl) recently, and many other places before), because that is the right way of building software.
 - **(controlled) Incremental execution**: many compilers have compile time code execution, and I’m sure that many other compile time executions are performed implicitly as optimization passes. This is Good and nice, but it should be Controllable, Explicit, and still Seamless so that making the right decision (whether to compile time execute or not) is effortless and natural.
 - **Macros are a terrible idea**. When the previous point is properly implemented and the type system is powerful enough, pasting a different, weaker, much less ergonomic programming language on top of your programming language is a bad way of implementing code generation.
 - **A functional programming framework**. Mutation is not always bad and it’s sometimes unavoidable, but a functional *framework* makes everything more tidy. (Also, it’s much easier to implement a demo language if it’s functional. Sorry!😬) (Also note: this is not in Ket's scope but I believe a functional language can absolutely match imperative performance via by memory reusing, a concept that right now, for example, is being implemented in the [Roc](https://www.roc-lang.org/) language. That's a very good idea and it's great that it's been implemented! Roc looks like a really great project in many ways)
 
 # Things that Ket is NOT:
-- **a Programming language**: a CAP system is Much more general than that, and the idea that one has to learn a new syntax every time some guy wants to introduce some new innovation in programming, is Not the best we can do. How do you make this not happen: with a *flexible enough parser*, that can understand different flavour of syntax to express the same exact programming concepts that everybody uses. More of this later.
-- **a Graphical programming environment**. Idk why one would want to get rid of text, text is great. (NOTE: *AS an input device for coding.* this DOESN’T mean that saving code in .txt files makes any sense. The project that is  doing the best job with this is [Unison](https://www.unisonweb.org/))
+- **a Programming language**: a CAP system is more general than that: in particular, the idea that you have to learn a new syntax every time someone wants to introduce a new programming paradigm, is Not the best we can do. As a matter of fact, *decoupling the syntax layer from the computational behaviour of code* is one of the main goals of Ket. How do you make this happen: with a *flexible enough parser*, that can understand different flavour of syntax to express the same exact programming concepts that everybody uses. More of this later.
+- **a Graphical programming environment**. Idk why one would want to get rid of text, text is great. (NOTE: Text is great *As an input device* for coding. this DOESN’T mean that saving code in .txt files makes any sense. The project that is  doing the best job with this is [Unison](https://www.unisonweb.org/))
 
 
 
@@ -74,7 +74,7 @@ But, given the powerful (as in flexible) parser it features, the temptation to b
 
 -  **Some form of dependent types:** Even if they are really popular in type theory, full dependendent types might not be that great of an idea. Anyway, Ket doesnt have them at all, yet
 
- - **memory reusing:** An execution optimization engine with memory reusing to avoid FP slowness, again see [Roc](https://www.roc-lang.org/).
+ - **Memory reusing:** An execution optimization engine with memory reusing to avoid FP slowness, again see [Roc](https://www.roc-lang.org/).
  - **Heuristic parsing:** Incremental, interactive parsing is Good, but it Might get slow when there are thousands of syntactic rules around. Really, it's not even obvious that it will, but let's say it will. I’m fully convinced that a bit of (even very approximated) Bayesian statistics is a good enough heuristic to make the parser’s search routine usable and scalable.
 - **Integrations with other languages/libraries**: Hooks to let Ket talk to and from at least some of the major programming languages. This is an enormous task, completely impossible to complete, and nobody can do it alone. Yet, every piece added to it increases Ket's usefulness as a real world programming framework.
 
@@ -118,7 +118,7 @@ But for now, I’m happy with julia, for these reasons:
 - Good code style: After all, Julia spits out LLVM code. Unfortunately i think it’s mostly impossible to use it *as* llvm code, ie without the julia runtime, but it’d be great if it was possible. It’s Often well typed, and it’s even Often functional (in case you don’t know julia, by convention all functions whose name don’t end in ! are pure).
 - Powerful code generation and reflection capabilities. This allows even a demo like Ket to run at least Something.
 - Solid ML framework: as discussed above, a future direction of this project will very likely include some ML to guide code generation. Julia is the right language for that...
-- Related: the Codebase. Like, I won’t lie, Julia isnt even a bad language to target (as in, beyond the demo), because of how much great, useful code has been written in it now. By useful code i mean code that has real value: and by that i mean mostly mathematical code. When this whole decades long process of figuring out what our coding infrastructure is will end, we’ll find out that 99.9% of the code written around has no value. We Don’t need a thousand implementations of a web server. We Don’t need ginormous frameworks that only exist to glue together different frameworks ([like..](https://babeljs.io/))\
+- Related: the Codebase. Like, I won’t lie, Julia isnt even a bad language to target (as in, beyond the demo), because of how much great, useful code has been written in it by now. By useful code i mean code that has real value: and by that i mean mostly mathematical code. When this whole decades long process of figuring out what our coding infrastructure is will end, we’ll find out that 99.9% of the code written around has no value. We Don’t need a thousand implementations of a web server. We Don’t need ginormous frameworks that only exist to glue together different frameworks ([like..](https://babeljs.io/))\
 Here’s what we Do need, and has real value: *One* great differential equations package. *One* machine learning framework, written natively. *One* optimization package for each class of optimization problems. Etc. Julia is doing great with this.
 
 Now, to prove that I’m Not 100% a julia fanboy: I think it’s a Disgrace that this (by now) huge amount of very useful code has been written in a language with Dynamic dispatch. \
@@ -127,13 +127,13 @@ The whole Ket philosophy is that *doing things right is better in the long run t
 It’s practical, you say? Here’s what would be practical: if *entirely obvious compile time errors were signaled to me at compile time*, instead of hidden inside some huge run time call stack: *that* would be practical!
 
 
-## Dont you think programming will never be easier? Who are you, to say coding is mostly accidental complexity? How long have you been coding? Don’t you know real world is messier than your nice mathematical abstractions? We have our legacy codebases to miantain, you know… Etc
+## Don't you think programming will never be easier? Who are you, to say coding is mostly accidental complexity? How long have you been coding? Don’t you know real world is messier than your nice mathematical abstractions? We have our legacy codebases to maintain, you know… Etc
 So, the answer to the “Dont you think programming will never be easier?” question is: No, i don’t think that’s true. Despite what many programmers will tell you, [programming sucks](https://www.youtube.com/watch?v=MticYPfFRp8).
 
 Luckily it sucks in a entirely preventable way, and so it *will* change. At the cost of dumping huge enough language models onto it that GPUs learn to do it instead of us.
 
 It needs to be said that, even if many advancements have been made by thousands of great people throughout the decades, fixing programming once and for all unfortunately remains at the very bottom of *most* programmers’ priority list, for various reasons.\
-Some reasons are legitimate, like, legacy codebases to miantain are a thing.\
+Some reasons are legitimate, like, legacy codebases to maintain are a thing.\
 And yet, at the cost of sounding brunt, I’ll also add that many of the reasons are rubbish. There is a very real need for a more solid programming environement.
 Multiple generations trained in very specific technologies and frameworks that happen to be completely arbitrary and bound to become obsolete in a matter of decades (if lucky) or years (more likely), cannot be good for anyone!\
 *Exactly for this reason* we need a solid framework that removes accidental complexity, so it lasts for a while…
