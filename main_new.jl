@@ -135,6 +135,7 @@ function builder_typearrow(s::SyntaxInstChoice)
     # SyntaxChoicess["typearrow"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["typearrowPar"], SyntaxStrips["typearrowStrip"]]))
     if s.flag == 0 collect_fields(s.choice)["typearrowPar_inpar"]
     else foldr(build_anno_term_TTerm, collect_strip_tannos(s.choice)) end
+    # ^ That's right, I'm "Temporarely not unifying t_in's to bottom", apparently
 end
 
 function builder_funcApp(s::SyntaxInstStruct)::TAnno
@@ -143,9 +144,17 @@ function builder_funcApp(s::SyntaxInstStruct)::TAnno
     build_anno_term_TApp([fields["funcApp_arg"], fields["funcApp_func"]])
 end
 function builder_termannotated(s::SyntaxInstStruct)::TAnno
+    # VERY VERY VERY IMPORTANT POINT: There is (by choice) a DISCREPANCY between syntax and intenal representation.
+    # And here it is:     # If you have some term a(x), a proper way to annotate it would be X->A (say).
+    # BUT, in some syntax forms you might want to write a(x):A.
+    # In particular, in case of 1:([T1]->T1), You usually write 1:T1.
+    # And that's why it's done this way.
+
     # SyntaxStructs["termannotated"] = auto_SyntStruct(AUSS([SyntaxField("termannotated_anno_obj", TLocInt(1)), ":", SyntaxField("termannotated_anno_type", TLocInt(1))]))
     fields = collect_fields(s)
-    build_anno_term_TAnno(fields["termannotated_anno_obj"], fields["termannotated_anno_type"])
+    # OLD: build_anno_term_TAnno(fields["termannotated_anno_obj"], fields["termannotated_anno_type"])
+    TAnno(fields["termannotated_anno_obj"].expr, util_AnnoTypeOfObjReturning(fields["termannotated_anno_obj"].type, fields["termannotated_anno_type"].expr))
+
 end
 function builder_typedef(s::SyntaxInstStruct)::TAnno # For the :Type" syntax
     # SyntaxStructs["typedef"] = auto_SyntStruct(AUSS([SyntaxField("typedef_tname", TLocInt(1)), ":", "Type"]))
@@ -213,6 +222,10 @@ end
 tagged_prod(name::String, val::Term) = TProd(Array{Pair{Id, Term}}([name=>val]))
 # tagged_prod(name::String, val::Term) = reduc(TConc([TProd(Array{Term}([val])), TAbs(TProd(Array{Pair{Id, Term}}([name=>TLocInt(1)])))]))
 function build_app_stack(sorted_nodes::Array{Pair{String, TAnno}})::Array{TProd}
+    # Receives a program in the form of a list of clauses in the form "a= b.c"
+    # where a is the string and (say) b.c is the TAnno
+    # (these are supposed to be ALREADY sorted for execution order).
+    # Returns a TProd (TO TURN INTO A TAPP), of the form a.b.c.d where the intermadiate types are the APPROPRIATE CONTEXTS.
     root_tags = id_tags_tanned(children_wtypes(sorted_nodes[1]))
     steps = Array{TProd}([build_anno_term_TProd(Array{TAnno}([]); dict_anno=root_tags)])
     for (name, val) in sorted_nodes
@@ -408,6 +421,14 @@ getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
+text = "1:B"
+rp = RandomParser10("", [], s10);
+parse(rp, text)
+rp.structure|>trace
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
+
+s10 = make_s10();
 text = "A->B"
 rp = RandomParser10("", [], s10);
 parse(rp, text)
@@ -454,8 +475,8 @@ parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
-getBestObjects(rp.structure)[1].s|>getInferredTerm |>x->x.type
-rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
+# getBestObjects(rp.structure)[1].s|>getInferredTerm |>x->x.type
+# rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "{g(k)}"

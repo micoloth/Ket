@@ -586,6 +586,10 @@ e = TGlob("f", TTermAuto(TGlob("A"), TGlob("B")))
 @test infer_type_rec(e) == TTerm(TProd(Array{Term}([])), TTermAuto(TGlob("A"), TGlob("B")))
 
 e = TAnno(TLocInt(1), TypeOfTLocIntReturning(TGlob("A")))
+e |> x->pr_E(x; topLevel=true)
+e2 = TAnno(TLocInt(1), util_AnnoTypeOfObjReturning(infer_type_rec(TLocInt(1)), TGlob("A")))
+e2 |> x->pr_E(x; topLevel=true)
+
 @test infer_type_rec(e) == TTerm(TProd(Array{Term}([TGlob("A")])), TGlob("A"))
 
 e = TAnno(TLocInt(2), TypeOfTLocIntReturning(TGlob("A"); n_loc=2))

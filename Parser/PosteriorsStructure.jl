@@ -67,7 +67,7 @@ function addSyntax!(ps::PosteriorsStructure, s::String, obj::SyntaxCore)
     ps.allSyntaxes[s] =obj
 end
 function addGlobal!(ps::PosteriorsStructure, tglob::TGlob)
-    ps.globals[tglob.var] = (TAnno(tglob, tglob.type), 1) # Yes pretty effin wasteful, but ok
+    ps.globals[tglob.var] = (TAnnoAuto(tglob), 1) # Yes pretty effin wasteful, but ok
 end
 function addGlobal!(ps::PosteriorsStructure, s::String, tanno::TAnno)
     ps.globals[s] = (tanno, 1) # Yes pretty effin wasteful, but ok

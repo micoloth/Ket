@@ -73,9 +73,6 @@ err_msg_strings(t1::Term, t2::Term) = "Different strings"
 err_msg_recursive(tloc, t) = Error("$(tloc) == $(t) is not a thing (recursive)")
 
 
-append!([1,2], [1,3], [3,4])
-
-
 @enum Unify_mode meet_ = 1 join_ = 2 implydir_ = 3 implyrev_ = 4
 flip_dic = Dict{Unify_mode, Unify_mode}(meet_=> join_, join_=>meet_, implydir_=>implyrev_, implyrev_=>implydir_)
 flip(m::Unify_mode) = flip_dic[m]
@@ -1073,18 +1070,34 @@ function TTermAutoCtx(t::Term; n_locs_before=0)
     return TTerm(TProd(ctx_data, ctx_tags), t)
 end
 
+
+function util_AnnoTypeOfObjReturning(computed_type_of_obj::TTerm, returning::Term)::TTerm
+    # If you have some term a(x), a proper way to annotate it would be X->A (say).
+    # BUT, in some syntax forms you might want to write a(x):A.
+    # In particular, in case of 1:([T1]->T1), You usually write 1:T1.
+    # This helper function taker returning=A and returns X->A.
+    unif_res = robinsonUnify(computed_type_of_obj.t_out, returning; mode=implydir_)
+    t_in = if unif_res.preSubst1 === nothing computed_type_of_obj.t_in else ass_reduc(computed_type_of_obj.t_in, unif_res.preSubst1) end
+    res = TTerm(t_in, unif_res.res)
+    if failed_unif_res(unif_res)
+        res1 = if unif_res.preSubst1 === nothing computed_type_of_obj.t_out else ass_reduc(computed_type_of_obj.t_out, unif_res.preSubst1) end
+        res2 = if unif_res.preSubst2 === nothing returning else ass_reduc(returning, unif_res.preSubst2) end
+        res = TermwError(res, Error("Wrong annotation: You are trying to unify '$(res1|>pr)' into '$(res|>pr)'. Resulting errors: [$(pr(unif_res.errors))]"))
+    end
+    res
+end
+
 function TypeOfTLocIntReturning(t::Term; n_loc=1)
     T = infer_type_rec(TLocInt(n_loc))
-    ctx_pre = Array{Term}([TLocInt(i) for i in 1:n_loc-1])
-    push!(ctx_pre, t)
-    ass_reduc(T, TProd(ctx_pre))
+    util_AnnoTypeOfObjReturning(T, t)
 end
 
 function TypeOfTLocStrReturning(t::Term, name::Id)
     T = infer_type_rec(TLocStr(name))
-    ctx_pre = Array{Term}([t])
-    ass_reduc(T, TProd(ctx_pre))
+    util_AnnoTypeOfObjReturning(T, t)
 end
+
+
 
 
 TAnnoEmptyTT(t::Term) = TAnno(t, infer_type_rec(t))

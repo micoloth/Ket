@@ -18,6 +18,8 @@ empty(s::StackableChance)::Bool = s.what === nothing
 # int getFrom() { return from; }
 # int getTo() { return to; }
 
+getString(s::StackableChance) = s.what.object |> trace
+
 
 
 struct StackableFinishedSyntax <: StackableBoid
@@ -31,6 +33,8 @@ struct StackableFinishedSyntax <: StackableBoid
 end
 getP(s::StackableFinishedSyntax) = getP(s.whatFinished.s)
 empty(s::StackableFinishedSyntax)::Bool = false
+getString(s::StackableFinishedSyntax) = s.whatFinished.s |> trace
+
 
 # int getFrom() { return from; }
 # int getTo() { return to; }
@@ -44,6 +48,7 @@ struct StackableObject <: StackableBoid
 end
 getP(s::StackableObject) = getP(s.whatFinished)
 empty(s::StackableObject)::Bool = false
+getString(s::StackableFinishedSyntax) = s.whatFinished.s |> trace
 
 
 mutable struct StackOfChances

@@ -246,7 +246,7 @@ end
 getInferredTerm(s::SyntaxInstReference)::TAnno = TAnno(TLocStr(s.text), TTerm(TProd(Array{Pair{Id, Term}}([s.text => s.type])), s.type))
 getInferredType(s::SyntaxInstReference)::Term = TTermAuto(s.type, s.type)
 
-getInferredTerm(s::SyntaxInstSimpleString)::TAnno = TAnno(TStr(s.text), TS())
+getInferredTerm(s::SyntaxInstSimpleString)::TAnno = TAnno(TStr(s.text), TTermEmpty(TS()))
 getInferredType(s::SyntaxInstSimpleString)::Term = TTermEmpty(TS()) # OR TS()
 # OR, strinType=TypeSumTerm("String", 2, TTop()) for the type, MAYBE???
 
