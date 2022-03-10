@@ -19,7 +19,7 @@ end
 RandomParser10() = RandomParser10("", [], Structure11())
 
 
-parse(prs::RandomParser10, s::String) = updateInput(prs, s)
+do_parse(prs::RandomParser10, s::String) = updateInput(prs, s)
 function updateInput(prs::RandomParser10, newText::String)
     if (prs.inputText == newText) return end
     prs.inputText = newText
@@ -37,6 +37,7 @@ function matchTerminals(prs::RandomParser10, from_::Int, end_::Int)  # # [..)
 		if (t[1] !== nothing) insertTerminal(prs.structure, i, i+1, t[1], t[2]) end
         t = getGlobal(prs.structure.posteriorsStructure, prs.inputVec[i+1]) # TODO CHECK what the type of this is !!!! Should be a Pair, at least
 		if (t[1] !== nothing) insertGlobal(prs.structure, i, i+1, prs.inputVec[i+1], t[1], t[2]) end
+        if tryparse(Int, prs.inputVec[i+1]) !== nothing  insertNumber(prs.structure, i, i+1, prs.inputVec[i+1], 0.5)  end # Add numbers
     end
 end
 

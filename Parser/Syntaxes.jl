@@ -10,6 +10,9 @@ end
 struct SyntaxSimpleString <: SyntaxCore
 	name::String
 end
+struct SyntaxSimpleNumber <: SyntaxCore
+end
+
 
 struct SyntaxField <: SyntaxCore
 	name::String  # //field name
@@ -38,6 +41,7 @@ SyntaxStrip(obj::SyntaxCore, comma::SyntaxCore) = SyntaxStrip(nothing, obj, comm
 
 getString(s::SyntaxTerm)::String = s.name
 getString(s::SyntaxSimpleString)::String = "STRING"
+getString(s::SyntaxSimpleNumber)::String = "NUM"
 getString(s::SyntaxField)::String = "#F{$(s.name):$(s.type|>pr_T)}"  # //gets FIELD name
 getString(s::SyntaxChoice)::String = "#C(" * join(s.list .|> getString, " or ") * ")"
 getString(s::SyntaxStruct)::String = join(s.list .|> getString, " ")

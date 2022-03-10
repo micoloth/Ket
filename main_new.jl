@@ -84,7 +84,7 @@ include("Parser/RandomParser10.jl")
 
 # s10 = Structure11()
 # rp = RandomParser10("", [], s10)
-# parse(rp, "+")
+# do_parse(rp, "+")
 # rp.structure|>trace
 
 
@@ -119,7 +119,7 @@ include("Parser/RandomParser10.jl")
 # text = "->"
 
 # rp = RandomParser10("", [], s10);
-# parse(rp, text)
+# do_parse(rp, text)
 # rp.structure|>trace
 
 
@@ -406,7 +406,7 @@ end
 # s10 = make_s10();
 # text = "{return [a,t]; t:A = {2}(1=b, 2=a)}"
 # rp = RandomParser10("", [], s10);
-# parse(rp, text)
+# do_parse(rp, text)
 # rp.structure|>trace
 # getBest(rp.structure)[1] |> (x->trace(x; top=true))
 
@@ -415,7 +415,7 @@ end
 s10 = make_s10();
 text = "b"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -423,15 +423,22 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "1:B"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
+
+s10 = make_s10();
+text = "3"
+rp = RandomParser10("", [], s10);
+do_parse(rp, text)
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "A->B"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -439,7 +446,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "(A->B->C)"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -447,7 +454,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "((A->B)->B)"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -455,7 +462,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "g(e)"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -463,7 +470,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "g(e):B"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -471,7 +478,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "[k:A x h:B]"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -481,7 +488,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "{g(k)}"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -489,7 +496,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "f(k=h, d=e)"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -497,7 +504,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "f(z=n)(k=h)"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -505,7 +512,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "{1(3)(2(3))}"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -513,7 +520,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "{1(3)(2(3))}(1={1}, 2={b}, 3=a)"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -522,7 +529,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "f|g"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -531,7 +538,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "f|g|{1}"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -539,7 +546,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "{2}|f|g"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
@@ -548,7 +555,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 s10 = make_s10();
 text = "f|g| {[x, x]}"
 rp = RandomParser10("", [], s10);
-parse(rp, text)
+do_parse(rp, text)
 rp.structure|>trace
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println

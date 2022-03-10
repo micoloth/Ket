@@ -76,6 +76,7 @@ end
 
 function initializeMarginals(ps::PosteriorsStructure)
     for (_, s) in ps.allSyntaxes ps.marginals[s] = 1.0/ length(ps.allSyntaxes) end
+    ps.marginals[SyntaxSimpleNumber()]  = 0.5   # SO RANDOM
 end
 
 function initializeChoices(ps::PosteriorsStructure)

@@ -326,6 +326,15 @@ function insertTerminal(S::Structure11, from::Int, to::Int, what::SyntaxTerm, P:
     insert!(S.stack, P, temp2)
 end
 
+function insertNumber(S::Structure11, from::Int, to::Int, s::String, P::Real)
+    temp1 = SyntaxInstOwner(SyntaxInstSimpleNumber(SyntaxSimpleNumber(), s, P))
+    temp2 = StackableFinishedSyntax(temp1, from,to)
+    insert!(S.stack, P, temp2)
+    temp3 = SyntaxInstOwner(SyntaxInstObject(temp1.s, 0.5, getInferredTerm(temp1.s)))
+    # THE ALTERNATIVE HERE IS TO CREATE A PROPER SyntaxField-based Int that takes s SInt and returns a TInt, if that makes sense. I wont
+    add(S.finisheds, from, to, temp3)  #//to EXCLUDED,
+end
+
 function insertGlobal(S::Structure11, from::Int, to::Int, s::String, what::TAnno, P::Real)
     temp1 = SyntaxInstOwner(SyntaxInstObject(SyntaxInstReference(what, s, P), P, what)) # GOD this is wasteful... It really sucks ahahaha
     if size(S) < to

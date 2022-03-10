@@ -4,7 +4,7 @@ include("Syntaxes.jl")
 
 abstract type SyntaxInst end
 abstract type Accepted_SynatxInst_type <: SyntaxInst end
-# ^ SyntaxInstObject, SyntaxInstReference, SyntaxInstSimpleString <: Accepted_SynatxInst_type;
+# ^ SyntaxInstObject, SyntaxInstReference, SyntaxInstSimpleString, SyntaxInstSimpleNumber <: Accepted_SynatxInst_type;
 abstract type SyntaxInstProduct <: SyntaxInst end
 
 wouldFit(si::SyntaxInst, s::SyntaxCore)::Bool = si.name == s
@@ -32,6 +32,15 @@ struct SyntaxInstSimpleString <: Accepted_SynatxInst_type
 	P::Real # //What is this, really? Prob a constant? Or >>1<<?
     # ^ This has the very simple form TAnno(TStr(text), TS())
 end
+
+struct SyntaxInstSimpleNumber <: Accepted_SynatxInst_type
+    # //it's a number
+	name::SyntaxSimpleNumber
+	text::String
+	P::Real # //What is this, really? Prob a constant? Or >>1<<?
+    # ^ This has the very simple form TAnno(TStr(text), TS())
+end
+
 
 struct SyntaxInstObject <: Accepted_SynatxInst_type
     # //a syntax that results in a obj
@@ -87,6 +96,7 @@ end
 getP(s::SyntaxInstTerm)::Real = s.P
 getP(s::SyntaxInstReference)::Real = s.P
 getP(s::SyntaxInstSimpleString)::Real = s.P
+getP(s::SyntaxInstSimpleNumber)::Real = s.P
 getP(s::SyntaxInstObject)::Real = s.PofObjectAndBelowGivenBelow
 getP(s::SyntaxInstField)::Real = s.PofThisAndBelowGivenBelow
 getP(s::SyntaxInstChoice)::Real = s.PofThisAndBelowGivenBelow
@@ -96,6 +106,7 @@ getP(s::SyntaxInstStrip)::Real = s.PofThisAndBelowGivenBelow
 trace(s::SyntaxInstTerm; top=false)::String = getString(s.name)
 trace(s::SyntaxInstReference; top=false)::String = s.text
 trace(s::SyntaxInstSimpleString; top=false)::String = s.text
+trace(s::SyntaxInstSimpleNumber; top=false)::String = s.text
 trace(s::SyntaxInstObject; top=false)::String = (
     "FOUND{$(trace(s.syntax))" *
     (top ? (" (inferred to a $(s.inferred_obj.expr|>typeof) obj, $(s.inferred_obj.expr|>pr_E) of type $(s.inferred_obj.type|>pr))})}") : "}"))
@@ -107,6 +118,7 @@ trace(s::SyntaxInstStrip; top=false)::String = "(" * join(s.list .|> trace, " ")
 deepEqual(s::SyntaxInstTerm, other::SyntaxInst)::Bool = other isa SyntaxInstTerm && s.name == other.name
 deepEqual(s::SyntaxInstReference, other::SyntaxInst)::Bool = other isa SyntaxInstReference && s.type === other.type && s.name == other.name
 deepEqual(s::SyntaxInstSimpleString, other::SyntaxInst)::Bool = other isa SyntaxInstSimpleString && s.text == other.text
+deepEqual(s::SyntaxInstSimpleNumber, other::SyntaxInst)::Bool = other isa SyntaxInstSimpleNumber && s.text == other.text
 deepEqual(s::SyntaxInstObject, other::SyntaxInst)::Bool = other isa SyntaxInstObject && other.inferred_obj === getInferredTerm(s) && deepEqual(s.syntax, other.syntax)
 deepEqual(s::SyntaxInstField, other::SyntaxInst)::Bool = other isa SyntaxInstField && s.name == other.name
 # // LOL THIS WILL BE WRONG IN THE FUTURE ^
@@ -120,6 +132,7 @@ deepEqual(s::SyntaxInstStrip, other::SyntaxInst)::Bool = other isa SyntaxInstStr
 syntLength(s::SyntaxInstTerm)::Int = 1
 syntLength(s::SyntaxInstReference)::Int = 1
 syntLength(s::SyntaxInstSimpleString)::Int = 1
+syntLength(s::SyntaxInstSimpleNumber)::Int = 1
 syntLength(s::SyntaxInstObject)::Int = syntLength(s.syntax)
 syntLength(s::SyntaxInstField)::Int = syntLength(s.objectFound)
 syntLength(s::SyntaxInstChoice)::Int = syntLength(s.choice)
@@ -129,6 +142,7 @@ syntLength(s::SyntaxInstStrip)::Int = s.list .|> syntLength |> sum
 getMainComponents(s::SyntaxInstTerm, level)::Array{SyntaxInstObject} = []
 getMainComponents(s::SyntaxInstReference, level)::Array{SyntaxInstObject} = []
 getMainComponents(s::SyntaxInstSimpleString, level)::Array{SyntaxInstObject} = []
+getMainComponents(s::SyntaxInstSimpleNumber, level)::Array{SyntaxInstObject} = []
 getMainComponents(s::SyntaxInstObject, level)::Array{SyntaxInstObject} = level==0 ? [] : [s, getMainComponents(s, level - 1)...]
 getMainComponents(s::SyntaxInstField, level)::Array{SyntaxInstObject} = level==0 ? [] : getMainComponents(s.objectFound, level)
 getMainComponents(s::SyntaxInstChoice, level)::Array{SyntaxInstObject} = level==0 ? [] : getMainComponents(s.choice, level)
@@ -138,6 +152,7 @@ getMainComponents(s::SyntaxInstStrip, level)::Array{SyntaxInstObject} = level==0
 re_pr(s::SyntaxInstTerm)::String = s.name.name
 re_pr(s::SyntaxInstReference)::String = s.text
 re_pr(s::SyntaxInstSimpleString)::String = s.text
+re_pr(s::SyntaxInstSimpleNumber)::String = s.text
 re_pr(s::SyntaxInstObject)::String = re_pr(s.syntax)
 re_pr(s::SyntaxInstField)::String = re_pr(s.objectFound)
 re_pr(s::SyntaxInstChoice)::String = re_pr(s.choice)
@@ -198,6 +213,7 @@ end
 collect_fields(s::SyntaxInstTerm)::Dict{String, TAnno} = Dict{String, TAnno}()
 collect_fields(s::SyntaxInstReference)::Dict{String, TAnno} = Dict{String, TAnno}()
 collect_fields(s::SyntaxInstSimpleString)::Dict{String, TAnno} = Dict{String, TAnno}()
+collect_fields(s::SyntaxInstSimpleNumber)::Dict{String, TAnno} = Dict{String, TAnno}()
 collect_fields(s::SyntaxInstObject)::Dict{String, TAnno} = Dict{String, TAnno}()
 collect_fields(s::SyntaxInstField)::Dict{String, TAnno} = Dict{String, TAnno}(s.name.name=>getObjFoundFromAccepted(s.objectFound; as_type=s.name.type))
 collect_fields(s::SyntaxInstChoice)::Dict{String, TAnno} = collect_fields(s.choice)
@@ -208,6 +224,7 @@ end
 collect_simpleStrings(s::SyntaxInstTerm)::Dict{String, String} = Dict{String, String}()
 collect_simpleStrings(s::SyntaxInstReference)::Dict{String, String} = Dict{String, String}()
 collect_simpleStrings(s::SyntaxInstSimpleString)::Dict{String, String} = Dict{String, String}(s.name.name=>s.text)
+collect_simpleStrings(s::SyntaxInstSimpleNumber)::Dict{String, String} = Dict{String, String}()
 collect_simpleStrings(s::SyntaxInstObject)::Dict{String, String} = Dict{String, String}()
 collect_simpleStrings(s::SyntaxInstField)::Dict{String, String} = Dict{String, String}()
 collect_simpleStrings(s::SyntaxInstChoice)::Dict{String, String} = collect_simpleStrings(s.choice)
@@ -222,6 +239,7 @@ end
 collect_objs(s::SyntaxInstTerm) = nothing
 collect_objs(s::SyntaxInstReference) = s
 collect_objs(s::SyntaxInstSimpleString) = s
+collect_objs(s::SyntaxInstSimpleNumber) = s
 collect_objs(s::SyntaxInstObject) = s
 collect_objs(s::SyntaxInstField) = collect_objs(s.objectFound)
 collect_objs(s::SyntaxInstChoice) = nothing
@@ -244,13 +262,15 @@ function getObjFoundFromAccepted(s::Accepted_SynatxInst_type; as_type::Union{Not
 end
 
 getInferredTerm(s::SyntaxInstReference)::TAnno = TAnno(TLocStr(s.text), TTerm(TProd(Array{Pair{Id, Term}}([s.text => s.type])), s.type))
-getInferredType(s::SyntaxInstReference)::Term = TTermAuto(s.type, s.type)
+getInferredType(s::SyntaxInstReference)::Term = TTerm(TProd(Array{Pair{Id, Term}}([s.text => s.type])), s.type)
 
 getInferredTerm(s::SyntaxInstSimpleString)::TAnno = TAnno(TStr(s.text), TTermEmpty(TS()))
-getInferredType(s::SyntaxInstSimpleString)::Term = TTermEmpty(TS()) # OR TS()
+getInferredType(s::SyntaxInstSimpleString)::Term = TTermEmpty(TS())
 # OR, strinType=TypeSumTerm("String", 2, TTop()) for the type, MAYBE???
+
+getInferredTerm(s::SyntaxInstSimpleNumber)::TAnno = (n = parse(Int, s.text); TAnno(TInt(n), TTermEmpty(TInt(n + 1))))
+getInferredType(s::SyntaxInstSimpleNumber)::Term = TTermEmpty(TInt(parse(Int, s.text) + 1))
+# OR, strinType=TN(), maybe???
 
 getInferredTerm(s::SyntaxInstObject)::TAnno = s.inferred_obj
 getInferredType(s::SyntaxInstObject)::Term = s.inferred_obj.type
-
-
