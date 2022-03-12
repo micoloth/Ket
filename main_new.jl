@@ -193,6 +193,10 @@ function builder_concat_dot(s::SyntaxInstStrip)
     # SyntaxStrips["concat_dot"] = auto_SyntStrip(nothing, SyntaxField("typearrowStrip_first", TTerm(TLocInt(1), TLocInt(2))), ".", nothing)
     build_anno_term_TConc(collect_strip_tannos(s))
 end
+function builder_int_sum(s::SyntaxInstStrip)
+    # SyntaxStrips["concat_dot"] = auto_SyntStrip(nothing, SyntaxField("typearrowStrip_first", TTerm(TLocInt(1), TLocInt(2))), ".", nothing)
+    build_anno_term_TApp([build_anno_term_TProd(collect_strip_tannos(s)), TAnnoEmptyTT(tglob_sum)])
+end
 
 using Graphs, MetaGraphs
 parent_(node::Pair{String, TAnno}) = node[1]
@@ -289,6 +293,7 @@ end
 # function references_handler(d::Array{Dict})
 
 
+tglob_sum = TGlob("sum", TTerm(TProd(Array{Term}([TN(), TN()])), TN()))
 
 function make_s10()
     s10 = Structure11()
@@ -339,7 +344,7 @@ function make_s10()
     AUSS = Array{Union{String, SyntaxCore}}
 
     # SyntaxStructs["typearrow_nopar"] = auto_SyntStruct(AUSS[SyntaxField("first", TLocInt(1)), SyntaxStructs["arrow"], SyntaxField("second", TLocInt(1))])
-    SyntaxStructs["arrow"] = SyntaxStruct(Array{SyntaxCore}([SyntaxTerms["-"], SyntaxTerms[">"]]))
+    SyntaxStructs["arrow"] = auto_SyntStruct(AUSS(["-", ">"]))
     SyntaxStrips["typearrowStrip"] = auto_SyntStrip(nothing, SyntaxField("typearrowStrip_first", TLocInt(1)), SyntaxStructs["arrow"], nothing)
     SyntaxStructs["typearrowPar"] = auto_SyntStruct(AUSS(["(", SyntaxField("typearrowPar_inpar", TLocInt(1)), ")"]))
     SyntaxChoicess["typearrow"] = SyntaxChoice(Array{SyntaxCore}([SyntaxStructs["typearrowPar"], SyntaxStrips["typearrowStrip"]]))
@@ -376,8 +381,13 @@ function make_s10()
     SyntaxStrips["programFlowInPars"] = auto_SyntStrip(SyntaxTerm("{"), SyntaxChoicess["namedTypedObj_or_returnObj"], SyntaxTerm(";"), SyntaxTerm("}"))
     bindings["programFlowInPars"] = [builder_programFlowInPars]
 
-    SyntaxStrips["concat_dot"] = auto_SyntStrip(nothing, SyntaxField("concat_dot_func", TTerm(TLocInt(1), TLocInt(2))), "|", nothing)
+    SyntaxStrips["concat_dot"] = auto_SyntStrip(nothing, SyntaxField("concat_dot_func", TTerm(TLocInt(1), TLocInt(2))), ".", nothing)
     bindings["concat_dot"] =[builder_concat_dot]
+    # SyntaxStrips["funcConc"] = auto_SyntStrip(nothing,  SyntaxField("funcConc_func", TLocInt(1)), SyntaxTerm("."), nothing)
+    # bindings["funcConc"] = [builder_funcConc]
+
+    SyntaxStrips["int_sum"] = auto_SyntStrip(nothing, SyntaxField("int_sum_addend", TN()), "+", nothing)
+    bindings["int_sum"] =[builder_int_sum]
     # SyntaxStrips["funcConc"] = auto_SyntStrip(nothing,  SyntaxField("funcConc_func", TLocInt(1)), SyntaxTerm("."), nothing)
     # bindings["funcConc"] = [builder_funcConc]
 
@@ -399,6 +409,7 @@ function make_s10()
     addGlobal!(s10p, TGlobAutoCtx("a"))
     addGlobal!(s10p, TGlobAutoCtx("b"))
     addGlobal!(s10p, TGlobAutoCtx("c"))
+    addGlobal!(s10p, tglob_sum)
     s10
 end
 
@@ -421,7 +432,7 @@ getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
-text = "1:B"
+text = "x:B"
 rp = RandomParser10("", [], s10);
 do_parse(rp, text)
 rp.structure|>trace
@@ -430,6 +441,13 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
 text = "3"
+rp = RandomParser10("", [], s10);
+do_parse(rp, text)
+getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
+rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
+
+s10 = make_s10();
+text = "3 + 5"
 rp = RandomParser10("", [], s10);
 do_parse(rp, text)
 getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
@@ -527,7 +545,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 
 s10 = make_s10();
-text = "f|g"
+text = "f.g"
 rp = RandomParser10("", [], s10);
 do_parse(rp, text)
 rp.structure|>trace
@@ -536,7 +554,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 
 s10 = make_s10();
-text = "f|g|{1}"
+text = "f.g.{1}"
 rp = RandomParser10("", [], s10);
 do_parse(rp, text)
 rp.structure|>trace
@@ -544,7 +562,7 @@ getBestObjects(rp.structure)[1] |> (x->trace(x; top=true))
 rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 s10 = make_s10();
-text = "{2}|f|g"
+text = "{2}.f.g"
 rp = RandomParser10("", [], s10);
 do_parse(rp, text)
 rp.structure|>trace
@@ -553,7 +571,7 @@ rp.structure |> getBestOptions .|> re_pr_nicely |> x->join(x, "\n") |> println
 
 
 s10 = make_s10();
-text = "f|g| {[x, x]}"
+text = "f.g. {[x, x]}"
 rp = RandomParser10("", [], s10);
 do_parse(rp, text)
 rp.structure|>trace

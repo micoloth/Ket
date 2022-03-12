@@ -169,6 +169,10 @@ function set(FS::FinishedsStructure10, from::Int, to::Int, what)
     FS.matrix[from+1][(to-1)-from+1] = what  # //to EXCLUDED
 end
 function add(FS::FinishedsStructure10, from::Int, to::Int, what)
+
+    # println("\n\nlength: ", length(FS.matrix), " " , length(FS.matrix[1]), " " , length(FS.matrix[3]))
+    # println("from to: ", from, to)
+    # trace(FS)
     push!(FS.matrix[from+1][(to-1)-from+1], what)  # //to EXCLUDED
 end
 
@@ -216,7 +220,7 @@ function all_objects_beginning_at_that_can_be_a(FS::FinishedsStructure10, from::
     if !(field isa SyntaxField) return v end
     for (obj, to) in EverythingBeginningAt(FS, from)
         if obj.s isa SyntaxInstObject && can_be_a(getType(field), getInferredType(obj.s).t_out)
-            push!(v, (obj.s, to))
+            push!(v, (obj.s, to-1))   # <<<<<<<<<<<<<<<< IS THIS RIGHT ??????????????????????????????????????????
         end
     end
     v
