@@ -48,7 +48,7 @@ struct StackableObject <: StackableBoid
 end
 getP(s::StackableObject) = getP(s.whatFinished)
 empty(s::StackableObject)::Bool = false
-getString(s::StackableFinishedSyntax) = s.whatFinished.s |> trace
+getString(s::StackableObject) = "OBJ" * (s.whatObject.syntax |> trace)
 
 
 mutable struct StackOfChances

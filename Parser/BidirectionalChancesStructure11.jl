@@ -127,7 +127,9 @@ function fields_needsBefore_obj(hc::HangingChance10, obj::SyntaxInstObject)::Arr
 end
 function fields_needsNext_obj(hc::HangingChance10, obj::SyntaxInstObject)::Array{SyntaxField}
     v = getWhatNeedsNext(hc)
-    return filter(x-> x isa SyntaxField && can_be_a(getType(x), getInferredType(obj).t_out), v)
+    inferred = getInferredType(obj)
+    t_out = if inferred isa TermwError inferred.term.t_out else inferred.t_out end
+    return filter(x-> x isa SyntaxField && can_be_a(getType(x), t_out), v)
 end
 
 

@@ -436,7 +436,7 @@ ass_reduc(c::ErrorConstraint, ts::TProd...) = ErrorConstraint(ass_reduc(c.t1, ts
 
 id_data(current_arity) = Array{Term}([TLocInt(i) for i in 1:current_arity])
 id_tags(current_tags) = Array{Pair{Id, Term}}([i => TLocStr(i) for i in current_tags])
-id_tags_tanned(current_tags_w_type::Array{Pair{Id, Term}}) = Array{Pair{Id, TAnno}}([k => Tanno(TLocStr(k), type) for (k,type) in current_tags_w_type])
+id_tags_tanned(current_tags_w_type::Array{Pair{Id, Term}})::Array{Pair{Id, TAnno}} = Array{Pair{Id, TAnno}}([k => TAnno(TLocStr(k), type) for (k,type) in current_tags_w_type])
 
 struct Arity
     data::Int
@@ -456,13 +456,13 @@ function get_full_subst(tloc::TLocInt, tt::Term, curr_arity::Arity)::TProd
     prod = TProd(prod, id_tags(curr_arity.tags))
     prod.data[tloc.var] = ass_reduc(tt, prod)
     prod
-end  # THIS IS DIFFERENT IN VAR VS VAR_TAG #
+end
 function get_full_subst(tloc::TLocStr, tt::Term, curr_arity::Arity)::TProd
     # you have ALREADY TESTED that tt does not contain tloc, that's the whole point !!!!
     subst = id_tags(curr_arity.tags)
     subst[findfirst(subst.|> (x->x[1]==tloc.var))] = (tloc.var=>tt) # i'm PRETENDING THAT tt DOES NOT CONTAIN var
     TProd(id_data(curr_arity.data), subst)
-end  # THIS IS DIFFERENT IN VAR VS VAR_TAG #
+end
 get_full_subst(s::SparseSubst, curr_arity::Arity) = get_full_subst(s.t1, s.t2, curr_arity)
 
 function share_ctx_tlocs_names_get_substs(t1arity::Arity, t2arity::Arity)
@@ -520,7 +520,7 @@ function robinsonUnify(t1::TAbs, t2::TAbs, t1arity::Arity, t2arity::Arity; unify
     t1, t2 = t1.body|>reduc, t2.body|>reduc
 
     # 1. Share TLocs
-    if unify_tlocs_ctx # THIS IS DIFFERENT IN VAR VS VAR_TAG # IS IT ENOUGH TO NOT DO THIS ???? #
+    if unify_tlocs_ctx # IS IT ENOUGH TO NOT DO THIS ???? #
         current_arity = Arity(t1arity.data + t2arity.data, union(t1arity.tags, t2arity.tags))
         s1, s2 = share_ctx_tlocs_names_get_substs(t1arity, t2arity)
         t2 = ass_reduc(t2, s2) # s1 SHOULD always be Id
@@ -1097,6 +1097,8 @@ function TypeOfTLocStrReturning(t::Term, name::Id)
     util_AnnoTypeOfObjReturning(T, t)
 end
 
+TLocIntAnnotated(n::Index, t::Term) = TAnno(TLocInt(n), TypeOfTLocIntReturning(t; n_loc=n))
+TLocStrAnnotated(n::Id, t::Term) = TAnno(TLocStr(n), TypeOfTLocStrReturning(t, n))
 
 
 

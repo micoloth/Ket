@@ -140,6 +140,7 @@ TGlob(var::Id) = TGlob(var, TypeUniverse())
 TGlobAuto(var::Id) = TGlob(var, TGlob(uppercase(var)))
 TGlobAutoCtx(var::Id) = TGlob(var, TTermEmpty(TGlob(uppercase(var))))
 TIndVar() = TIndVar(nothing)
+TPostOne(body::Term) = TPost(1, body)
 
 # detag(t::TGlob) = TGlob(t.var, detag(t.type))
 # detag(t::TLocInt) = TLocInt(t.var)
@@ -579,6 +580,7 @@ errors(t::TermwError)::Array{Error} = [t.error]
 
 
 
+activate!(base::TInd, t::TIndVar) = (t.parent = base; return;)
 activate!(base::TInd, t::TGlob) = return;
 activate!(base::TInd, t::TLocInt) = return;
 activate!(base::TInd, t::TLocStr) = return;
@@ -587,7 +589,6 @@ activate!(base::TInd, t::TypeUniverse) = return;
 activate!(base::TInd, t::TN) = return;
 activate!(base::TInd, t::TS) = return;
 activate!(base::TInd, t::TInt) = return;
-activate!(base::TInd, t::TIndVar) = (t.parent = base; return;)
 activate!(base::TInd, t::TInd) = return;
 activate!(base::TInd, t::TIntSum) = (t.ns .|> (x->activate!(base, x)); return;)
 activate!(base::TInd, t::TIntProd) = (t.ns .|> (x->activate!(base, x)); return;)

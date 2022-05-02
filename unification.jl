@@ -30,38 +30,38 @@ end
 pr(x::FreeVar)::String = "F$(x.n)"
 pr(x::LocalVar)::String = "_$(x.n)"
 pr(x::MetaVar)::String = "M$(x.n)"
-pr(x::Uni)::String = "T" 
-pr(x::Ap)::String = "("*pr(x.l)*" "*pr(x.r)*")" 
-pr(x::Lam)::String = "/{"*pr(x.body)*"}" 
-pr(x::Pi)::String = "("*pr(x.from)*"->"*pr(x.to)*")" 
+pr(x::Uni)::String = "T"
+pr(x::Ap)::String = "("*pr(x.l)*" "*pr(x.r)*")"
+pr(x::Lam)::String = "/{"*pr(x.body)*"}"
+pr(x::Pi)::String = "("*pr(x.from)*"->"*pr(x.to)*")"
 
 pr(Ap(Lam(LocalVar(1)), FreeVar(2)))
 
 
 ########################################## raise
 
-raise_(base::Int, i::Int, t::FreeVar)::FreeVar = t 
-raise_(base::Int, i::Int, t::MetaVar)::MetaVar = t 
-raise_(base::Int, i::Int, t::Uni)::Uni = t 
-raise_(base::Int, i::Int, t::LocalVar)::LocalVar = if i>0 LocalVar(i + t.n) else t end 
-raise_(base::Int, i::Int, t::Ap)::Ap = Ap(raise_(base, i, t.l), raise_(base, i, t.r)) 
-raise_(base::Int, i::Int, t::Lam)::Lam = Lam(raise_(base+1, i, t.body)) 
-raise_(base::Int, i::Int, t::Pi)::Pi = Pi(raise_(base, i, t.from), raise_(base+1, i, t.to)) 
+raise_(base::Int, i::Int, t::FreeVar)::FreeVar = t
+raise_(base::Int, i::Int, t::MetaVar)::MetaVar = t
+raise_(base::Int, i::Int, t::Uni)::Uni = t
+raise_(base::Int, i::Int, t::LocalVar)::LocalVar = if i>0 LocalVar(i + t.n) else t end
+raise_(base::Int, i::Int, t::Ap)::Ap = Ap(raise_(base, i, t.l), raise_(base, i, t.r))
+raise_(base::Int, i::Int, t::Lam)::Lam = Lam(raise_(base+1, i, t.body))
+raise_(base::Int, i::Int, t::Pi)::Pi = Pi(raise_(base, i, t.from), raise_(base+1, i, t.to))
 
-raise(i::Int, t::Term)::Term = raise_(0, i, t) 
+raise(i::Int, t::Term)::Term = raise_(0, i, t)
 
 Lam(Ap(LocalVar(0), LocalVar(1))) |> pr
 Lam(Ap(LocalVar(0), LocalVar(1))) |> t->raise(1, t) |> pr
 
 
-########################################## subst 
+########################################## subst
 
-subst(new::Term, i::Int, t::FreeVar)::Term= t 
-subst(new::Term, i::Int, t::MetaVar)::Term = t 
-subst(new::Term, i::Int, t::Uni)::Term = t 
-subst(new::Term, i::Int, t::Ap)::Term = Ap(subst(new, i, t.l), subst(new, i, t.r)) 
-subst(new::Term, i::Int, t::Lam)::Term = Lam(subst(raise(1, new), (i+1), t.body)) 
-subst(new::Term, i::Int, t::Pi)::Term = Pi(subst(new, i, t.from), subst(raise(1, new), (i+1), t.to)) 
+subst(new::Term, i::Int, t::FreeVar)::Term= t
+subst(new::Term, i::Int, t::MetaVar)::Term = t
+subst(new::Term, i::Int, t::Uni)::Term = t
+subst(new::Term, i::Int, t::Ap)::Term = Ap(subst(new, i, t.l), subst(new, i, t.r))
+subst(new::Term, i::Int, t::Lam)::Term = Lam(subst(raise(1, new), (i+1), t.body))
+subst(new::Term, i::Int, t::Pi)::Term = Pi(subst(new, i, t.from), subst(raise(1, new), (i+1), t.to))
 function subst(new::Term, i::Int, t::LocalVar)::Term
     if t.n < i t
     elseif t.n == i new
@@ -69,29 +69,29 @@ function subst(new::Term, i::Int, t::LocalVar)::Term
     end
 end
 
-########################################## substMV 
+########################################## substMV
 
-substMV(new::Term, i::Id, t::FreeVar)::Term = t 
-substMV(new::Term, i::Id, t::LocalVar)::Term = t 
-substMV(new::Term, i::Id, t::Uni)::Term = t 
-substMV(new::Term, i::Id, t::MetaVar)::Term = if t.n == i new else t end 
-substMV(new::Term, i::Id, t::Ap)::Term = Ap(substMV(new, i, t.l), substMV(new, i, t.r)) 
-substMV(new::Term, i::Id, t::Lam)::Term = Lam(substMV(raise(1, new), i, t.body)) 
-substMV(new::Term, i::Id, t::Pi)::Term = Pi(substMV(new, i, t.from), substMV(raise(1, new), i, t.to)) 
+substMV(new::Term, i::Id, t::FreeVar)::Term = t
+substMV(new::Term, i::Id, t::LocalVar)::Term = t
+substMV(new::Term, i::Id, t::Uni)::Term = t
+substMV(new::Term, i::Id, t::MetaVar)::Term = if t.n == i new else t end
+substMV(new::Term, i::Id, t::Ap)::Term = Ap(substMV(new, i, t.l), substMV(new, i, t.r))
+substMV(new::Term, i::Id, t::Lam)::Term = Lam(substMV(raise(1, new), i, t.body))
+substMV(new::Term, i::Id, t::Pi)::Term = Pi(substMV(new, i, t.from), substMV(raise(1, new), i, t.to))
 
 
-########################################## substFV 
+########################################## substFV
 
-substFV(new::Term, i::Id, t::FreeVar)::Term = if t.n == i new else t end  
-substFV(new::Term, i::Id, t::LocalVar)::Term = t 
-substFV(new::Term, i::Id, t::Uni)::Term = t 
+substFV(new::Term, i::Id, t::FreeVar)::Term = if t.n == i new else t end
+substFV(new::Term, i::Id, t::LocalVar)::Term = t
+substFV(new::Term, i::Id, t::Uni)::Term = t
 substFV(new::Term, i::Id, t::MetaVar)::Term = t
-substFV(new::Term, i::Id, t::Ap)::Term = Ap(substFV(new, i, t.l), substFV(new, i, t.r)) 
-substFV(new::Term, i::Id, t::Lam)::Term = Lam(substFV(raise(1, new), i, t.body)) 
-substFV(new::Term, i::Id, t::Pi)::Term = Pi(substFV(new, i, t.from), substFV(raise(1, new), i, t.to)) 
+substFV(new::Term, i::Id, t::Ap)::Term = Ap(substFV(new, i, t.l), substFV(new, i, t.r))
+substFV(new::Term, i::Id, t::Lam)::Term = Lam(substFV(raise(1, new), i, t.body))
+substFV(new::Term, i::Id, t::Pi)::Term = Pi(substFV(new, i, t.from), substFV(raise(1, new), i, t.to))
 
 
-########################################## metavars 
+########################################## metavars
 
 metavars(t::FreeVar)::Set{MetaVar} = Set{MetaVar}()
 metavars(t::LocalVar)::Set{MetaVar} = Set{MetaVar}()
@@ -102,7 +102,7 @@ metavars(t::Lam)::Set{MetaVar} = metavars(t.body)
 metavars(t::Pi)::Set{MetaVar} = union(metavars(t.from), metavars(t.to))
 
 
-########################################## isclosed 
+########################################## isclosed
 
 isclosed(t::FreeVar)::Bool = false
 isclosed(t::LocalVar)::Bool = true
@@ -136,7 +136,7 @@ ff = Lam(Lam(Ap(LocalVar(0), LocalVar(1))))
 reduc(Ap(ff, FreeVar(3))) # the lower LocVar is the INNER one ( 0 is the INNEST)
 
 
-########################################## isStuck 
+########################################## isStuck
 
 isStuck(t::MetaVar)::Bool = true
 isStuck(t::Ap)::Bool = isStuck(t.l)
@@ -154,10 +154,10 @@ peelApTelescope(Ap(Ap(Ap(Ap(FreeVar(50), FreeVar(1)), FreeVar(2)), FreeVar(3)), 
 applyApTelescope(tm::Term,  args::Array)::Term = (for t in args tm = Ap(tm, t) end; tm)
 applyApTelescope(FreeVar(50), [FreeVar(1), FreeVar(2), FreeVar(3), FreeVar(4)]) |> pr
 
-saturateMV(tm::Term,  bvars::Int)::Term = applyApTelescope(tm, (0:(bvars-1)) .|> LocalVar)
+saturateMV(tm::Term,  n::Int)::Term = applyApTelescope(tm, (0:(n-1)) .|> LocalVar)
 saturateMV(FreeVar(50), 5) |> pr
 
-mkLam(tm::Term, bvars::Int)::Term = (for i in 1:bvars tm = Lam(tm) end; tm)
+mkLam(tm::Term, n::Int)::Term = (for i in 1:n tm = Lam(tm) end; tm)
 mkLam(LocalVar(0), 5) |> pr
 
 
@@ -190,7 +190,7 @@ function simplify_(t1::Ap, t2::Ap)::SimpRes
     else
         # union([simplify_(s1, s2) for (s1, s2) in zip(args1, args2)]...)
         # union((zip(args1, args2) .|> ((a1, a2),)->simplify_(a1, a2))...)
-        Array{Constraint}([Constraint(s1, s2) for (s1, s2) in zip(args1, args2)])  
+        Array{Constraint}([Constraint(s1, s2) for (s1, s2) in zip(args1, args2)])
     end
 end
 
@@ -208,7 +208,7 @@ end
 
 function simplify_(t1::Term, t2::Term)::SimpRes # base case
     if t1 == t2 Array{Constraint}([])
-    elseif isStuck(t1) || isStuck(t2) Array{Constraint}([Constraint(t1, t2)]) 
+    elseif isStuck(t1) || isStuck(t2) Array{Constraint}([Constraint(t1, t2)])
     else Error("Different: $(pr(t1)) is really different from $(pr(t2))")
     end
 end
@@ -226,10 +226,10 @@ function backtrack(array::SimpRes)::SimpRes
         for c in array
             cs = simplify_(c)
             if typeof(cs) === Error return cs
-            elseif length(cs)==1 && cs[1]==c push!(reduced, c) 
+            elseif length(cs)==1 && cs[1]==c push!(reduced, c)
             elseif length(cs)!=0 append!(array2, cs) end
         end
-        array = array2    
+        array = array2
     end
     return Array{Constraint}([reduced...])
 end
@@ -244,7 +244,7 @@ end
 simplify(c::Constraint)::SimpRes = simplify(c.t1, c.t2)
 
 
-# FreeVar 0 `Ap` E === FreeVar 0 `Ap` E' 
+# FreeVar 0 `Ap` E === FreeVar 0 `Ap` E'
 # TO  E === E'
 t1 = Ap(FreeVar(0), MetaVar(50))
 t2 = Ap(FreeVar(0), FreeVar(99))
@@ -281,7 +281,7 @@ Subst = Dict{Id, Term}
 
 manySubst(s::Subst, t::Term)::Term = (for (var, val) in s  t = substMV(val, var, t) end; t )
 
-function mergeSubst(s::Subst, t::Subst)::Union{Subst, Nothing} 
+function mergeSubst(s::Subst, t::Subst)::Union{Subst, Nothing}
     if intersect(keys(s), keys(t)) |> isempty
         t = Subst(ii => manySubst(s, tt) for (ii, tt) in t)
         return Subst(union(t, s))
@@ -303,46 +303,47 @@ end
 UnifRes = Union{UnifRes_Attempts, UnifRes_Result}
 
 
-#M = λ x1. ... λ xn. xi (M1 x1 ... xn) ... (Mr x1 ... xn)  
+#M = λ x1. ... λ xn. xi (M1 x1 ... xn) ... (Mr x1 ... xn)
 # ... for ALL the xi from x1 to xn where the number n IS bvar ...  <-- Note that it's ALSO the number of params !!!
 # PLUS, finally, (BUT ONLY if "fnew" is closed,)
 # M = λ x1. ... λ xn. "fnew" (M1 x1 ... xn) ... (Mr x1 ... xn)
-# ^ NOTE that there is a RANDOM number of these applied terms Mr here, and this is >nargs< (nargs is r).
-function generateSubst(bvars::Int, mv::Id, fnew::Term, nargs::Int)::Array{Subst}
-    args = [newvar() for i in 1:nargs] .|> MetaVar .|> (tm->saturateMV(tm, bvars)) # .|> pr
-    chances = (0:(bvars-1)) .|> LocalVar |> (l-> isclosed(fnew) ? vcat(l, fnew) : l) .|> (l->applyApTelescope(l, args))  .|> (l-> mkLam(l, bvars)) #  .|> pr
-    # [0.. bvars) .| LocalVar . {isclosed(fnew) ? cat(x, fnew)} .| applyApTelescope<args> .| mkLam<bvars>
-    # where args = [1..nargs] .| {newvar()} .| MetaVar .| saturateMV<bvars> 
+# ^ NOTE that there is a RANDOM number of these applied terms Mr here, and this is >r< (r is r).
+function generateSubst(n::Int, mv::Id, fnew::Term, r::Int)::Array{Subst}
+    args = [newvar() for i in 1:r] .|> MetaVar .|> (tm->saturateMV(tm, n)) # .|> pr
+    chances = (0:(n-1)) .|> LocalVar |> (l-> isclosed(fnew) ? vcat(l, fnew) : l) .|> (l->applyApTelescope(l, args))  .|> (l-> mkLam(l, n)) #  .|> pr
+    # [0.. n) .| LocalVar . {isclosed(fnew) ? cat(x, fnew)} .| applyApTelescope<args> .| mkLam<n>
+    # where args = [1..r] .| {newvar()} .| MetaVar .| saturateMV<n>
     return [Subst(mv => c) for c in chances]
 end
 
-proj(bvars::Int, mv::MetaVar, fnew::Term, nnargs::Int)::Array{Subst} = [generateSubst(bvars, mv.n, fnew, nargs) for nargs in 0:nnargs] |> (x->vcat(x...))
+proj(n::Int, mv::MetaVar, fnew::Term, nnargs::Int)::Array{Subst} = [generateSubst(n, mv.n, fnew, r) for r in 0:nnargs] |> (x->vcat(x...))
 
-bvars = 1
-nargs =2
-generateSubst(bvars, 50, MetaVar(999), nargs)
-bvars = 0
-nargs = 0
-generateSubst(bvars, 50, MetaVar(999), nargs)  # [Dict(50 => MetaVar(999))]
-bvars = 0
-nargs = 1
-generateSubst(bvars, 50, MetaVar(999), nargs)  # [Dict(50 => Ap(MetaVar(999), MetaVar(102)))]
-bvars = 0
-nargs = 2
-generateSubst(bvars, 50, MetaVar(999), nargs)  # [ Dict(50 => Ap(Ap(MetaVar(999), MetaVar(103)), MetaVar(104)))]
-bvars = 1
-nargs = 0
-generateSubst(bvars, 50, MetaVar(999), nargs)  # [ Dict(50 => Lam(LocalVar(0)))
+n = 1
+r =2
+generateSubst(n, 50, MetaVar(999), r)
+n = 0
+r = 0
+generateSubst(n, 50, MetaVar(999), r)  # [Dict(50 => MetaVar(999))]
+n = 0
+r = 1
+generateSubst(n, 50, MetaVar(999), r)  # [Dict(50 => Ap(MetaVar(999), MetaVar(102)))]
+n = 0
+r = 2
+generateSubst(n, 50, MetaVar(999), r)  # [ Dict(50 => Ap(Ap(MetaVar(999), MetaVar(103)), MetaVar(104)))]
+n = 1
+r = 0
+generateSubst(n, 50, MetaVar(999), r)  # [ Dict(50 => Lam(LocalVar(0)))
                                                # Dict(50 => Lam(MetaVar(999)))]
-bvars = 1
-nargs = 1
-generateSubst(bvars, 50, MetaVar(999), nargs)  # [  Dict(50 => Lam(Ap(LocalVar(0), Ap(MetaVar(109), LocalVar(0)))))
+n = 1
+r = 1
+generateSubst(n, 50, MetaVar(999), r)  # [  Dict(50 => Lam(Ap(LocalVar(0), Ap(MetaVar(109), LocalVar(0)))))
                                                #    Dict(50 => Lam(Ap(MetaVar(999), Ap(MetaVar(109), LocalVar(0)))))]
                     # Here it's where it gets SUPER real!!! (all terms are there)
 
 
 
 
+                    
 
 su = generateSubst(0, 50, MetaVar(999), 0)[1]
 t=Ap(FreeVar(55), MetaVar(50))
@@ -373,7 +374,7 @@ function unify(snew::Subst, cs::Array{Constraint}):: UnifRes # OH boi you're ALM
     cs1::Array{SimpRes}= cs .|> (c->Constraint(manySubst(snew, c.t1), manySubst(snew, c.t2))) .|> simplify
     #               cs1= cs .|> (c->Constraint(manySubst(snew, c.t1), manySubst(snew, c.t2))) .|> simplify
     # 2. Simplify the set of constraints to remove any obvious ones.
-    if (cs1 .|> (c->typeof(c) === Error) |> any) return UnifRes_Attempts(Array{Subst}([]), Array{Constraint}([])) end 
+    if (cs1 .|> (c->typeof(c) === Error) |> any) return UnifRes_Attempts(Array{Subst}([]), Array{Constraint}([])) end
     cs2 = cs1 |> (x->vcat(x...)) |> unique
     # 3. Separate flex-flex equations from flex-rigid ones.
     isflexflex::Array{Bool} = cs2 .|> (c->isStuck(c.t1) && isStuck(c.t2))
@@ -399,7 +400,7 @@ cs=[Constraint(Ap(FreeVar(999), Lam(Ap(FreeVar(90), LocalVar(0)))), Ap(MetaVar(5
 unify(snew,cs )
 
 
-function dfs(node::Subst, cs::Array{Constraint})::Union{UnifRes_Result, Error} 
+function dfs(node::Subst, cs::Array{Constraint})::Union{UnifRes_Result, Error}
     stack::Array{UnifRes_Attempts} = [UnifRes_Attempts([node], cs)]
     #                        stack = [UnifRes_Attempts([node], cs)]
     while stack |> length > 0
@@ -443,7 +444,7 @@ function typeOf(ctx::Dict{Id, Term}, mctx::Dict{Id, Term}, t::Ap)::TypeRes
     end
 end
 
-function typeOf(ctx::Dict{Id, Term}, mctx::Dict{Id, Term}, t::Lam)::TypeRes 
+function typeOf(ctx::Dict{Id, Term}, mctx::Dict{Id, Term}, t::Lam)::TypeRes
     v, m = newvar(), newvar()
     ctx[v] = MetaVar(m)
     mctx[m] = Uni(Term)
@@ -451,10 +452,10 @@ function typeOf(ctx::Dict{Id, Term}, mctx::Dict{Id, Term}, t::Lam)::TypeRes
     pop!(ctx, v)
     pop!(mctx, m)
     if typeof(typeres) === Error return typeres end
-    return TypeRes_(Pi(MetaVar(m), substFV(LocalVar(0), v, raise(1, typeres.type))), 
+    return TypeRes_(Pi(MetaVar(m), substFV(LocalVar(0), v, raise(1, typeres.type))),
                     vcat(typeres.cs, [Constraint(MetaVar(m), MetaVar(m))]))
-end 
-     
+end
+
 function typeOf(ctx::Dict{Id, Term}, mctx::Dict{Id, Term}, t::Pi)::TypeRes
     v = newvar()
     tpfrom = typeOf(ctx, mctx, t.from)
@@ -475,10 +476,10 @@ function test_typeof(t::Term)
     else
         println("Type: ", tr.type |> pr)
         print("subject to: ")
-        cs = tr.cs .|> simplify 
-        errors = filter((c->typeof(c) === Error), cs)  
+        cs = tr.cs .|> simplify
+        errors = filter((c->typeof(c) === Error), cs)
         if length(errors)>0
-            println(errors) 
+            println(errors)
         else
             cs |> (x->vcat(x...)) .|> pr |> (x->join(x, " ,  ")) |> println
         end
@@ -564,8 +565,8 @@ prrr(array)
 
 
 append!(array, ["10"])
-for i in set 
-    delete!(set, i) 
+for i in set
+    delete!(set, i)
     push!(set, upper(i))
 end
 set
@@ -619,7 +620,7 @@ filter((x->x<5), Set([3,4,5,6,
 
 [[1, 2], [3]] |> (x->vcat(x...))
 
-a = [[1, 2], [3]] 
+a = [[1, 2], [3]]
 push!(a, [4])
 
 

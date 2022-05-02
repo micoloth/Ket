@@ -374,6 +374,14 @@ function doTheBestYouCan(S::Structure11)
     end
 end
 
+# FOR DEBUGGING:
+# S.stack.stack[0][2] |> getString
+# S.stack.stack[1][2] |> getString
+# S.stack.stack[2][2] |> getString
+# S.stack.stack[3][2] |> getString
+# S.stack.stack[4][2] |> getString
+# S.stack.stack[5][2] |> getString
+
 getBestObjects(S::Structure11)::Array{SyntaxInstObject} = getBestObjects(S, 0, size(S.finisheds))
 getBestObjects(S::Structure11, from, to)::Array{SyntaxInstObject} = at(S.finisheds, from, to) .|> (x->x.s) |> y->filter(x->x isa SyntaxInstObject, y)
 

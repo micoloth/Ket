@@ -114,7 +114,7 @@ end
 eq_constraints(cs1, cs2) = (Set{Constraint}(cs1) .== Set{Constraint}(cs2)) |> all
 
 
-@testset "unification_3" begin  # COMMENT TESTS
+# @testset "unification_3" begin  # COMMENT TESTS
 
 
 t1 = TAppAuto(TGlob("G0"), TLocInt(1))
@@ -458,7 +458,25 @@ joined = robinsonUnify(t1, t2; mode=join_)
 @test (joined.errors |> length == 0) && (joined.res == TSum(Term[], Pair{String, Term}["c" => TGlob("Z", TypeUniverse()), "b" => TGlob("B", TypeUniverse()), "a" => TGlob("A", TypeUniverse())]))
 
 
+# TESTING POLYMORPHIS:
+aa = TAbs(TProd(Array{Term}([TLocInt(1), TLocInt(1)])))
+infer_type_rec(aa) |> pr_ctx
+@assert infer_type_rec(aa) == TTerm(TProd(Term[], Pair{String, Term}[]), TTerm(TProd(Term[TLocInt(1)], Pair{String, Term}[]), TProd(Term[TLocInt(1), TLocInt(1)], Pair{String, Term}[])))
 
+e = TProd(Array{Term}([TAppAuto(aa, TGlobAuto("a")), TAppAuto(aa, TGlobAuto("b"))]))
+infer_type_rec(e) |> pr_ctx
+@assert infer_type_rec(e) == TTerm(TProd(Term[], Pair{String, Term}[]), TProd(Term[TProd(Term[TGlob("A", TypeUniverse()), TGlob("A", TypeUniverse())], Pair{String, Term}[]), TProd(Term[TGlob("B", TypeUniverse()), TGlob("B", TypeUniverse())], Pair{String, Term}[])], Pair{String, Term}[]))
+
+
+# TESTING TInd: STILL NO ASSERTIONS HERE because of self references, I HOPE THIS WONT BE A PROBLEM
+T = TInd(TSum(Vector{Pair{String, Term}}(["l"=>TGlob("A"), "b"=>TProd(Array{Term}([TIndVar(), TIndVar()]))])))
+
+tree = TSumTerm(1, "b", TProd(Array{Term}([TSumTerm(1, "l", TGlobAuto("a")), TSumTerm(1, "b", TProd(Array{Term}([TSumTerm(1, "l", TGlobAuto("a")), TSumTerm(1, "l", TGlobAuto("a"))])))])))
+tree |>pr
+infer_type_rec(tree) |> pr_ctx
+
+anno_tree = TAnno(tree, TTermEmpty(T))
+infer_type_rec(anno_tree) |> pr_ctx
 
 
 
@@ -481,6 +499,42 @@ t2 = TProd(Array{Term}([TGlob("F"), TLocInt(1), TLocInt(1)]))
 robinsonUnify(t1, t2) # Cannot unify !!!!!!!!!!!!!!!!!!!!!!!!!!!
 # ass_reduc(t1, s1) |> pr
 # ass_reduc(t2, s2) |> pr
+
+
+
+################################## ABOUT SUM TYPES: TODOTODO
+e1 = TGlobAuto("a")
+T = TSum(Vector{Pair{String, Term}}(["a"=>TGlob("A"), "b"=>TGlob("B")]))
+e = TAnno(e1, TTermAutoCtx(T)) # THIS DOESNT WORK: a:A is NOT of type A+B
+infer_type_rec(e) |> pr_ctx
+
+e1 = TGlobAuto("a")
+T = TSum(Vector{Pair{String, Term}}(["a"=>TGlob("A"), "b"=>TGlob("B")]))
+e = TApp([e1, TGlob("f",  TTerm(T, TGlob("C")))]) # THIS DOESNT WORK: a:A does NOT go into type A+B
+infer_type_rec(e) |> pr_ctx
+
+
+e1 = TSumTerm(1, "a", TGlobAuto("a"))
+T = TSum(Vector{Pair{String, Term}}(["a"=>TGlob("A"), "b"=>TGlob("B")]))
+e = TAnno(e1, TTermAutoCtx(T))
+infer_type_rec(e) |> pr_ctx  # OF COURSE this works..
+
+e1 = TSumTerm(1, "a", TGlobAuto("a"))
+T = TSum(Vector{Pair{String, Term}}(["a"=>TGlob("A"), "b"=>TGlob("B")]))
+e = TApp([e1, TGlob("f",  TTerm(T, TGlob("C")))])   # OF COURSE this works..
+infer_type_rec(e) |> pr_ctx
+
+
+e1 = TSumTerm(2, "b", TGlobAuto("a")) # it's a A term, but TAGGED WITH THE WRONG LABEL!
+T = TSum(Vector{Pair{String, Term}}(["a"=>TGlob("A"), "b"=>TGlob("B")]))
+e = TAnno(e1, TTermAutoCtx(T))
+infer_type_rec(e) |> pr_ctx  # Error, i guess...
+
+e1 = TSumTerm(2, "b", TGlobAuto("a")) # it's a A term, but TAGGED WITH THE WRONG LABEL!
+T = TSum(Vector{Pair{String, Term}}(["a"=>TGlob("A"), "b"=>TGlob("B")]))
+e = TApp([e1, TGlob("f",  TTerm(T, TGlob("C")))])   # Error, i guess...
+infer_type_rec(e) |> pr_ctx
+#################################### You should think if these make sense or not !!!!!!!
 
 
 # Tests that are HARD because I DONT REALLY KNOW WHAT I WANT WRT TO TAbs SCOPING:
@@ -511,18 +565,61 @@ robinsonUnify(t1, t2) # Cannot unify !!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
 
+
+# HIGHER ORDER
+
 # Is my unification higher order or not? I sincerely don't know.....
 t1 = TApp([TApp([TGlobAuto("a"), TLocStr("G")]), TLocStr("F")])
+t1|>pr
+infer_type_rec(t1) |>pr_ctx
 t2 = TApp([TGlobAuto("b"), TLocStr("F")])
+t2|>pr
 robinsonUnify(t1, t2)  # -->  "Different: TG(a) is really different from b"
 
 # if F==1, G==2:
 t1 = TApp([TApp([TGlobAuto("a"), TLocInt(2)]), TLocInt(1)])
+t1|>pr
 t2 = TApp([TGlobAuto("b"), TLocInt(1)])
+t2|>pr
 robinsonUnify(t1, t2)  # --> "Different: T2(a) is really different from b"
 
-# >> While the right answer would be "TG==TAbs(b)", or "T2==TAbs(b)" .....
+# >> While the right answer would be "TG==TAbs(b)", or "T2==TAbs(b)" .....   # // OR SHOULD IT ????????
 # >>> Yep... Squarely First Order. That's what it says in the title, btw...
+
+
+
+t1 = TApp([TApp([TProd(Array{Term}([TGlobAuto("a"), TGlob("K", TTermAuto(TGlob("A"), TGlob("B")))])), TLocStr("G")]), TLocStr("F")])
+t1|>pr
+infer_type_rec(t1) |>pr_ctx
+t2 = TApp([TLocStrAnnotated("b", TGlob("B")), TLocStr("F")])
+t2|>pr
+infer_type_rec(t2) |>pr_ctx
+
+
+
+
+# IN THEORY, HIGHER ORDER FUNCTIONS ARE ALREADY DONE: In prcatice, do they work?
+
+t1 = TAbs(TAbs(TProd(Array{Term}([TLocInt(1), TLocInt(1), TLocInt(1)])))) # IT'S THETHING: a tAbs returning a TAbs.....
+t1|>pr, t1|>pr_E
+infer_type_rec(t1) |>pr_ctx  # OK, except for it's a VERY DUMB SecondOrder TAbs !!!
+
+t1 = TAbs(TAbs(TProd(Array{Term}([TLocInt(1), TProdSingle(TLocInt(1)), TAppAuto(TLocInt(1), TProdSingle(TLocInt(1)))])))) # IT'S THETHING: a tAbs returning a TAbs.....
+t1|>pr, t1|>pr_E
+infer_type_rec(t1) |>pr_ctx
+
+
+targ_lev1 = TGlob("A")
+reduc(TAppAuto(t1, targ_lev1)) |>pr
+
+
+
+
+
+
+
+
+
 
 
 
@@ -822,7 +919,7 @@ e |> pr_E
 infer_type_rec(e) |> pr # GREAT
 
 
-end # COMMENT TESTS
+# end # COMMENT TESTS
 
 include("unification_3.jl")
 
